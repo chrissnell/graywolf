@@ -220,12 +220,14 @@ function validateControl(result, issues) {
 // symbol-table = 9 bytes minimum (APRS101 ch.10). The longitude/speed
 // bytes are offset-encoded (byte = digit + 28), so the legal range is
 // 0x1c-0x7f, not 0x26-0x7f — digit 0 legitimately encodes as 0x1c.
-// 0x20 (SPACE) is checked separately below: it sits inside that numeric
-// range but is spec-reserved (APRS101 ch.10) as the "unknown data"
-// sentinel in the longitude field, so it's always flagged there. 0x7f
-// (DEL) is deliberately NOT flagged here — it's an ordinary top-of-range
-// digit (99) unless combined with the destination's +100° longitude
-// offset bit, which this info-field-only check can't see.
+// 0x20 (SPACE) is spec-reserved (APRS101 ch.10) as the "unknown data"
+// sentinel: in the longitude bytes (1-3) it makes the whole position
+// unplottable; in the speed/course bytes (4-6) it's non-fatal (the
+// position still decodes, just without speed/course) and is also the
+// shape mice.go's accept_broken_mice repairs for a squashed double
+// space. 0x7f (DEL) is never flagged — the Go decoder no longer
+// special-cases it either, since it's just the ordinary top-of-range
+// digit 99 regardless of the destination's +100° longitude offset.
 function validateMicE(result, info, issues) {
   if (info.length < 9) {
     issues.push({
@@ -236,19 +238,24 @@ function validateMicE(result, info, issues) {
   }
   for (let i = 1; i <= 6; i++) {
     const b = info[i];
+    if (b === 0x20) {
+      if (i <= 3) {
+        issues.push({
+          severity: 'error',
+          text: `Mic-E longitude byte at info offset ${i} is 0x20 (SPACE), the APRS101 "unknown data" sentinel — receivers must not plot this position.`,
+        });
+      } else {
+        issues.push({
+          severity: 'warn',
+          text: `Mic-E speed/course byte at info offset ${i} is 0x20 (SPACE) — speed/course will decode as unavailable; this can also be the single-space squash accept_broken_mice repairs.`,
+        });
+      }
+      break;
+    }
     if (b < 0x1c || b > 0x7f) {
       issues.push({
         severity: 'error',
         text: `Mic-E longitude/speed byte at info offset ${i} is 0x${hexByte(b)}, outside the encodable range 0x1C-0x7F.`,
-      });
-      break;
-    }
-  }
-  for (let i = 1; i <= 3; i++) {
-    if (info[i] === 0x20) {
-      issues.push({
-        severity: 'error',
-        text: `Mic-E longitude byte at info offset ${i} is 0x20 (SPACE), the APRS101 "unknown data" sentinel — receivers must not plot this position.`,
       });
       break;
     }

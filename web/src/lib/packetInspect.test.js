@@ -119,9 +119,17 @@ test('analyzeFrame validates a well-formed Mic-E frame', () => {
 test('analyzeFrame accepts a low but valid Mic-E digit byte', () => {
   // Real on-air KD3DKY-7 packet: speed/course byte 0x23 (digit 7) sits
   // below the old (wrong) 0x26 floor but is a legitimate encoding.
-  const f = frame('T0TR4P', 'KD3DKY-7', ['`', 0x6c, 0x60, 0x3c, 0x6c, 0x23, 0x25, 0x62, 0x2f]);
+  // Source built as an explicit addr() array — passing 'KD3DKY-7' as a
+  // plain string silently encodes SSID 0, since addr() takes SSID as a
+  // separate argument and doesn't parse a '-N' suffix out of the call.
+  const f = frame(
+    'T0TR4P',
+    [...addr('KD3DKY', 7, { last: true })],
+    ['`', 0x6c, 0x60, 0x3c, 0x6c, 0x23, 0x25, 0x62, 0x2f],
+  );
   const r = analyzeFrame(f);
   assert.equal(r.isMicE, true);
+  assert.equal(r.source.ssid, 7);
   assert.equal(r.issues.length, 0);
 });
 
@@ -132,11 +140,24 @@ test('analyzeFrame flags a SPACE byte in the Mic-E longitude field', () => {
 });
 
 test('analyzeFrame does not flag a DEL byte in the Mic-E longitude field', () => {
-  // 0x7f is only dangerous combined with the dest's +100 offset bit,
-  // which this info-field-only heuristic can't see — must not error.
+  // 0x7f is an ordinary top-of-range digit (99), never flagged — mice.go
+  // no longer special-cases it against the dest's +100 offset bit either.
   const f = frame('T7SUTV', 'NW5W', ['`', 0x7f, 0x2e, 0x4f, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
   const r = analyzeFrame(f);
   assert.equal(r.issues.length, 0);
+});
+
+test('analyzeFrame does not flag a DEL byte in the Mic-E minutes/hundredths bytes', () => {
+  // Real DL8XI longitude bytes: degrees=DEL, minutes='(', hundredths=DEL.
+  const f = frame('T7SUTV', 'NW5W', ['`', 0x7f, 0x28, 0x7f, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.equal(r.issues.length, 0);
+});
+
+test('analyzeFrame warns on a SPACE byte in the Mic-E speed/course field', () => {
+  const f = frame('T7SUTV', 'NW5W', ['`', 0x6c, 0x6d, 0x6e, 0x6f, 0x20, 0x70, 0x72, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.ok(r.issues.some((i) => i.severity === 'warn' && /speed\/course/.test(i.text)));
 });
 
 test('analyzeFrame flags malformed Mic-E destination characters', () => {

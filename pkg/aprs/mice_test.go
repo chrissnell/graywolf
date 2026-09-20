@@ -152,33 +152,42 @@ func TestParseMicEAmbiguousLonRejected(t *testing.T) {
 	}
 }
 
-// TestParseMicEDelInLonRejected covers a pattern reported in graywolf
-// issue #76: PicoAPRS-class hardware (DL8XI, DL9DAK, others) emits
-// 0x7f (DEL) in the Mic-E info-field longitude when GPS has not yet
-// locked, while still asserting the destination's +100° offset bit.
-// Raw lon byte 0 = 0x7f → d = 99; combined with offset 100 → 199°,
-// which wraps to ~-161° and drops a German station off Alaska. The
-// SPACE (0x20) check from the previous fix did not catch it.
-func TestParseMicEDelInLonRejected(t *testing.T) {
+// TestParseMicEDelInLonAcceptedWithOffset covers a pattern reported in
+// graywolf issue #76: PicoAPRS-class hardware (DL8XI, DL9DAK, others)
+// emits 0x7f (DEL) in the Mic-E info-field longitude while asserting
+// the destination's +100° offset bit. Issue #76 assumed raw lon byte
+// 0 = 0x7f → d = 99, combined with offset 100 → 199°, wraps to ~-161°
+// off Alaska — but that predates #219's offset-before-wrap reordering
+// (ae6ebf3): today the +100° is added first, so 199° folds back to a
+// valid 9°, landing both stations in their real Hamburg-area location.
+// DEL is just an ordinary top-of-range digit; it decodes regardless
+// of the offset bit.
+func TestParseMicEDelInLonAcceptedWithOffset(t *testing.T) {
 	cases := []struct {
-		name string
-		src  string
-		dest string
-		info []byte
+		name    string
+		src     string
+		dest    string
+		info    []byte
+		wantLat float64
+		wantLon float64
 	}{
 		{
 			// 2026-05-05 DL9DAK>U3SUY8: '<7f>Uhl <1c>-/>
-			name: "DL9DAK",
-			src:  "DL9DAK",
-			dest: "U3SUY8",
-			info: []byte{'\'', 0x7f, 'U', 'h', 'l', 0x20, 0x1c, '-', '/', '>'},
+			name:    "DL9DAK",
+			src:     "DL9DAK",
+			dest:    "U3SUY8",
+			info:    []byte{'\'', 0x7f, 'U', 'h', 'l', 0x20, 0x1c, '-', '/', '>'},
+			wantLat: 53.5997,
+			wantLon: 9.9627,
 		},
 		{
 			// 2026-05-05 DL8XI>US3XQ4: `<7f>(<7f>l<1f>L-/"3u}Ingo
-			name: "DL8XI",
-			src:  "DL8XI",
-			dest: "US3XQ4",
-			info: []byte{'`', 0x7f, '(', 0x7f, 'l', 0x1f, 'L', '-', '/', '"', '3', 'u', '}'},
+			name:    "DL8XI",
+			src:     "DL8XI",
+			dest:    "US3XQ4",
+			info:    []byte{'`', 0x7f, '(', 0x7f, 'l', 0x1f, 'L', '-', '/', '"', '3', 'u', '}'},
+			wantLat: 53.6357,
+			wantLon: 9.2165,
 		},
 	}
 	for _, tc := range cases {
@@ -196,11 +205,17 @@ func TestParseMicEDelInLonRejected(t *testing.T) {
 				t.Fatal(err)
 			}
 			pkt, err := Parse(f)
-			if err == nil {
-				t.Fatalf("expected error, got pkt %+v", pkt.MicE)
+			if err != nil {
+				t.Fatalf("Parse: %v (offset=100 DEL longitude must decode, not be rejected)", err)
 			}
-			if !errors.Is(err, ErrMicELonAmbiguous) {
-				t.Fatalf("wrong error: %v (want ErrMicELonAmbiguous)", err)
+			if pkt.Position == nil {
+				t.Fatal("Position is nil")
+			}
+			if abs(pkt.Position.Latitude-tc.wantLat) > 0.01 {
+				t.Errorf("lat = %.4f, want ~%.4f", pkt.Position.Latitude, tc.wantLat)
+			}
+			if abs(pkt.Position.Longitude-tc.wantLon) > 0.01 {
+				t.Errorf("lon = %.4f, want ~%.4f", pkt.Position.Longitude, tc.wantLon)
 			}
 		})
 	}
@@ -209,8 +224,8 @@ func TestParseMicEDelInLonRejected(t *testing.T) {
 // TestParseMicEDelInLonAcceptedNoOffset covers real on-air packets from
 // NX0R-7 that graywolf was incorrectly dropping: dest[4] is a plain
 // digit (offset=0), so the DEL byte in the longitude field is just the
-// ordinary top-of-range digit 99, not the PicoAPRS no-fix sentinel — it
-// must decode, unlike the offset=100 cases in TestParseMicEDelInLonRejected.
+// ordinary top-of-range digit 99 — it decodes the same whether or not
+// the offset bit is set (see TestParseMicEDelInLonAcceptedWithOffset).
 func TestParseMicEDelInLonAcceptedNoOffset(t *testing.T) {
 	cases := []struct {
 		name    string
