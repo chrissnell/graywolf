@@ -46,6 +46,7 @@
     { path: '/digipeater', label: 'Digipeater' },
     { path: '/preferences/beacons', label: 'Cursor on Target' },
     { path: '/preferences/maps', label: 'Maps' },
+    { path: '/preferences/navigation', label: 'Navigation' },
     { path: '/position-log', label: 'Position Log' },
     { path: '/preferences/messages', label: 'Messaging' },
     { path: '/preferences/storage', label: 'Storage' },
