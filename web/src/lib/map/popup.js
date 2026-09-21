@@ -173,7 +173,14 @@ const ICON_NAVIGATE = icon('<polygon points="3 11 22 2 13 21 11 13 3 11"/>');
 // LiveMapV2.svelte).
 export function renderStationActionsHTML(s) {
   const call = s.callsign;
-  if (!call || s.is_object) return '';
+  if (!call) return '';
+
+  // Objects/items aren't operators you can message or look up, so they only
+  // get Navigate -- Message/Logs/QRZ all need a real callsign.
+  if (s.is_object) {
+    const nav = renderNavigateHTML(s, call);
+    return nav ? `<div class="stn-actions" role="menu">${nav}</div>` : '';
+  }
 
   const upper = call.toUpperCase();
   // QRZ indexes operators by base callsign, not by APRS SSID, so strip any
