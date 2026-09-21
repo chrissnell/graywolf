@@ -33,6 +33,7 @@
   import About from './routes/About.svelte';
   import Preferences from './routes/Preferences.svelte';
   import MapsSettings from './routes/MapsSettings.svelte';
+  import NavigationSettings from './routes/NavigationSettings.svelte';
   import StorageSettings from './routes/StorageSettings.svelte';
   import MessagesSettings from './routes/MessagesSettings.svelte';
   import CoTSettings from './routes/CoTSettings.svelte';
@@ -68,6 +69,7 @@
     '/preferences': Preferences,
     '/preferences/beacons': CoTSettings,
     '/preferences/maps': MapsSettings,
+    '/preferences/navigation': NavigationSettings,
     '/preferences/storage': StorageSettings,
     '/preferences/messages': MessagesSettings,
     '/about': About,

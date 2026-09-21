@@ -2301,52 +2301,6 @@
     outline: none;
   }
 
-  /* Navigate disclosure: a native <details>/<summary> nested inside
-     .stn-actions (see popup.js renderNavigateHTML) so it needs no JS to
-     expand -- the popup is plain DOM, not a Svelte component. The summary
-     row reuses .stn-action's look; the marker is replaced with a small
-     CSS-only chevron that rotates on [open]. */
-  :global(.stn-nav-group) { margin: 0; }
-  :global(.stn-nav-summary) {
-    list-style: none;
-    position: relative;
-    padding-right: 22px;
-  }
-  :global(.stn-nav-summary::-webkit-details-marker) { display: none; }
-  :global(.stn-nav-summary::after) {
-    content: '\203A';
-    position: absolute;
-    right: 10px;
-    color: var(--map-overlay-muted);
-    transition: transform 120ms ease;
-  }
-  :global(.stn-nav-group[open] .stn-nav-summary::after) {
-    transform: rotate(90deg);
-  }
-  :global(.stn-nav-list) {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 2px 0 2px 30px;
-  }
-  :global(.stn-nav-link) {
-    padding: 4px 10px;
-    border-radius: 5px;
-    color: var(--map-overlay-fg);
-    text-decoration: none;
-    font-size: 12.5px;
-    cursor: pointer;
-    white-space: nowrap;
-  }
-  :global(.stn-nav-link:hover),
-  :global(.stn-nav-link:focus-visible) {
-    background: var(
-      --color-surface-hover,
-      color-mix(in srgb, var(--color-text) 9%, transparent)
-    );
-    color: var(--color-text);
-    outline: none;
-  }
   :global(.stn-weather) { font-size: 12px; }
   :global(.stn-weather-row) {
     display: flex;
