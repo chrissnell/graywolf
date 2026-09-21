@@ -353,9 +353,14 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		}
 		if bcns, err := a.store.ListBeacons(ctx); err == nil && len(bcns) == 0 {
 			b := &configstore.Beacon{
-				Type:        "position",
-				Channel:     2,
-				Callsign:    "NW5W-8",
+				Type:     "position",
+				Channel:  2,
+				Callsign: "NW5W-8",
+				// Path/SlotSeconds no longer have a DB-level default
+				// (see models.go), so this seed sets the values that
+				// default used to provide.
+				Path:        "WIDE1-1",
+				SlotSeconds: -1,
 				Enabled:     true,
 				UseGps:      false,
 				Latitude:    40.47624,

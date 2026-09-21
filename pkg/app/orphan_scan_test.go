@@ -32,8 +32,8 @@ func TestBootstrapOrphanScanLogs(t *testing.T) {
 	// Seed a beacon + a kiss interface with dangling channel refs. We
 	// use raw SQL to bypass the DTO / store-level validators since the
 	// intent is to simulate a legacy DB with orphans.
-	if err := store.DB().Exec(`INSERT INTO beacons (type, channel, callsign, destination, path, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-		"position", 42, "N0CALL", "APGRWO", "WIDE1-1", true).Error; err != nil {
+	if err := store.DB().Exec(`INSERT INTO beacons (type, channel, callsign, destination, path, slot_seconds, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"position", 42, "N0CALL", "APGRWO", "WIDE1-1", -1, true).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := store.DB().Exec(`INSERT INTO kiss_interfaces (name, interface_type, listen_addr, channel, enabled, mode) VALUES (?, ?, ?, ?, ?, ?)`,
@@ -59,10 +59,10 @@ func TestBootstrapOrphanScanLogs(t *testing.T) {
 	// Parse every emitted line; assert one per affected table with a
 	// correct count.
 	type line struct {
-		Msg     string `json:"msg"`
-		Table   string `json:"table"`
-		Count   int    `json:"orphan_count"`
-		Level   string `json:"level"`
+		Msg   string `json:"msg"`
+		Table string `json:"table"`
+		Count int    `json:"orphan_count"`
+		Level string `json:"level"`
 	}
 	seen := map[string]int{}
 	for _, raw := range strings.Split(strings.TrimSpace(buf.String()), "\n") {

@@ -615,12 +615,20 @@ type GPSConfig struct {
 
 // Beacon is a scheduled beacon. Type selects the payload builder.
 type Beacon struct {
-	ID             uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Type           string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
-	Channel        uint32  `gorm:"not null;default:1" json:"channel"`
-	Callsign       string  `gorm:"not null" json:"callsign"`
-	Destination    string  `gorm:"not null;default:'APGRWO'" json:"destination"`
-	Path           string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
+	ID   uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type string `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
+	// Channel has no gorm "default" tag on purpose: GORM's Create
+	// substitutes a field's parsed literal default whenever the Go
+	// value equals that type's zero value, regardless of Select() —
+	// so a `default:1` tag here would silently turn a deliberate
+	// Channel=0 ("Auto") into channel 1 on every create.
+	Channel     uint32 `gorm:"not null" json:"channel"`
+	Callsign    string `gorm:"not null" json:"callsign"`
+	Destination string `gorm:"not null;default:'APGRWO'" json:"destination"`
+	// Path: same zero-value-default caveat as Channel — an
+	// intentionally empty path (no digipeater path) must not be
+	// promoted to "WIDE1-1" on create. See Channel's comment above.
+	Path           string  `gorm:"not null" json:"path"`
 	UseGps         bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
 	Latitude       float64 `json:"latitude"`
 	Longitude      float64 `json:"longitude"`
@@ -644,8 +652,11 @@ type Beacon struct {
 	FreqOffset     string  `json:"freq_offset"`                      // repeater offset
 	DelaySeconds   uint32  `gorm:"not null;default:30" json:"delay_seconds"`
 	EverySeconds   uint32  `gorm:"not null;default:1800" json:"interval"`
-	SlotSeconds    int32   `gorm:"not null;default:-1" json:"slot_seconds"`
-	SmartBeacon    bool    `gorm:"not null;default:false" json:"smart_beacon"`
+	// SlotSeconds: same zero-value-default caveat as Channel/Path — 0
+	// is a legitimate slot (top of the hour), not "unset" (-1). See
+	// Channel's comment above.
+	SlotSeconds int32 `gorm:"not null" json:"slot_seconds"`
+	SmartBeacon bool  `gorm:"not null;default:false" json:"smart_beacon"`
 	// Deprecated: use the global configstore.SmartBeaconConfig instead.
 	// This column is no longer read as of 2026-04-18 (the SmartBeacon
 	// curve is now a global singleton, matching direwolf). The column
@@ -694,11 +705,14 @@ type Beacon struct {
 	// will be dropped in a future migration once all deployments have
 	// moved to the global config. See
 	// .context/2026-04-18-smart-beacon-implementation.md.
-	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
-	SendPath      string    `gorm:"column:send_path;not null;default:'rf'" json:"send_path"` // rf | both | is_only
-	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt     time.Time `json:"-"`
-	UpdatedAt     time.Time `json:"-"`
+	SbMinTurnTime uint32 `gorm:"default:5" json:"sb_min_turn_time"`
+	SendPath      string `gorm:"column:send_path;not null;default:'rf'" json:"send_path"` // rf | both | is_only
+	// Enabled: same zero-value-default caveat as Channel/Path — a
+	// deliberately disabled new beacon (Enabled=false) must not be
+	// promoted to true. See Channel's comment above.
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // FixedPoint is an operator-placed landmark on the live map: a named
