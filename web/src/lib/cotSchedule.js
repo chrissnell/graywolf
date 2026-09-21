@@ -3,7 +3,7 @@
 // 300s second delay, decay factor 2 -> 0s/300s/600s/1200s).
 //
 // Drives the live schedule-preview table on the Cursor-on-Target
-// Settings tab (BeaconSettings.svelte) so an operator can see exactly
+// Settings page (CoTSettings.svelte) so an operator can see exactly
 // when each retransmit will fire before saving.
 
 /**

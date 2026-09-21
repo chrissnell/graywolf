@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Radio, RadioGroup, Badge, Checkbox, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Radio, RadioGroup, Badge, Checkbox, AlertDialog, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
@@ -56,6 +56,14 @@
   // with the muted fallback — operators can still author beacons; the
   // backend runtime guard (D6) is what ultimately refuses to transmit.
   let stationCallsign = $state('');
+
+  // SmartBeaconing tuning, moved here (from the former BeaconSettings
+  // page) so it lives one tab over from the beacons it governs.
+  let smartBeacon = $state({
+    enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
+    min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
+  });
+  let savingSB = $state(false);
 
   let beacons = $state([]);
   // Channels come from the shared channelsStore (D9) so every picker
@@ -249,6 +257,14 @@
     } catch {
       stationCallsign = '';
     }
+    const sb = await api.get('/smart-beacon');
+    if (sb) smartBeacon = {
+      enabled: sb.enabled,
+      fast_speed: String(sb.fast_speed), fast_rate: String(sb.fast_rate),
+      slow_speed: String(sb.slow_speed), slow_rate: String(sb.slow_rate),
+      min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
+      min_turn_time: String(sb.min_turn_time),
+    };
     // Deep-link entry from the map context menu's "Add fixed beacon
     // here" item: open the create modal with pos_source=fixed and the
     // clicked coordinates prefilled. Await the channels store's first
@@ -265,6 +281,28 @@
       form.longitude = String(lon);
     }
   });
+
+  async function saveSmartBeacon(e) {
+    e.preventDefault();
+    savingSB = true;
+    try {
+      await api.put('/smart-beacon', {
+        enabled: smartBeacon.enabled,
+        fast_speed: parseInt(smartBeacon.fast_speed),
+        fast_rate: parseInt(smartBeacon.fast_rate),
+        slow_speed: parseInt(smartBeacon.slow_speed),
+        slow_rate: parseInt(smartBeacon.slow_rate),
+        min_turn_angle: parseInt(smartBeacon.min_turn_angle),
+        turn_slope: parseInt(smartBeacon.turn_slope),
+        min_turn_time: parseInt(smartBeacon.min_turn_time),
+      });
+      toasts.success('SmartBeaconing saved');
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      savingSB = false;
+    }
+  }
 
   function openCreate() {
     editing = null;
@@ -497,7 +535,7 @@
       await api.put('/smart-beacon', { ...cfg, enabled: true });
       toasts.success('SmartBeaconing enabled so your tracker beacons transmit');
     } catch (err) {
-      toasts.error(`Beacon saved, but SmartBeaconing could not be enabled automatically: ${err.message || 'enable it under Settings \u2192 Beacons.'}`);
+      toasts.error(`Beacon saved, but SmartBeaconing could not be enabled automatically: ${err.message || 'enable it on the Smart Beaconing tab.'}`);
     }
   }
 
@@ -533,7 +571,7 @@
   // CoT targets are only ever created from the live map's "Add CoT"
   // dialog -- this page can view, manually resend, and delete them, but
   // has no create form of its own (see cot-dialog.svelte).
-  let activeTab = $state('beacons'); // 'beacons' | 'active-cot' | 'inactive-cot'
+  let activeTab = $state('beacons'); // 'beacons' | 'smart-beaconing' | 'active-cot' | 'inactive-cot'
   let cotTargets = $state([]);
   let cotDeleteTarget = $state(null);
   let cotDeleteOpen = $state(false);
@@ -607,6 +645,7 @@
 
 <div class="tabs">
   <button class="tab" class:active={activeTab === 'beacons'} onclick={() => activeTab = 'beacons'}>Beacons</button>
+  <button class="tab" class:active={activeTab === 'smart-beaconing'} onclick={() => activeTab = 'smart-beaconing'}>Smart Beaconing</button>
   <button class="tab" class:active={activeTab === 'active-cot'} onclick={() => activeTab = 'active-cot'}>Active Cursor-on-Targets</button>
   <button class="tab" class:active={activeTab === 'inactive-cot'} onclick={() => activeTab = 'inactive-cot'}>Inactive Cursor-on-Targets</button>
 </div>
@@ -728,6 +767,69 @@
 {/if}
 {/if}
 
+{#if activeTab === 'smart-beaconing'}
+  <Box title="SmartBeaconing">
+    <p class="sb-intro">
+      SmartBeaconing adjusts your beacon rate based on how you're moving.
+      When you're driving fast or turning, it beacons more often so trackers can follow your path accurately.
+      When you're slow or stopped, it beacons less often to avoid cluttering the frequency.
+      The settings below control how aggressively it adapts.
+    </p>
+    <form onsubmit={saveSmartBeacon}>
+      <Toggle bind:checked={smartBeacon.enabled} label="Enable SmartBeaconing" />
+      <h4 class="sb-section-label">Speed-based beaconing</h4>
+      <p class="sb-section-desc">
+        These control how often you beacon based on your speed.
+        At or above Fast Speed, you beacon at the Fast Rate.
+        At or below Slow Speed, you beacon at the Slow Rate.
+        In between, the rate scales proportionally.
+      </p>
+      <div class="sb-grid">
+        <FormField label="Fast Speed (mph)" id="sb-fspd"
+          hint="Above this speed, you beacon at the fast rate. Typical: 60 mph for highway driving.">
+          <Input id="sb-fspd" bind:value={smartBeacon.fast_speed} type="number" />
+        </FormField>
+        <FormField label="Fast Rate (s)" id="sb-frate"
+          hint="Seconds between beacons at high speed. Lower = more frequent. 60s is common for active tracking.">
+          <Input id="sb-frate" bind:value={smartBeacon.fast_rate} type="number" />
+        </FormField>
+        <FormField label="Slow Speed (mph)" id="sb-sspd"
+          hint="Below this speed, you're considered nearly stopped and beacon at the slow rate. Typical: 5 mph.">
+          <Input id="sb-sspd" bind:value={smartBeacon.slow_speed} type="number" />
+        </FormField>
+        <FormField label="Slow Rate (s)" id="sb-srate"
+          hint="Seconds between beacons when slow or stopped. 1800s (30 min) is typical to avoid unnecessary transmissions.">
+          <Input id="sb-srate" bind:value={smartBeacon.slow_rate} type="number" />
+        </FormField>
+      </div>
+      <h4 class="sb-section-label">Turn-based beaconing</h4>
+      <p class="sb-section-desc">
+        These trigger an extra beacon when you make a turn, so your tracked path shows corners accurately.
+        A beacon fires when your heading change exceeds a threshold calculated as:
+        Min Turn Angle + (Turn Slope &div; your speed).
+        This means sharper turns are needed at higher speeds, and gentle curves trigger beacons at low speeds.
+      </p>
+      <div class="sb-grid">
+        <FormField label="Min Turn Angle (°)" id="sb-angle"
+          hint="The fixed part of the turn threshold. At very high speeds, you must turn at least this many degrees to trigger a beacon. Typical: 28°.">
+          <Input id="sb-angle" bind:value={smartBeacon.min_turn_angle} type="number" />
+        </FormField>
+        <FormField label="Turn Slope" id="sb-slope"
+          hint="Controls how sensitive turns are at lower speeds. Higher values make slow-speed turns trigger beacons more easily. Typical: 26.">
+          <Input id="sb-slope" bind:value={smartBeacon.turn_slope} type="number" />
+        </FormField>
+        <FormField label="Min Turn Time (s)" id="sb-ttime"
+          hint="Minimum seconds between turn-triggered beacons. Prevents excessive beaconing during winding roads. Typical: 30s.">
+          <Input id="sb-ttime" bind:value={smartBeacon.min_turn_time} type="number" />
+        </FormField>
+      </div>
+      <div class="form-actions">
+        <Button variant="primary" type="submit" disabled={savingSB}>Save SmartBeaconing</Button>
+      </div>
+    </form>
+  </Box>
+{/if}
+
 {#snippet cotCard(t)}
   {@const disp = beaconChannelDisplay(t, channelsById)}
   <div class="beacon-card">
@@ -847,8 +949,8 @@
       {#if isTracker}
         <div class="tracker-note">
           This beacon transmits your live GPS position and adjusts its rate
-          using the <strong>SmartBeaconing</strong> settings under
-          Settings &rarr; Beacons. Saving it turns SmartBeaconing on
+          using the <strong>SmartBeaconing</strong> settings on the
+          Smart Beaconing tab. Saving it turns SmartBeaconing on
           automatically.
         </div>
       {/if}
@@ -1110,7 +1212,7 @@
 </AlertDialog>
 
 <style>
-  /* Tab bar — same look as BeaconSettings.svelte's tabs; no shared
+  /* Tab bar — same look as CoTSettings.svelte's tabs; no shared
      Tabs component exists yet, so this is duplicated per-page. */
   .tabs {
     display: flex;
@@ -1533,4 +1635,30 @@
     border-color: var(--color-warning, #d29922);
     background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
   }
+
+  /* Smart Beaconing tab (moved from CoTSettings.svelte). */
+  .sb-intro {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 16px 0;
+  }
+  .sb-section-label {
+    margin: 20px 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sb-section-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 8px 0;
+  }
+  .sb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0 16px;
+    margin-top: 12px;
+  }
+  .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>
