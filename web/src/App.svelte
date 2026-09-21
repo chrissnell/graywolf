@@ -1,7 +1,6 @@
 <script>
   import './app.css';
   import Router, { location, replace } from 'svelte-spa-router';
-  import { wrap } from 'svelte-spa-router/wrap';
   import { Toaster } from '@chrissnell/chonky-ui';
   import { Platform } from './lib/platform.js';
   import Sidebar from './components/Sidebar.svelte';
@@ -13,45 +12,65 @@
   import { unitsState } from './lib/settings/units-store.svelte.js';
   import { themeState } from './lib/settings/theme-store.svelte.js';
 
-  // Every route is dynamically imported (via svelte-spa-router's wrap) so
-  // Rollup code-splits each into its own chunk fetched on navigation instead
-  // of folding it into the main bundle. This is what actually keeps
-  // maplibre-gl/pmtiles (the map) and xterm (the terminal) out of the
-  // initial load — manualChunks alone doesn't help when the route
-  // components are statically imported here, since the browser must still
-  // fetch every statically-imported chunk before the app can render.
-  const lazy = (loader) => wrap({ asyncComponent: loader });
+  import Login from './routes/Login.svelte';
+  import Dashboard from './routes/Dashboard.svelte';
+  import Channels from './routes/Channels.svelte';
+  import AudioDevices from './routes/AudioDevices.svelte';
+  import Ptt from './routes/Ptt.svelte';
+  import Kiss from './routes/Kiss.svelte';
+  import Agw from './routes/Agw.svelte';
+  import Igate from './routes/Igate.svelte';
+  import Digipeater from './routes/Digipeater.svelte';
+  import Beacons from './routes/Beacons.svelte';
+  import Callsign from './routes/Callsign.svelte';
+  import Gps from './routes/Gps.svelte';
+  import Simulation from './routes/Simulation.svelte';
+  import PositionLog from './routes/PositionLog.svelte';
+  import Logs from './routes/Logs.svelte';
+  import SystemLogs from './routes/SystemLogs.svelte';
+  import LiveMapV2 from './routes/LiveMapV2.svelte';
+  import Stations from './routes/Stations.svelte';
+  import About from './routes/About.svelte';
+  import Preferences from './routes/Preferences.svelte';
+  import MapsSettings from './routes/MapsSettings.svelte';
+  import StorageSettings from './routes/StorageSettings.svelte';
+  import MessagesSettings from './routes/MessagesSettings.svelte';
+  import BeaconSettings from './routes/BeaconSettings.svelte';
+  import Messages from './routes/Messages.svelte';
+  import Terminal from './routes/Terminal.svelte';
+  import TerminalTranscripts from './routes/TerminalTranscripts.svelte';
+  import Actions from './routes/Actions.svelte';
 
   const baseRoutes = {
-    '/login': lazy(() => import('./routes/Login.svelte')),
-    '/': lazy(() => import('./routes/Dashboard.svelte')),
-    '/map': lazy(() => import('./routes/LiveMapV2.svelte')),
-    '/stations': lazy(() => import('./routes/Stations.svelte')),
-    '/messages': lazy(() => import('./routes/Messages.svelte')),
-    '/messages/*': lazy(() => import('./routes/Messages.svelte')),
-    '/terminal': lazy(() => import('./routes/Terminal.svelte')),
-    '/terminal/transcripts': lazy(() => import('./routes/TerminalTranscripts.svelte')),
-    '/actions': lazy(() => import('./routes/Actions.svelte')),
-    '/channels': lazy(() => import('./routes/Channels.svelte')),
-    '/audio-devices': lazy(() => import('./routes/AudioDevices.svelte')),
-    '/ptt': lazy(() => import('./routes/Ptt.svelte')),
-    '/kiss': lazy(() => import('./routes/Kiss.svelte')),
-    '/agw': lazy(() => import('./routes/Agw.svelte')),
-    '/igate': lazy(() => import('./routes/Igate.svelte')),
-    '/digipeater': lazy(() => import('./routes/Digipeater.svelte')),
-    '/beacons': lazy(() => import('./routes/Beacons.svelte')),
-    '/callsign': lazy(() => import('./routes/Callsign.svelte')),
-    '/gps': lazy(() => import('./routes/Gps.svelte')),
-    '/simulation': lazy(() => import('./routes/Simulation.svelte')),
-    '/position-log': lazy(() => import('./routes/PositionLog.svelte')),
-    '/logs': lazy(() => import('./routes/Logs.svelte')),
-    '/system-logs': lazy(() => import('./routes/SystemLogs.svelte')),
-    '/preferences': lazy(() => import('./routes/Preferences.svelte')),
-    '/preferences/beacons': lazy(() => import('./routes/BeaconSettings.svelte')),
-    '/preferences/maps': lazy(() => import('./routes/MapsSettings.svelte')),
-    '/preferences/storage': lazy(() => import('./routes/StorageSettings.svelte')),
-    '/preferences/messages': lazy(() => import('./routes/MessagesSettings.svelte')),
-    '/about': lazy(() => import('./routes/About.svelte')),
+    '/login': Login,
+    '/': Dashboard,
+    '/map': LiveMapV2,
+    '/stations': Stations,
+    '/messages': Messages,
+    '/messages/*': Messages,
+    '/terminal': Terminal,
+    '/terminal/transcripts': TerminalTranscripts,
+    '/actions': Actions,
+    '/channels': Channels,
+    '/audio-devices': AudioDevices,
+    '/ptt': Ptt,
+    '/kiss': Kiss,
+    '/agw': Agw,
+    '/igate': Igate,
+    '/digipeater': Digipeater,
+    '/beacons': Beacons,
+    '/callsign': Callsign,
+    '/gps': Gps,
+    '/simulation': Simulation,
+    '/position-log': PositionLog,
+    '/logs': Logs,
+    '/system-logs': SystemLogs,
+    '/preferences': Preferences,
+    '/preferences/beacons': BeaconSettings,
+    '/preferences/maps': MapsSettings,
+    '/preferences/storage': StorageSettings,
+    '/preferences/messages': MessagesSettings,
+    '/about': About,
   };
   const routes = (() => {
     if (Platform.kind !== 'android') return baseRoutes;
