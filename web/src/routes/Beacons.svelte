@@ -66,6 +66,10 @@
   let savingSB = $state(false);
 
   let beacons = $state([]);
+  // Beacon ids currently mid-flight on the inline enable/disable toggle,
+  // so the switch can show a disabled state and can't be double-fired
+  // while the PUT is in-flight.
+  let togglingBeaconIds = $state(new Set());
   // Channels come from the shared channelsStore (D9) so every picker
   // page sees coherent backing state. Legacy local `channels` array is
   // retained only as a $derived view on top of the store so the modal
@@ -567,6 +571,26 @@
     }
   }
 
+  // Inline enable/disable from the card, without opening the edit
+  // modal. There is no dedicated partial-update route for beacons (as
+  // there is for channels), so this PUTs the full row back with only
+  // `enabled` flipped -- everything else is unchanged.
+  async function toggleBeaconEnabled(row, next) {
+    togglingBeaconIds.add(row.id);
+    togglingBeaconIds = new Set(togglingBeaconIds);
+    try {
+      const { id, ...rest } = row;
+      const updated = await api.put(`/beacons/${row.id}`, { ...rest, enabled: next });
+      beacons = beacons.map((b) => (b.id === row.id ? updated : b));
+      toasts.success(`Beacon ${next ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      toasts.error(`Failed to ${next ? 'enable' : 'disable'} beacon: ${err.message}`);
+    } finally {
+      togglingBeaconIds.delete(row.id);
+      togglingBeaconIds = new Set(togglingBeaconIds);
+    }
+  }
+
   // --- Cursor-on-Target (CoT) tabs -------------------------------------
   // CoT targets are only ever created from the live map's "Add CoT"
   // dialog -- this page can view, manually resend, and delete them, but
@@ -697,7 +721,12 @@
             {/if}
           </div>
           <div class="beacon-badges">
-            <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+            <Toggle
+              checked={b.enabled}
+              onCheckedChange={(v) => toggleBeaconEnabled(b, v)}
+              disabled={togglingBeaconIds.has(b.id)}
+              aria-label={`${b.enabled ? 'Disable' : 'Enable'} beacon ${beaconLabel(b, stationCallsign)}`}
+            />
             {#if b.type === 'object'}
               <Badge variant="info">Object</Badge>
             {:else if b.type === 'tracker'}
