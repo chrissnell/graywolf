@@ -195,7 +195,8 @@
     min-width: 0; /* prevent flex item from expanding beyond viewport width */
     margin-left: var(--sidebar-width);
     padding: 24px;
-    max-width: 1200px;
+    /* Commented out to allow app to use full width */
+    /* max-width: 1200px; */ 
     display: flex;
     flex-direction: column;
   }
