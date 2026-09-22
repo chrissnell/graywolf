@@ -239,7 +239,7 @@
   // LogViewer now — nothing to wire up here beyond passing `packets` through.
 </script>
 
-<PageHeader title="Dashboard" subtitle="Live station overview" />
+<PageHeader title={stationCallsign ? `${stationCallsign} Dashboard` : 'Dashboard'} subtitle="Live station overview" />
 
 {#if offline}
   <div class="conn-lost" role="alert">
