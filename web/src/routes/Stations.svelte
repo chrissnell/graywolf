@@ -40,6 +40,11 @@
     { value: 'IS', label: 'IS', cls: 'b-is' },
   ];
 
+  const RXPATH_OPTIONS = [
+    { value: 'direct', label: 'Direct RF', cls: 'b-direct' },
+    { value: 'digi',   label: 'Digipeated', cls: 'b-digi' },
+  ];
+
   const RETINA = typeof window !== 'undefined' && window.devicePixelRatio > 1.5;
   const SHEETS = RETINA ? SPRITE_URLS_2X : SPRITE_URLS;
   const ICON_PX = 20;
@@ -69,6 +74,10 @@
   let filterDirections = $state(new Set());
   let dirDropOpen      = $state(false);
   let dirDropEl        = $state(null);
+
+  let filterRxPath  = $state(new Set());
+  let rxPathDropOpen = $state(false);
+  let rxPathDropEl   = $state(null);
 
   // Sort
   let sortCol = $state('last_heard');
@@ -139,6 +148,21 @@
   /** Composite key for a symbol used in selectedIcons set and dropdown. */
   function iconKey(table, code) { return `${table}${code}`; }
 
+  // RX Path badge: null for TX/IS rows (no reception path to report).
+  // hops is omitempty on the wire, so a direct reception's 0 arrives as
+  // undefined -- treat any falsy value as "no hops".
+  function rxPathLabel(s) {
+    if (s.direction !== 'RX') return null;
+    return s.hops ? 'Digipeated' : 'Direct RF';
+  }
+  function rxPathCls(s) {
+    return rxPathLabel(s) === 'Direct RF' ? 'b-direct' : 'b-digi';
+  }
+  function rxPathKey(s) {
+    const label = rxPathLabel(s);
+    return label === 'Direct RF' ? 'direct' : label === 'Digipeated' ? 'digi' : null;
+  }
+
   /** "time ago" relative label. */
   function timeAgo(ts) {
     const diff = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -197,7 +221,7 @@
   $effect(() => {
     // Access all filter state so this effect tracks them.
     filterCallsign; filterAlias; hasAliasOnly; todayOnly;
-    filterComment; selectedIcons; filterDirections; sortCol; sortDir; pageSize;
+    filterComment; selectedIcons; filterDirections; filterRxPath; sortCol; sortDir; pageSize;
     currentPage = 1;
   });
 
@@ -236,6 +260,15 @@
       list = list.filter(s => filterDirections.has(s.direction));
     }
 
+    // RX Path multiselect (Direct RF / Digipeated); TX and IS rows have no
+    // key and are excluded whenever this filter is active.
+    if (filterRxPath.size > 0) {
+      list = list.filter(s => {
+        const key = rxPathKey(s);
+        return key !== null && filterRxPath.has(key);
+      });
+    }
+
     // Comment LIKE filter
     if (filterComment.trim()) {
       const q = filterComment.trim().toLowerCase();
@@ -250,6 +283,7 @@
         case 'alias':      va = a.alias;     vb = b.alias;     break;
         case 'last_heard': va = new Date(a.last_heard).getTime(); vb = new Date(b.last_heard).getTime(); break;
         case 'icon':       va = iconLabel(a.symbol_table, a.symbol_code); vb = iconLabel(b.symbol_table, b.symbol_code); break;
+        case 'rxpath':     va = rxPathLabel(a) || ''; vb = rxPathLabel(b) || ''; break;
         case 'distance':   va = a.distKm  ?? Infinity; vb = b.distKm  ?? Infinity; break;
         case 'bearing':    va = a.bearing ?? Infinity; vb = b.bearing ?? Infinity; break;
         case 'comment':    va = a.comment || ''; vb = b.comment || ''; break;
@@ -377,6 +411,12 @@
     filterDirections = next;
   }
 
+  function toggleRxPath(val) {
+    const next = new Set(filterRxPath);
+    if (next.has(val)) next.delete(val); else next.add(val);
+    filterRxPath = next;
+  }
+
   // Close icon dropdown on outside click; also clear the search.
   function onIconDropKey(e) {
     if (e.key === 'Escape') { iconDropOpen = false; iconSearch = ''; }
@@ -401,6 +441,19 @@
     const dismiss = () => { dirDropOpen = false; };
     const onKey   = (e) => { if (e.key === 'Escape') dismiss(); };
     const onDown  = (e) => { if (dirDropEl && !dirDropEl.contains(e.target)) dismiss(); };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onDown);
+    };
+  });
+
+  $effect(() => {
+    if (!rxPathDropOpen) return;
+    const dismiss = () => { rxPathDropOpen = false; };
+    const onKey   = (e) => { if (e.key === 'Escape') dismiss(); };
+    const onDown  = (e) => { if (rxPathDropEl && !rxPathDropEl.contains(e.target)) dismiss(); };
     document.addEventListener('keydown', onKey);
     document.addEventListener('pointerdown', onDown);
     return () => {
@@ -482,6 +535,7 @@
               <th class="th-sortable" onclick={() => setSort('alias')}>Alias{sortIndicator('alias')}</th>
             {/if}
             <th class="th-sortable" onclick={() => setSort('last_heard')}>Last Heard{sortIndicator('last_heard')}</th>
+            <th class="th-sortable" onclick={() => setSort('rxpath')}>RX Path{sortIndicator('rxpath')}</th>
             <th class="th-sortable" onclick={() => setSort('icon')}>Icon{sortIndicator('icon')}</th>
             <th class="th-sortable" onclick={() => setSort('distance')}>Distance{sortIndicator('distance')}</th>
             <th class="th-sortable" onclick={() => setSort('bearing')}>Bearing{sortIndicator('bearing')}</th>
@@ -525,6 +579,41 @@
                             type="checkbox"
                             checked={filterDirections.has(opt.value)}
                             onchange={() => toggleDirection(opt.value)}
+                          />
+                          <span class="badge {opt.cls}">{opt.label}</span>
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            </td>
+            <td class="filter-rxpath-cell">
+              <div class="icon-drop-wrap" bind:this={rxPathDropEl}>
+                <button
+                  type="button"
+                  class="icon-drop-btn"
+                  onclick={() => { rxPathDropOpen = !rxPathDropOpen; }}
+                  aria-expanded={rxPathDropOpen}
+                  aria-haspopup="listbox"
+                >
+                  {filterRxPath.size > 0 ? `${filterRxPath.size} selected` : 'All'}
+                  <span class="icon-drop-caret">▾</span>
+                </button>
+                {#if rxPathDropOpen}
+                  <div class="icon-drop-panel" role="listbox" aria-multiselectable="true">
+                    <button
+                      type="button"
+                      class="icon-drop-clear"
+                      onclick={() => { filterRxPath = new Set(); }}
+                    >Clear selection</button>
+                    <div class="icon-drop-list">
+                      {#each RXPATH_OPTIONS as opt}
+                        <label class="icon-drop-item">
+                          <input
+                            type="checkbox"
+                            checked={filterRxPath.has(opt.value)}
+                            onchange={() => toggleRxPath(opt.value)}
                           />
                           <span class="badge {opt.cls}">{opt.label}</span>
                         </label>
@@ -592,21 +681,36 @@
         <tbody>
           {#if pagedRows.length === 0}
             <tr>
-              <td colspan={posLogEnabled ? 9 : 8} class="empty">No stations match the current filters.</td>
+              <td colspan={posLogEnabled ? 10 : 9} class="empty">No stations match the current filters.</td>
             </tr>
           {:else}
             {#each pagedRows as s (s.callsign)}
               {@const pos = s.positions?.[0]}
               {@const dirCls = s.direction === 'RX' ? 'b-rx' : s.direction === 'TX' ? 'b-tx' : 'b-is'}
               <tr class="station-row">
-                <!-- Station (callsign, click → map) -->
+                <!-- Station (crosshair icon, click → map; callsign is plain text) -->
                 <td class="td-callsign">
-                  <button
-                    type="button"
-                    class="callsign-link"
-                    onclick={() => goToMap(s)}
-                    title="Open on Live Map"
-                  >{s.callsign}</button>
+                  <div class="callsign-cell">
+                    {#if pos}
+                      <button
+                        type="button"
+                        class="locate-btn"
+                        onclick={() => goToMap(s)}
+                        title={`Show ${s.callsign} on the map`}
+                        aria-label={`Show ${s.callsign} on the map`}
+                      >
+                        <svg viewBox="0 0 16 16" width="13" height="13" aria-hidden="true">
+                          <circle cx="8" cy="8" r="4" fill="none" stroke="currentColor" stroke-width="1.3" />
+                          <circle cx="8" cy="8" r="1" fill="currentColor" />
+                          <line x1="8" y1="0.5" x2="8" y2="3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                          <line x1="8" y1="13" x2="8" y2="15.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                          <line x1="0.5" y1="8" x2="3" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                          <line x1="13" y1="8" x2="15.5" y2="8" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" />
+                        </svg>
+                      </button>
+                    {/if}
+                    <span class="callsign-text">{s.callsign}</span>
+                  </div>
                 </td>
 
                 <!-- Alias (inline edit, only when position log enabled) -->
@@ -643,6 +747,15 @@
                     <span>{timeAgo(s.last_heard)}</span>
                     <span class="badge {dirCls}">{s.direction === 'IS' ? 'IS' : s.direction}</span>
                   </div>
+                </td>
+
+                <!-- RX Path (Direct RF / Digipeated; blank for TX/IS) -->
+                <td class="td-rxpath">
+                  {#if rxPathLabel(s)}
+                    <span class="badge {rxPathCls(s)}">{rxPathLabel(s)}</span>
+                  {:else}
+                    —
+                  {/if}
                 </td>
 
                 <!-- Icon + name -->
@@ -794,6 +907,7 @@
   }
   .filter-alias-cell { min-width: 120px; }
   .filter-heard-cell { position: relative; min-width: 110px; vertical-align: top !important; }
+  .filter-rxpath-cell { position: relative; min-width: 110px; vertical-align: top !important; }
   .filter-icon-cell { position: relative; min-width: 120px; vertical-align: top !important; }
 
   /* Body rows */
@@ -804,14 +918,26 @@
   }
   .station-row:hover td { background: var(--color-surface-hover, rgba(255,255,255,0.04)); }
 
-  /* Callsign link */
-  .callsign-link {
-    background: none; border: none; padding: 0;
+  /* Callsign cell: crosshair locate icon (mirrors PacketLogViewer's
+     .pkt-locate) followed by the plain-text callsign. */
+  .callsign-cell {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .callsign-text {
     color: var(--color-primary); font-family: var(--font-mono);
     font-size: var(--text-sm); font-weight: 600;
-    cursor: pointer; text-decoration: none;
   }
-  .callsign-link:hover { text-decoration: underline; }
+  .locate-btn {
+    flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: none; padding: 0;
+    color: var(--color-text-dim); opacity: 0.55; cursor: pointer;
+    transition: opacity 0.12s ease, color 0.12s ease;
+  }
+  .locate-btn:hover,
+  .locate-btn:focus-visible {
+    opacity: 1; color: var(--color-info); outline: none;
+  }
 
   /* Alias cell */
   .alias-display {
@@ -835,6 +961,8 @@
   /* Last Heard */
   .td-heard { white-space: nowrap; }
 
+  .td-rxpath { white-space: nowrap; }
+
   /* Direction badges (mirrors LiveMapV2.svelte globals) */
   .badge {
     display: inline-block; padding: 1px 5px; border-radius: 3px;
@@ -844,6 +972,8 @@
   .b-rx  { background: var(--color-success, #2a7a2a); color: #fff; }
   .b-tx  { background: var(--color-warning, #8a6a00); color: #fff; }
   .b-is  { background: var(--color-info,    #1a5f8a); color: #fff; }
+  .b-direct { background: var(--color-success, #2a7a2a); color: #fff; }
+  .b-digi   { background: var(--color-warning, #8a6a00); color: #fff; }
 
   /* Icon cell */
   /* Inner flex wrapper — keeps display:flex off the <td> itself to avoid
