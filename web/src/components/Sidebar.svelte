@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte';
+  import { slide } from 'svelte/transition';
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
@@ -34,30 +35,67 @@
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
   ];
 
-  const allSettingsItems = [
-    { path: '/preferences', label: 'General' },
-    { path: '/callsign', label: 'Station Callsign' },
-    { path: '/audio-devices', label: 'Audio Devices' },
-    { path: '/ptt', label: 'PTT' },
-    { path: '/channels', label: 'Channels' },
-    { path: '/kiss', label: 'KISS' },
-    { path: '/gps', label: 'GPS' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/digipeater', label: 'Digipeater' },
-    { path: '/preferences/beacons', label: 'Cursor on Target' },
-    { path: '/preferences/maps', label: 'Maps' },
-    { path: '/preferences/navigation', label: 'Navigation' },
-    { path: '/position-log', label: 'Position Log' },
-    { path: '/preferences/messages', label: 'Messaging' },
-    { path: '/preferences/storage', label: 'Storage' },
-    { path: '/agw', label: 'AGW' },
-    { path: '/simulation', label: 'Simulation' },
+  // Settings items grouped into named categories, rendered as a
+  // single-open accordion (see expandedCategory below) instead of one
+  // flat list.
+  const settingsCategories = [
+    {
+      key: 'general',
+      label: 'General Settings',
+      items: [
+        { path: '/callsign', label: 'Station Callsign' },
+        { path: '/preferences', label: 'General' },
+        { path: '/preferences/storage', label: 'Storage' },
+      ],
+    },
+    {
+      key: 'io',
+      label: 'Input / Output Settings',
+      items: [
+        { path: '/channels', label: 'Channels' },
+        { path: '/audio-devices', label: 'Audio Devices' },
+        { path: '/ptt', label: 'PTT' },
+        { path: '/kiss', label: 'KISS' },
+      ],
+    },
+    {
+      key: 'operations',
+      label: 'Station Operations',
+      items: [
+        { path: '/igate', label: 'iGate' },
+        { path: '/digipeater', label: 'Digipeater' },
+        { path: '/preferences/messages', label: 'Messaging' },
+        { path: '/preferences/beacons', label: 'Cursor on Target' },
+      ],
+    },
+    {
+      key: 'maps',
+      label: 'Maps and Location',
+      items: [
+        { path: '/gps', label: 'GPS' },
+        { path: '/preferences/maps', label: 'Maps' },
+        { path: '/preferences/navigation', label: 'Navigation' },
+        { path: '/position-log', label: 'Position Log' },
+      ],
+    },
+    {
+      key: 'advanced',
+      label: 'Advanced',
+      items: [
+        { path: '/agw', label: 'AGW' },
+        { path: '/simulation', label: 'Simulation' },
+      ],
+    },
+    {
+      key: 'logs',
+      label: 'Logs',
+      items: [
+        { path: '/logs', label: 'APRS Logs' },
+        { path: '/system-logs', label: 'System Logs' },
+      ],
+    },
   ];
 
-  const allLogsItems = [
-    { path: '/logs', label: 'APRS Logs' },
-    { path: '/system-logs', label: 'System Logs' },
-  ];
   // mainItems carries the icon'd top section; it's filtered by the
   // same HIDDEN_ON_ANDROID set as the settings group so an entry like
   // /actions disappears from both places on Android.
@@ -66,20 +104,19 @@
       ? mainItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
       : mainItems,
   );
-  const navGroups = $derived([
-    {
-      label: 'Settings',
-      items: Platform.kind === 'android'
-        ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
-        : allSettingsItems,
-    },
-    {
-      label: 'Logs',
-      items: Platform.kind === 'android'
-        ? allLogsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
-        : allLogsItems,
-    },
-  ]);
+
+  // Same Android filtering as visibleMainItems, applied per-category;
+  // a category left with zero items (e.g. Advanced, whose two items are
+  // both Android-hidden) is dropped entirely rather than shown empty.
+  const visibleSettingsCategories = $derived(
+    (Platform.kind === 'android'
+      ? settingsCategories.map((cat) => ({
+          ...cat,
+          items: cat.items.filter((it) => !HIDDEN_ON_ANDROID.has(it.path)),
+        }))
+      : settingsCategories
+    ).filter((cat) => cat.items.length > 0),
+  );
 
   let currentPath = $state('');
   $effect(() => {
@@ -148,21 +185,42 @@
   let isBeaconsActive = $derived(currentPath === '/beacons' || currentPath.startsWith('/beacons/'));
   let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
-  // Per-group active item: longest-prefix match wins. This prevents e.g.
-  // '/preferences/maps' from highlighting both the Maps entry and a
-  // 'General' (/preferences) entry — only the most specific match lights up.
-  function activePathFor(items, path) {
-    let best = '';
-    for (const it of items) {
-      if (path === it.path || path.startsWith(it.path + '/')) {
-        if (it.path.length > best.length) best = it.path;
+  // Cross-category longest-prefix match: finds which settings item most
+  // specifically matches the current path. Longest match wins so e.g.
+  // '/preferences/maps' resolves to the Maps category rather than
+  // General's '/preferences' (a prefix of several other settings sub-routes).
+  function settingsMatchFor(categories, path) {
+    let bestPath = '';
+    let bestCategoryKey = null;
+    for (const cat of categories) {
+      for (const it of cat.items) {
+        if ((path === it.path || path.startsWith(it.path + '/')) && it.path.length > bestPath.length) {
+          bestPath = it.path;
+          bestCategoryKey = cat.key;
+        }
       }
     }
-    return best;
+    return bestCategoryKey ? { categoryKey: bestCategoryKey, itemPath: bestPath } : null;
   }
-  let activeGroupPaths = $derived(
-    navGroups.map((g) => activePathFor(g.items, currentPath)),
-  );
+  let settingsActiveMatch = $derived(settingsMatchFor(visibleSettingsCategories, currentPath));
+
+  // Which settings category is expanded — accordion, only one at a time.
+  let expandedCategory = $state(null);
+
+  function toggleCategory(key) {
+    expandedCategory = expandedCategory === key ? null : key;
+  }
+
+  // Auto-expand the category containing the current route, and collapse
+  // all categories when navigating elsewhere (main items, About). Only
+  // depends on settingsActiveMatch, so a manual toggle-closed on the
+  // current page isn't immediately reopened.
+  $effect(() => {
+    const match = settingsActiveMatch;
+    untrack(() => {
+      expandedCategory = match ? match.categoryKey : null;
+    });
+  });
 </script>
 
 {#snippet navItems()}
@@ -289,38 +347,56 @@
       </li>
     {/each}
   </ul>
-  {#each navGroups as group, groupIdx}
-    <div class="nav-group">
-      <h2 class="nav-group-label">{group.label}</h2>
-      <ul class="nav-list">
-        {#each group.items as item}
-          {@const unread = item.badge ? badgeCount(item.badge) : 0}
-          <li>
-            <a
-              href={item.path}
-              use:link
-              class="nav-link"
-              class:has-icon={item.icon}
-              class:active={item.path === activeGroupPaths[groupIdx]}
-              aria-current={currentPath === item.path ? 'page' : undefined}
-              aria-label={unread > 0 ? `${item.label}, ${unread} unread` : undefined}
-              onclick={onNavClick}
+  <div class="nav-group settings-group">
+    <h2 class="nav-group-label">Settings</h2>
+    {#each visibleSettingsCategories as cat}
+      {@const isOpen = expandedCategory === cat.key}
+      <div class="settings-category">
+        <button
+          type="button"
+          class="settings-category-header"
+          aria-expanded={isOpen}
+          aria-controls={`settings-panel-${cat.key}`}
+          onclick={() => toggleCategory(cat.key)}
+        >
+          <span class="settings-category-chevron" class:open={isOpen} aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
-              {#if item.icon}
-                <span class="nav-icon" aria-hidden="true">
-                  <Icon name={item.icon} size="sm" />
-                  {#if unread > 0}
-                    <span class="nav-icon-dot" aria-hidden="true"></span>
-                  {/if}
-                </span>
-              {/if}
-              <span class="nav-label">{item.label}</span>
-            </a>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/each}
+              <polyline points="9 6 15 12 9 18" />
+            </svg>
+          </span>
+          <span class="settings-category-label">{cat.label}</span>
+        </button>
+        {#if isOpen}
+          <ul id={`settings-panel-${cat.key}`} class="nav-list settings-category-items" transition:slide={{ duration: 150 }}>
+            {#each cat.items as item}
+              <li>
+                <a
+                  href={item.path}
+                  use:link
+                  class="nav-link"
+                  class:active={settingsActiveMatch?.itemPath === item.path}
+                  aria-current={currentPath === item.path ? 'page' : undefined}
+                  onclick={onNavClick}
+                >
+                  <span class="nav-label">{item.label}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/each}
+  </div>
   <div class="nav-trailing">
     <a
       href="/about"
@@ -653,13 +729,6 @@
     padding: 0;
   }
 
-  /* Divider between successive nav groups (e.g. above Logs, below Settings). */
-  .nav-group + .nav-group {
-    border-top: 1px solid var(--border-color);
-    margin-top: 4px;
-    padding-top: 4px;
-  }
-
   .nav-group-label {
     font-size: 10px;
     font-weight: 600;
@@ -670,6 +739,48 @@
     padding: 10px 16px 6px;
     margin: 0;
     /* border-top: 1px solid var(--border-color); */
+  }
+
+  .settings-category-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    padding: 10px 16px 6px;
+    cursor: pointer;
+    transition: color 0.15s, opacity 0.15s;
+  }
+
+  .settings-category-header:hover {
+    opacity: 1;
+    color: var(--text-primary);
+  }
+
+  .settings-category-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+
+  .settings-category-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  .settings-category-items {
+    padding-bottom: 4px;
   }
 
   .nav-link {
