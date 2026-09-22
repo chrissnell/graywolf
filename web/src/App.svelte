@@ -275,7 +275,7 @@
   :global(html.force-compact-menu) .main-content {
     margin-left: 0;
     margin-top: calc(56px + var(--safe-area-top));
-    padding: 16px;
+    /* padding: 16px; */
   }
   :global(html.force-compact-menu) .main-content.full-bleed {
     height: calc(100vh - 56px - var(--safe-area-top));

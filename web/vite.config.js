@@ -5,11 +5,17 @@ export default defineConfig({
   plugins: [svelte()],
   build: {
     outDir: 'dist',
-    emptyOutDir: false,
-    // vendor-map (maplibre-gl + pmtiles) is intentionally large but is only
-    // ever fetched lazily when navigating to /map or /preferences/maps
-    // (routes are dynamically imported in App.svelte), so it never inflates
-    // the initial load. Raise the limit so that expected chunk isn't flagged.
+    // Clean dist/ on every build. With this false, stale hashed chunks from
+    // prior builds piled up under dist/assets/ (100+ found in one repo) and
+    // got embedded into the Go binary forever (web/embed.go's go:embed),
+    // needlessly bloating it and inviting confusion about which bundle is
+    // live.
+    emptyOutDir: true,
+    // vendor-map (maplibre-gl + pmtiles) is large; it's split into its own
+    // chunk so an unrelated app-code change doesn't bust its cache, but all
+    // routes (including the map) are statically imported in App.svelte, so
+    // it loads eagerly on every page. Raise the limit so that expected
+    // chunk isn't flagged.
     chunkSizeWarningLimit: 1700,
     rollupOptions: {
       output: {

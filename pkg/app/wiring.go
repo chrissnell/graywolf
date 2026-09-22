@@ -1701,7 +1701,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	})
 	mux.Handle("GET /tiles/", webauth.RequireAuth(a.authStore)(tilesAdapter))
 
-	mux.Handle("/", web.SPAHandler())
+	mux.Handle("/", web.SPAHandler(a.cfg.Version))
 
 	a.httpSrv = &http.Server{
 		Addr:              a.cfg.HTTPAddr,
