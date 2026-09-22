@@ -444,29 +444,47 @@
   }
 
   // Hands a Navigate link off to its native app via a custom URL scheme
-  // (Organic Maps `om://`, Apple Maps `maps://`) without navigating this tab
-  // away from the live map. Desktop browsers have no Universal/App-Link
-  // handoff (that's iOS/Android-only), so a plain https:// link just opens
-  // the website even with the app installed -- the scheme is what makes the
-  // native app open, on any OS/browser. The attempt runs in a throwaway
-  // hidden iframe so a browser that shows an error page for an unregistered
-  // scheme does so there, not in the live map; if the tab is still visible
-  // after NAV_FALLBACK_MS (nothing claimed the link), we open the https
-  // fallback in a new tab instead.
-  const NAV_FALLBACK_MS = 900;
+  // (Organic Maps `om://`, Apple Maps `maps://`). Desktop browsers have no
+  // Universal/App-Link handoff (that's iOS/Android-only), so a plain
+  // https:// link just opens the website even with the app installed -- the
+  // scheme is what makes the native app open, on any OS/browser.
+  //
+  // The scheme is set on THIS tab's location (top-level), not a hidden
+  // iframe: iOS/iPadOS Safari only reliably hands a scheme navigation off to
+  // its registered app -- and promptly fires blur/visibilitychange on this
+  // document -- when the navigation happens on the top frame. Routing it
+  // through a hidden iframe let the OS open the app *after* our fallback
+  // timer had already fired (the iframe's navigation doesn't reliably hide
+  // the top document in time), so operators saw both the app AND the https
+  // fallback tab open for every tap. A same-tab top-level navigation to an
+  // unregistered scheme is a silent no-op in every browser we support, so
+  // this is safe even when no app is installed to handle it.
+  //
+  // We race three signals -- blur (fires first, near-instant), pagehide,
+  // and visibilitychange -- because browsers vary in which one reports the
+  // app handoff soonest; whichever fires first cancels the fallback.
+  const NAV_FALLBACK_MS = 1200;
   function openNativeOrFallback(scheme, fallback) {
     let handedOff = false;
-    const onHide = () => { handedOff = true; };
-    document.addEventListener('visibilitychange', onHide, { once: true });
+    let fallbackTimer = null;
+    const markHandedOff = () => {
+      handedOff = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      cleanup();
+    };
+    function cleanup() {
+      window.removeEventListener('blur', markHandedOff);
+      window.removeEventListener('pagehide', markHandedOff);
+      document.removeEventListener('visibilitychange', markHandedOff);
+    }
+    window.addEventListener('blur', markHandedOff, { once: true });
+    window.addEventListener('pagehide', markHandedOff, { once: true });
+    document.addEventListener('visibilitychange', markHandedOff, { once: true });
 
-    const probe = document.createElement('iframe');
-    probe.style.display = 'none';
-    probe.src = scheme;
-    document.body.appendChild(probe);
+    window.location.href = scheme;
 
-    setTimeout(() => {
-      probe.remove();
-      document.removeEventListener('visibilitychange', onHide);
+    fallbackTimer = setTimeout(() => {
+      cleanup();
       if (!handedOff) window.open(fallback, '_blank', 'noopener,noreferrer');
     }, NAV_FALLBACK_MS);
   }
