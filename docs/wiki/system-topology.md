@@ -22,7 +22,7 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | HTTP listen (flag default) | `127.0.0.1:8080` | [`../../pkg/app/flags.go`](../../pkg/app/flags.go) |
 | HTTP listen (shipped systemd) | `0.0.0.0:8080` (overrides flag default) | [`../../packaging/systemd/graywolf.service`](../../packaging/systemd/graywolf.service) |
 | Server entry | `pkg/webapi/server.go` | [`../../pkg/webapi/`](../../pkg/webapi/) |
-| SPA fallback | `web/embed.go::SPAHandler` | [`../../web/embed.go`](../../web/embed.go) |
+| SPA fallback | `web/embed.go::SPAHandler(version)` -- `index.html` is served `Cache-Control: no-cache` with an ETag keyed off the build version (forces revalidation every load so a redeploy is never masked by a stale client cache); `/assets/*` (Vite content-hashed) get `public, max-age=31536000, immutable`; everything else under `dist/` (favicons, fonts, aprs-symbols) gets `public, max-age=3600`. `web/vite.config.js` sets `emptyOutDir: true` so stale hashed chunks from prior builds don't accumulate and get embedded. | [`../../web/embed.go`](../../web/embed.go) |
 | Public (no-auth) endpoints | `/api/version`, `/api/auth/setup` | [`../../pkg/webapi/server.go`](../../pkg/webapi/server.go) |
 | WebSocket endpoint | `GET /api/ax25/terminal` (auth required, same-origin only). One WS per active LAPB session; multi-tab via multiple WS. JSON envelopes (`pkg/ax25termws/envelope.go`) carry connect/data/disconnect/abort and state/data_rx/link_stats/error in both directions. | [`../../pkg/webapi/ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) |
 | OpenAPI reference | [`../handbook/api.html`](../handbook/api.html), [`../handbook/openapi.yaml`](../handbook/openapi.yaml) | (handbook copy of swag-generated spec) |

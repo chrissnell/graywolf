@@ -10,6 +10,8 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // The all: prefix includes dotfiles like .keep, so the embed compiles
@@ -39,15 +41,25 @@ func Handler() http.Handler {
 // SPAHandler returns an http.Handler that serves static assets from the
 // embedded dist/ and falls back to index.html for unmatched paths. This
 // enables client-side routing in the Svelte SPA.
-func SPAHandler() http.Handler {
+//
+// version seeds index.html's ETag. Without an explicit Cache-Control,
+// mobile Safari can keep serving a pre-redeploy index.html (and the
+// stale hashed bundle it points at) indefinitely, which surfaces as a
+// full-page reload/flicker on every SPA navigation until the operator
+// force-refreshes. Keying index.html's revalidation off the build
+// version guarantees every release invalidates old clients; the
+// content-hashed /assets/ files it references are safe to cache
+// forever since their filename changes whenever their content does.
+func SPAHandler(version string) http.Handler {
 	fsys := FS()
 	fileServer := http.FileServer(http.FS(fsys))
+	indexETag := strconv.Quote(version)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Try to serve the exact file first.
 		path := r.URL.Path
 		if path == "/" {
-			fileServer.ServeHTTP(w, r)
+			serveIndex(w, r, fileServer, indexETag)
 			return
 		}
 
@@ -55,12 +67,31 @@ func SPAHandler() http.Handler {
 		name := path[1:]
 		if f, err := fsys.Open(name); err == nil {
 			f.Close()
+			setAssetCacheControl(w, path)
 			fileServer.ServeHTTP(w, r)
 			return
 		}
 
 		// File not found — serve index.html for SPA routing.
 		r.URL.Path = "/"
-		fileServer.ServeHTTP(w, r)
+		serveIndex(w, r, fileServer, indexETag)
 	})
+}
+
+func serveIndex(w http.ResponseWriter, r *http.Request, fileServer http.Handler, etag string) {
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("ETag", etag)
+	fileServer.ServeHTTP(w, r)
+}
+
+// setAssetCacheControl distinguishes Vite's content-hashed bundle files
+// (safe to cache forever) from everything else under dist/ that isn't
+// hash-invalidated (favicons, fonts, aprs-symbols sprites), which get a
+// short cache instead.
+func setAssetCacheControl(w http.ResponseWriter, path string) {
+	if strings.HasPrefix(path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 }
