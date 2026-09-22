@@ -8,7 +8,7 @@
   import { downloadsState } from '../lib/maps/downloads-store.svelte.js';
   import { catalogStore } from '../lib/maps/catalog-store.svelte.js';
   import { localBoundsStore } from '../lib/maps/local-bounds-store.svelte.js';
-  import { formatBytes } from '../lib/maps/format-bytes.js';
+  import { formatBytes } from '../lib/format-bytes.js';
   import { buildCountryTree } from '../lib/maps/catalog-tree.js';
   import { groupDownloadedByCountry } from '../lib/maps/downloaded-groups.js';
   import RegionPicker from '../lib/maps/region-picker.svelte';

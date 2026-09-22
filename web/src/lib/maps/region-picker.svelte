@@ -4,7 +4,7 @@
   import { catalogStore } from './catalog-store.svelte.js';
   import { buildCountryTree, buildWorldNode } from './catalog-tree.js';
   import { downloadsState } from './downloads-store.svelte.js';
-  import { formatBytes } from './format-bytes.js';
+  import { formatBytes } from '../format-bytes.js';
 
   let { open = $bindable(false) } = $props();
   let query = $state('');
