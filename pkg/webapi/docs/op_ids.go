@@ -56,6 +56,23 @@ const (
 	OpUpdateSmartBeacon = "updateSmartBeacon"
 )
 
+// Cursor-on-Target (CoT) — singleton settings at /api/cot-settings plus
+// the per-object collection at /api/cot-targets. A CoT target is a
+// named/iconed/commented APRS object dropped from the live map that
+// sends immediately, then retransmits a finite number of times on a
+// decaying schedule (pkg/cot). Settings mirror the Beacons send-to/
+// channel/destination/path shape; targets snapshot those settings at
+// creation time.
+const (
+	OpGetCotSettings           = "getCotSettings"
+	OpUpdateCotSettings        = "updateCotSettings"
+	OpListCotTargets           = "listCotTargets"
+	OpCreateCotTarget          = "createCotTarget"
+	OpSendCotTarget            = "sendCotTarget"
+	OpDeleteCotTarget          = "deleteCotTarget"
+	OpDeleteInactiveCotTargets = "deleteInactiveCotTargets"
+)
+
 // Audio devices resource — /api/audio-devices (Phase 2).
 //
 // Sub-resource endpoints (available, scan-levels, levels, gain) stay

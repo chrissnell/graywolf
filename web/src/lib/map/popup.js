@@ -8,6 +8,8 @@ import { esc, timeAgo, fmtLat, fmtLon, viaCls, viaText, formatWeatherRows } from
 import { rfReachableDespiteNonRfLatest } from './rf-only-core.js';
 import { unitsState } from '../settings/units-store.svelte.js';
 import { formatSpeed, formatAltitude } from '../settings/units.js';
+import { organicMapsLinks, googleMapsUrl, appleMapsLinks } from './nav-links.js';
+import { navProviderState } from '../settings/navigation-store.svelte.js';
 
 // renderStationPopupHTML(station, { hasStation }) -> HTML string
 //
@@ -158,6 +160,9 @@ const ICON_QRZ = icon(
     '<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'
 );
 
+// lucide "navigation" (arrow) -- marks the Navigate action row.
+const ICON_NAVIGATE = icon('<polygon points="3 11 22 2 13 21 11 13 3 11"/>');
+
 // renderStationActionsHTML(station) -> HTML string (or '' to suppress)
 //
 // Action rows shown for a real heard station: open a direct message thread,
@@ -169,7 +174,14 @@ const ICON_QRZ = icon(
 // LiveMapV2.svelte).
 export function renderStationActionsHTML(s) {
   const call = s.callsign;
-  if (!call || s.is_object) return '';
+  if (!call) return '';
+
+  // Objects/items aren't operators you can message or look up, so they only
+  // get Navigate -- Message/Logs/QRZ all need a real callsign.
+  if (s.is_object) {
+    const nav = renderNavigateHTML(s, call);
+    return nav ? `<div class="stn-actions" role="menu">${nav}</div>` : '';
+  }
 
   const upper = call.toUpperCase();
   // QRZ indexes operators by base callsign, not by APRS SSID, so strip any
@@ -182,7 +194,44 @@ export function renderStationActionsHTML(s) {
   let html = `<div class="stn-actions" role="menu">`;
   html += `<a class="stn-action stn-msg-link" role="menuitem" href="${msgHref}">${ICON_MESSAGE}<span class="stn-action-label">Message</span></a>`;
   html += `<a class="stn-action stn-log-link" role="menuitem" href="${logHref}">${ICON_LOGS}<span class="stn-action-label">APRS logs</span></a>`;
+  html += renderNavigateHTML(s, upper);
   html += `<a class="stn-action stn-qrz-link" role="menuitem" href="${qrzHref}" target="_blank" rel="noopener noreferrer">${ICON_QRZ}<span class="stn-action-label">QRZ</span></a>`;
   html += `</div>`;
   return html;
+}
+
+// renderNavigateHTML(station, name) -> HTML string (or '' when unpositioned)
+//
+// A single action row -- like Message/Logs/QRZ -- that opens the operator's
+// preferred provider (Preferences > Navigation, navProviderState), rather
+// than a dropdown of all three.
+//
+// Organic Maps and Apple Maps links carry a `data-nav-scheme` attribute (the
+// custom-protocol URL) alongside their `href` (the https fallback). LiveMapV2
+// intercepts clicks on that attribute and tries the scheme first, since a
+// desktop browser has no Universal/App-Link handoff and would otherwise just
+// open the href website even with the native app installed (see
+// openNativeOrFallback in LiveMapV2.svelte). Google Maps has no desktop app,
+// so it stays a plain link -- mobile OSes already auto-handoff its https URL.
+function renderNavigateHTML(s, name) {
+  const pos = s.positions && s.positions[0];
+  if (!pos) return '';
+
+  let href;
+  let scheme = '';
+  const provider = navProviderState.provider;
+  if (provider === 'organic') {
+    const om = organicMapsLinks(pos.lat, pos.lon, name);
+    href = om.fallback;
+    scheme = om.scheme;
+  } else if (provider === 'apple') {
+    const am = appleMapsLinks(pos.lat, pos.lon, name);
+    href = am.fallback;
+    scheme = am.scheme;
+  } else {
+    href = googleMapsUrl(pos.lat, pos.lon);
+  }
+
+  const schemeAttr = scheme ? ` data-nav-scheme="${scheme}"` : '';
+  return `<a class="stn-action stn-nav-link" role="menuitem" href="${href}"${schemeAttr} target="_blank" rel="noopener noreferrer">${ICON_NAVIGATE}<span class="stn-action-label">Navigate</span></a>`;
 }

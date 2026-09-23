@@ -170,6 +170,10 @@
   {/if}
 
   <div class="channel-details">
+    <div class="detail-row">
+      <span class="detail-label">Channel ID</span>
+      <span class="detail-value">{channel.id}</span>
+    </div>
     {#if !isKissOnly}
       <div class="detail-row">
         <span class="detail-label">Bit Rate</span>

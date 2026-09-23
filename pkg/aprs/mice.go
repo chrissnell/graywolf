@@ -42,7 +42,7 @@ var miceMessageLabels = [8]string{
 	"Returning", "In Service", "En Route", "Off Duty",
 }
 
-// parseMicE is invoked when the info field starts with '\'' or '`'.
+// parseMicE is invoked when the info field starts with '\” or '`'.
 // The frame is required to pull the latitude from the destination
 // address; if it's nil (e.g. ParseInfo without a frame) we bail.
 func parseMicE(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
@@ -358,14 +358,13 @@ func isMicEHighBit(c byte) bool {
 }
 
 // ErrMicELonAmbiguous reports that the Mic-E info-field longitude
-// decodes to an invalid value: either one of the three bytes is a
-// "no data" sentinel (0x20 SPACE or 0x7f DEL — both observed in the
-// wild from Yaesu / Kenwood / PicoAPRS firmware that beacons before
-// GPS lock), or the degrees byte combined with the destination's
-// +100° longitude offset bit yields a value outside the 0..179°
-// range the spec allows. The receiver MUST NOT plot any of these
-// states; doing so drops the station thousands of km from its real
-// position. parseMicE surfaces this as a warn-and-drop.
+// decodes to an invalid value: one of the three bytes is a "no data"
+// sentinel (0x20 SPACE — the APRS101 ch 10 convention for unknown
+// data, always rejected regardless of offset), or the degrees byte
+// still falls outside 0..179 after the offset/wrap normalisation
+// below (a corrupt byte, not a real longitude). The receiver MUST
+// NOT plot either state; doing so drops the station thousands of km
+// from its real position. parseMicE surfaces this as a warn-and-drop.
 var ErrMicELonAmbiguous = errors.New("mic-e: longitude ambiguous or out of range")
 
 // decodeMicELon decodes the 3-byte info-field longitude into decimal
@@ -377,16 +376,20 @@ func decodeMicELon(b []byte, offset int, sign float64) (float64, error) {
 	// APRS101 ch 10: a SPACE (0x20) in any of the three longitude
 	// bytes flags that field as unknown — the convention used when GPS
 	// has not locked or the encoder is otherwise unwilling to assert a
-	// value. Some firmware (PicoAPRS, certain Yaesu builds) uses DEL
-	// (0x7f) for the same purpose; both must be rejected. Combining
-	// either with the dest-byte-4 +100° offset would otherwise yield
-	// nonsense longitudes (104°E from a SPACE byte; 199° from a DEL
-	// byte → wraps to ~-161° and drops a German station off Alaska).
+	// value. Always rejected, regardless of the +100° offset.
 	for _, c := range b[:3] {
-		if c == ' ' || c == 0x7f {
+		if c == ' ' {
 			return 0, ErrMicELonAmbiguous
 		}
 	}
+	// 0x7f (DEL) is NOT a spec-reserved sentinel — byte-28 encodes it
+	// as the ordinary top-of-range digit 99, which some radios (e.g.
+	// NX0R-7, graywolf issue tracker) legitimately transmit. Combined
+	// with the dest's +100° offset bit it lands at raw degrees 199,
+	// which the wrap normalisation below (post issue #219) folds back
+	// to 9° — a valid, in-range longitude — so no special case is
+	// needed here regardless of the offset (issue #76's original
+	// concern predates the #219 offset-before-wrap reordering).
 	// Degrees: raw byte minus 28, then add the dest-supplied +100°
 	// offset, and ONLY THEN normalise the 180..189 / 190..199 wrap
 	// ranges per APRS101 ch 10. Order is load-bearing: the spec adds

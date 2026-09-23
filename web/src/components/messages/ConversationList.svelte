@@ -376,6 +376,8 @@
       >
         Delete
       </button>
+    </div>
+    <div class="actions-row">
       <button
         type="button"
         class="new-btn"
@@ -385,6 +387,7 @@
         data-testid="new-message"
       >
         <Icon name="plus" size="sm" />
+        New Message
       </button>
     </div>
   </header>
@@ -524,16 +527,17 @@
     box-shadow: 0 0 0 2px var(--color-primary-muted);
   }
 
-  /* Single consolidated toolbar — Fastmail-style. Master checkbox first
-     (sized to align with the per-row checkboxes that take its place
-     when select-mode kicks in), then filter pills, then bulk-delete
-     (only when something is selected), then New. */
   .toolbar {
     display: flex;
     align-items: center;
     gap: 6px;
     height: 36px;
-    padding-bottom: 4px;
+  }
+
+  .actions-row {
+    display: flex;
+    align-items: center;
+    padding-bottom: 8px;
   }
   .select-all {
     display: inline-flex;
@@ -622,24 +626,25 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--radius);
+    gap: 6px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 1px solid var(--color-success, #22c55e);
+    border-radius: 999px;
     background: transparent;
+    color: var(--color-success, #22c55e);
+    font-family: var(--font-mono);
+    font-size: 11px;
     cursor: pointer;
-    flex-shrink: 0;
-    color: var(--color-text-muted);
     transition: background 0.12s, color 0.12s, border-color 0.12s;
+    line-height: 1;
   }
   .new-btn:hover {
-    background: var(--color-surface-raised);
-    color: var(--color-primary);
-    border-color: var(--color-border);
+    background: var(--color-success, #22c55e);
+    color: white;
   }
   .new-btn:focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-success, #22c55e);
     outline-offset: 2px;
   }
 

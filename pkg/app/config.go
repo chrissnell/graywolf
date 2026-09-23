@@ -113,6 +113,22 @@ type Config struct {
 	// setupLogger. nil when the buffer is disabled/unavailable; the
 	// /api/system-logs endpoint then reports available:false.
 	LogBuffer *logbuffer.DB
+
+	// StorageLocation is "internal" or "sdcard" on Android, empty on desktop.
+	// Injected by the Kotlin Service via GRAYWOLF_STORAGE_LOCATION so Go can
+	// report where data currently lives without a platform-service round-trip.
+	StorageLocation string
+
+	// SdCardPath is the app's external-files directory on the removable SD card,
+	// as resolved by the Kotlin Service at startup. Empty on desktop or when no
+	// removable SD card is present.
+	SdCardPath string
+
+	// InternalPath is the app's internal files directory on Android (filesDir).
+	// Always set by the Kotlin Service, even when storage is currently on the SD
+	// card, so Go can report the internal path as a migration destination.
+	// Empty on desktop.
+	InternalPath string
 }
 
 // DefaultConfig returns a Config populated with the same defaults

@@ -21,7 +21,7 @@
   // Phase 3B removed them from the iGate DTO, and the PUT decoder uses
   // DisallowUnknownFields so sending them triggers a 400.
   let form = $state({
-    enabled: true, server: 'rotate.aprs2.net', port: '14580',
+    enabled: false, server: 'rotate.aprs2.net', port: '14580',
     server_filter: '', tx_channel: 0,
     simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
     rf_channel: 0, is_tx_via: '', software_name: 'graywolf', software_version: '0.1',
@@ -285,7 +285,7 @@
   // text type clears the seeded category so the input starts empty. The
   // prevType guard ensures this fires only on an actual type change, not
   // on every pattern keystroke.
-  let prevType = filterForm.type;
+  let prevType = $state('');
   $effect(() => {
     const t = filterForm.type;
     if (t === prevType) return;
@@ -335,10 +335,8 @@
     // for string/numeric fields (server, port, software_name, etc.) so
     // no UI-side || fallbacks are needed. Booleans still use ??
     // because the server can't distinguish "unset" from "explicit
-    // false". tx_channel is taken verbatim: 0 means "none (RX only)",
-    // a first-class, selectable choice now (see graywolf#396) — forcing
-    // it onto the first available channel here would silently re-arm TX
-    // and make "none" impossible to persist.
+    // false". tx_channel is taken verbatim: 0 means "auto" (resolveTxChannel
+    // picks the first APRS-eligible channel at runtime, same as messages).
     startChannelsStore();
     // Invalidate synchronously so the channel list is fresh before the
     // form seeds from it; then the poller keeps it current.
@@ -359,24 +357,28 @@
         }
       })(),
       (async () => {
-        const data = await api.get('/igate/config');
-        loadedServerFilter = data.server_filter ?? '';
-        form = {
-          enabled: data.enabled ?? false,
-          server: data.server,
-          port: String(data.port),
-          server_filter: data.server_filter ?? '',
-          tx_channel: data.tx_channel ?? 0,
-          simulation_mode: data.simulation_mode ?? false,
-          gate_rf_to_is: data.gate_rf_to_is ?? true,
-          gate_is_to_rf: data.gate_is_to_rf ?? false,
-          rf_channel: data.rf_channel,
-          is_tx_via: data.is_tx_via ?? '',
-          software_name: data.software_name,
-          software_version: data.software_version,
-        };
-        savedConfig = buildBody();
-        filters = await api.get('/igate/filters') || [];
+        try {
+          const data = await api.get('/igate/config');
+          loadedServerFilter = data.server_filter ?? '';
+          form = {
+            enabled: data.enabled ?? false,
+            server: data.server,
+            port: String(data.port),
+            server_filter: data.server_filter ?? '',
+            tx_channel: data.tx_channel ?? 0,
+            simulation_mode: data.simulation_mode ?? false,
+            gate_rf_to_is: data.gate_rf_to_is ?? true,
+            gate_is_to_rf: data.gate_is_to_rf ?? false,
+            rf_channel: data.rf_channel,
+            is_tx_via: data.is_tx_via ?? '',
+            software_name: data.software_name,
+            software_version: data.software_version,
+          };
+          savedConfig = buildBody();
+          filters = await api.get('/igate/filters') || [];
+        } catch (err) {
+          toasts.error('Failed to load iGate config: ' + (err.message || 'unknown error'));
+        }
       })(),
     ]);
   });
@@ -462,12 +464,14 @@
   function handleEnableToggleClick(e) {
     if (stationCallsignMissing && !form.enabled) {
       e.preventDefault();
+      toasts.error('Station callsign not set — visit the Station Callsign page before enabling the iGate.');
     }
   }
   function handleEnableToggleKeydown(e) {
     if (!stationCallsignMissing || form.enabled) return;
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
+      toasts.error('Station callsign not set — visit the Station Callsign page before enabling the iGate.');
     }
   }
 
@@ -480,9 +484,11 @@
     // Absorb the programmatic revert (next already matches saved) and
     // guard against re-entrancy while a save is in flight.
     if (!savedConfig || next === savedConfig.enabled || enableSaving) return;
-    // Preserve the disabled-Save safety: never auto-enable onto a
-    // non-TX-capable channel. Disabling is always allowed.
-    if (next && txBlock) {
+    // Mirror server-side logic: only block when tx_channel is being *changed*
+    // to a non-TX-capable value. An unchanged tx_channel is allowed even when
+    // not currently TX-capable (server skips the check too — idempotent pass-through).
+    const txChannelChanged = parseInt(form.tx_channel) !== (savedConfig?.tx_channel ?? 0);
+    if (next && txBlock && txChannelChanged) {
       form.enabled = savedConfig.enabled;
       toasts.error(`Cannot enable iGate: TX channel not TX-capable — ${txBlock.reason}.`);
       return;
@@ -729,7 +735,7 @@
         <FormField label="Port" id="ig-port">
           <Input id="ig-port" bind:value={form.port} type="number" placeholder="14580" />
         </FormField>
-        <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets and outbound APRS messages.">
+        <FormField label="TX Channel" id="ig-txch" hint="Radio channel used to transmit IS→RF gated packets and outbound APRS messages. Auto picks the first APRS-eligible channel at transmit time.">
           {#snippet children(describedBy)}
             <ChannelListbox
               id="ig-txch"
@@ -739,7 +745,7 @@
               ariaLabelledBy={describedBy}
               capabilityFilter={txPredicate}
               allowNone
-              noneLabel="None (RX only)"
+              noneLabel="Auto (first APRS-eligible channel)"
             />
           {/snippet}
         </FormField>

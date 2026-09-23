@@ -84,9 +84,9 @@ type Channel struct {
 	// The row's configuration is preserved for a later re-enable. Default
 	// true so pre-existing channels and any client that omits the field
 	// keep running. See graywolf#517.
-	Enabled        bool         `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt      time.Time    `json:"-"`
-	UpdatedAt      time.Time    `json:"-"`
+	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // PttConfig holds push-to-talk configuration for a channel. ChannelID
@@ -223,6 +223,7 @@ const (
 	KissTypeSerial    = "serial"
 	KissTypeBluetooth = "bluetooth"
 	KissTypeUsbSerial = "usbserial"
+	KissTypeBLEDevice = "ble-device" // direct BLE to KISS TNC (desktop)
 )
 
 // Channel.Mode values. Default is ChannelModeAPRS to preserve current
@@ -249,7 +250,7 @@ func ValidChannelMode(m string) bool {
 // of the KISS TCP-client + channel-backing plan.
 func ValidKissInterfaceType(t string) bool {
 	switch t {
-	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth, KissTypeUsbSerial:
+	case KissTypeTCP, KissTypeTCPClient, KissTypeSerial, KissTypeBluetooth, KissTypeUsbSerial, KissTypeBLEDevice:
 		return true
 	}
 	return false
@@ -357,27 +358,27 @@ type DigipeaterBlocklist struct {
 // downgrade, but are no longer read/written by application code.
 // See .context/2026-04-21-centralized-station-callsign.md §D4.
 type IGateConfig struct {
-	ID              uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Enabled         bool      `gorm:"not null;default:false" json:"enabled"`
-	Server          string    `gorm:"not null;default:'rotate.aprs2.net'" json:"server"`
-	Port            uint32    `gorm:"not null;default:14580" json:"port"`
-	ServerFilter    string    `json:"server_filter"` // APRS-IS server-side filter expression
-	SimulationMode  bool      `gorm:"not null;default:false" json:"simulation_mode"`
-	GateRfToIs      bool      `gorm:"not null;default:true" json:"gate_rf_to_is"`
-	GateIsToRf      bool      `gorm:"not null;default:false" json:"gate_is_to_rf"`
-	RfChannel       uint32    `gorm:"not null;default:0" json:"rf_channel"`             // channel used when gating IS->RF; 0 = unset
-	IsTxVia         string    `gorm:"not null;default:''" json:"is_tx_via"`             // literal digipeater via-path for IS->RF (like Direwolf IGTXVIA); empty = direct
-	SoftwareName    string    `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
-	SoftwareVersion string    `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
+	ID              uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Enabled         bool   `gorm:"not null;default:false" json:"enabled"`
+	Server          string `gorm:"not null;default:'rotate.aprs2.net'" json:"server"`
+	Port            uint32 `gorm:"not null;default:14580" json:"port"`
+	ServerFilter    string `json:"server_filter"` // APRS-IS server-side filter expression
+	SimulationMode  bool   `gorm:"not null;default:false" json:"simulation_mode"`
+	GateRfToIs      bool   `gorm:"not null;default:true" json:"gate_rf_to_is"`
+	GateIsToRf      bool   `gorm:"not null;default:false" json:"gate_is_to_rf"`
+	RfChannel       uint32 `gorm:"not null;default:0" json:"rf_channel"`             // channel used when gating IS->RF; 0 = unset
+	IsTxVia         string `gorm:"not null;default:''" json:"is_tx_via"`             // literal digipeater via-path for IS->RF (like Direwolf IGTXVIA); empty = direct
+	SoftwareName    string `gorm:"not null;default:'graywolf'" json:"software_name"` // APRS-IS login banner software name
+	SoftwareVersion string `gorm:"not null;default:'0.1'" json:"software_version"`   // APRS-IS login banner version
 	// TxChannel governs IS->RF on this iGate. The messages-tx channel
 	// moved to MessagesConfig.TxChannel; this column stays because
 	// migration 13 (`messages_config_singleton`) reads it once on first
 	// run to seed MessagesConfig. Do not remove without first deleting
 	// that migration -- operators upgrading from older builds will
 	// silently lose their messages TX channel otherwise.
-	TxChannel       uint32    `gorm:"not null;default:0" json:"tx_channel"`             // radio channel for IS->RF submissions; 0 = unset
-	CreatedAt       time.Time `json:"-"`
-	UpdatedAt       time.Time `json:"-"`
+	TxChannel uint32    `gorm:"not null;default:0" json:"tx_channel"` // radio channel for IS->RF submissions; 0 = unset
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // IGateRfFilter is a per-channel allow/deny rule for the IS->RF gate: it
@@ -410,11 +411,11 @@ type MessagesConfig struct {
 // UI preferences and operator-defined macros. See plan §3c.1 for the
 // fields and how the bridge consumes them.
 type AX25TerminalConfig struct {
-	ID             uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	ScrollbackRows uint32    `gorm:"not null;default:1000" json:"scrollback_rows"`
-	CursorBlink    bool      `gorm:"not null;default:false" json:"cursor_blink"`
-	DefaultModulo  uint32    `gorm:"not null;default:8" json:"default_modulo"`
-	DefaultPaclen  uint32    `gorm:"not null;default:256" json:"default_paclen"`
+	ID             uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	ScrollbackRows uint32 `gorm:"not null;default:1000" json:"scrollback_rows"`
+	CursorBlink    bool   `gorm:"not null;default:false" json:"cursor_blink"`
+	DefaultModulo  uint32 `gorm:"not null;default:8" json:"default_modulo"`
+	DefaultPaclen  uint32 `gorm:"not null;default:256" json:"default_paclen"`
 	// MacrosJSON stores `[{"label": "...", "payload": "<base64>"}]`. Kept
 	// as a JSON-text column so the schema does not have to evolve as the
 	// macro shape grows; the REST DTO marshals to a typed array.
@@ -550,10 +551,10 @@ type ThemeConfig struct {
 // the default; an empty Token means the device hasn't registered yet,
 // and the maplibre frontend falls back to OSM rendering until it does.
 type MapsConfig struct {
-	ID           uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
-	Source       string    `gorm:"not null;default:'graywolf'" json:"source"`
-	Callsign     string    `gorm:"not null;default:''" json:"callsign"`
-	Token        string    `gorm:"not null;default:''" json:"-"`
+	ID       uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Source   string `gorm:"not null;default:'graywolf'" json:"source"`
+	Callsign string `gorm:"not null;default:''" json:"callsign"`
+	Token    string `gorm:"not null;default:''" json:"-"`
 	// RegisteredAt is the zero time when no registration has occurred;
 	// kept as a value type (not *time.Time) so the JSON contract is
 	// always a string and Token=="" remains the single source of truth
@@ -614,37 +615,48 @@ type GPSConfig struct {
 
 // Beacon is a scheduled beacon. Type selects the payload builder.
 type Beacon struct {
-	ID           uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Type         string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
-	Channel      uint32  `gorm:"not null;default:1" json:"channel"`
-	Callsign     string  `gorm:"not null" json:"callsign"`
-	Destination  string  `gorm:"not null;default:'APGRWO'" json:"destination"`
-	Path         string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
-	UseGps       bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
-	Latitude     float64 `json:"latitude"`
-	Longitude    float64 `json:"longitude"`
-	AltFt        float64 `json:"alt_ft"` // altitude in feet for position reports
-	Ambiguity    uint32  `gorm:"not null;default:0" json:"ambiguity"`
-	SymbolTable  string  `gorm:"not null;default:'/'" json:"symbol_table"`
-	Symbol       string  `gorm:"not null;default:'-'" json:"symbol"`
-	Overlay      string  `json:"overlay"`                                 // alternate symbol table overlay character
-	PositionFormat string `gorm:"not null;default:'compressed'" json:"position_format"` // compressed | uncompressed | mic_e (APRS101 ch 9/6/10)
-	Messaging    bool    `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
-	Comment      string  `json:"comment"`
-	CommentCmd   string  `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
-	CustomInfo   string  `json:"custom_info"`                      // raw info field override for Type=="custom"
-	ObjectName   string  `json:"object_name"`                      // for Type=="object"
-	Power        uint32  `gorm:"not null;default:0" json:"power"`  // watts for PHG
-	Height       uint32  `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
-	Gain         uint32  `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
-	Dir          uint32  `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
-	Freq         string  `json:"freq"`                             // frequency string for freq info
-	Tone         string  `json:"tone"`                             // CTCSS/DCS tone
-	FreqOffset   string  `json:"freq_offset"`                      // repeater offset
-	DelaySeconds uint32  `gorm:"not null;default:30" json:"delay_seconds"`
-	EverySeconds uint32  `gorm:"not null;default:1800" json:"interval"`
-	SlotSeconds  int32   `gorm:"not null;default:-1" json:"slot_seconds"`
-	SmartBeacon  bool    `gorm:"not null;default:false" json:"smart_beacon"`
+	ID   uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type string `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
+	// Channel has no gorm "default" tag on purpose: GORM's Create
+	// substitutes a field's parsed literal default whenever the Go
+	// value equals that type's zero value, regardless of Select() —
+	// so a `default:1` tag here would silently turn a deliberate
+	// Channel=0 ("Auto") into channel 1 on every create.
+	Channel     uint32 `gorm:"not null" json:"channel"`
+	Callsign    string `gorm:"not null" json:"callsign"`
+	Destination string `gorm:"not null;default:'APGRWO'" json:"destination"`
+	// Path: same zero-value-default caveat as Channel — an
+	// intentionally empty path (no digipeater path) must not be
+	// promoted to "WIDE1-1" on create. See Channel's comment above.
+	Path           string  `gorm:"not null" json:"path"`
+	UseGps         bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
+	Latitude       float64 `json:"latitude"`
+	Longitude      float64 `json:"longitude"`
+	AltFt          float64 `json:"alt_ft"` // altitude in feet for position reports
+	Ambiguity      uint32  `gorm:"not null;default:0" json:"ambiguity"`
+	SymbolTable    string  `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol         string  `gorm:"not null;default:'-'" json:"symbol"`
+	Overlay        string  `json:"overlay"`                                              // alternate symbol table overlay character
+	PositionFormat string  `gorm:"not null;default:'compressed'" json:"position_format"` // compressed | uncompressed | mic_e (APRS101 ch 9/6/10)
+	Messaging      bool    `gorm:"not null;default:false" json:"messaging"`              // '=' instead of '!' prefix
+	Comment        string  `json:"comment"`
+	CommentCmd     string  `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
+	CustomInfo     string  `json:"custom_info"`                      // raw info field override for Type=="custom"
+	ObjectName     string  `json:"object_name"`                      // for Type=="object"
+	Power          uint32  `gorm:"not null;default:0" json:"power"`  // watts for PHG
+	Height         uint32  `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
+	Gain           uint32  `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
+	Dir            uint32  `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
+	Freq           string  `json:"freq"`                             // frequency string for freq info
+	Tone           string  `json:"tone"`                             // CTCSS/DCS tone
+	FreqOffset     string  `json:"freq_offset"`                      // repeater offset
+	DelaySeconds   uint32  `gorm:"not null;default:30" json:"delay_seconds"`
+	EverySeconds   uint32  `gorm:"not null;default:1800" json:"interval"`
+	// SlotSeconds: same zero-value-default caveat as Channel/Path — 0
+	// is a legitimate slot (top of the hour), not "unset" (-1). See
+	// Channel's comment above.
+	SlotSeconds int32 `gorm:"not null" json:"slot_seconds"`
+	SmartBeacon bool  `gorm:"not null;default:false" json:"smart_beacon"`
 	// Deprecated: use the global configstore.SmartBeaconConfig instead.
 	// This column is no longer read as of 2026-04-18 (the SmartBeacon
 	// curve is now a global singleton, matching direwolf). The column
@@ -693,11 +705,14 @@ type Beacon struct {
 	// will be dropped in a future migration once all deployments have
 	// moved to the global config. See
 	// .context/2026-04-18-smart-beacon-implementation.md.
-	SbMinTurnTime uint32    `gorm:"default:5" json:"sb_min_turn_time"`
-	SendPath      string    `gorm:"column:send_path;not null;default:'rf'" json:"send_path"` // rf | both | is_only
-	Enabled       bool      `gorm:"not null;default:true" json:"enabled"`
-	CreatedAt     time.Time `json:"-"`
-	UpdatedAt     time.Time `json:"-"`
+	SbMinTurnTime uint32 `gorm:"default:5" json:"sb_min_turn_time"`
+	SendPath      string `gorm:"column:send_path;not null;default:'rf'" json:"send_path"` // rf | both | is_only
+	// Enabled: same zero-value-default caveat as Channel/Path — a
+	// deliberately disabled new beacon (Enabled=false) must not be
+	// promoted to true. See Channel's comment above.
+	Enabled   bool      `gorm:"not null" json:"enabled"`
+	CreatedAt time.Time `json:"-"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // FixedPoint is an operator-placed landmark on the live map: a named
@@ -715,6 +730,85 @@ type FixedPoint struct {
 	Longitude   float64   `gorm:"not null" json:"longitude"`
 	CreatedAt   time.Time `json:"-"`
 	UpdatedAt   time.Time `json:"-"`
+}
+
+// CotSettings is a singleton (id=1) row holding the global parameters
+// applied to every Cursor-on-Target (CoT) object created from the live
+// map's "Add CoT" dialog. Unlike Beacon, an individual CotTarget has no
+// per-object channel/destination/path/send-path override -- those are
+// all copied from this singleton onto the target row at creation time
+// (see CotTarget's snapshot fields) so a later settings edit never
+// changes an in-flight target's schedule.
+type CotSettings struct {
+	ID uint32 `gorm:"primaryKey;autoIncrement" json:"-"`
+	// Type is reserved for a future non-object CoT kind; only "object"
+	// is valid today (enforced at the webapi layer).
+	Type string `gorm:"not null;default:'object'" json:"type"`
+	// SendPath mirrors Beacon.SendPath: rf | both | is_only.
+	SendPath string `gorm:"column:send_path;not null;default:'rf'" json:"send_path"`
+	// Channel is the RF channel new CoT targets transmit on; 0 = Auto
+	// (first APRS-eligible channel, resolved at send time), mirroring
+	// Beacon.Channel.
+	Channel     uint32 `gorm:"not null;default:0" json:"channel"`
+	Destination string `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path        string `gorm:"not null;default:'WIDE1-1,WIDE2-1'" json:"path"`
+	// NumTransmits is the total number of sends (including the
+	// immediate first one) before a target goes inactive.
+	NumTransmits uint32 `gorm:"not null;default:4" json:"num_transmits"`
+	// SecondTxDelaySeconds is the delay before the 2nd transmit; every
+	// later delay is the previous offset multiplied by DecayFactor. See
+	// pkg/cot.ComputeOffsets for the exact formula.
+	SecondTxDelaySeconds uint32    `gorm:"not null;default:300" json:"second_tx_delay_seconds"`
+	DecayFactor          float64   `gorm:"not null;default:2" json:"decay_factor"`
+	CreatedAt            time.Time `json:"-"`
+	UpdatedAt            time.Time `json:"-"`
+}
+
+// CotTarget is one Cursor-on-Target object dropped from the live map.
+// It transmits immediately on creation, then retransmits on a decaying
+// schedule (pkg/cot) until TxCount reaches NumTransmits. Every
+// transmission parameter below the ObjectName/symbol/comment/position
+// fields is snapshotted from CotSettings at creation time and never
+// changes afterward, even if the operator later edits the global
+// settings -- see CotSettings' doc comment.
+type CotTarget struct {
+	ID          uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
+	ObjectName  string  `gorm:"not null" json:"object_name"`
+	SymbolTable string  `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol      string  `gorm:"not null;default:'D'" json:"symbol"`
+	Overlay     string  `json:"overlay"`
+	Comment     string  `json:"comment"`
+	Latitude    float64 `gorm:"not null" json:"latitude"`
+	Longitude   float64 `gorm:"not null" json:"longitude"`
+
+	// --- snapshotted from CotSettings at creation time ---
+	Type                 string  `gorm:"not null;default:'object'" json:"type"`
+	SendPath             string  `gorm:"column:send_path;not null;default:'rf'" json:"send_path"`
+	Channel              uint32  `gorm:"not null;default:0" json:"channel"`
+	Destination          string  `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path                 string  `gorm:"not null;default:'WIDE1-1,WIDE2-1'" json:"path"`
+	NumTransmits         uint32  `gorm:"not null;default:4" json:"num_transmits"`
+	SecondTxDelaySeconds uint32  `gorm:"not null;default:300" json:"second_tx_delay_seconds"`
+	DecayFactor          float64 `gorm:"not null;default:2" json:"decay_factor"`
+
+	// --- transmit bookkeeping ---
+	// TxCount is the number of scheduled/automatic sends completed so
+	// far (the immediate first send counts as 1). Manual "Beacon Now"
+	// sends never touch this field -- see pkg/cot.Scheduler.SendNow.
+	TxCount uint32 `gorm:"not null;default:0" json:"tx_count"`
+	// FirstSentAt is set the moment TxCount transitions 0->1. Every
+	// later NextSendAt is computed as FirstSentAt + an offset from
+	// pkg/cot.ComputeOffsets, so a delayed first send doesn't compress
+	// the rest of the schedule.
+	FirstSentAt *time.Time `json:"first_sent_at,omitempty"`
+	// NextSendAt is when the next scheduled send is due; nil once
+	// TxCount reaches NumTransmits (exhausted / inactive). Starts equal
+	// to CreatedAt so the immediate first send is picked up right away.
+	NextSendAt *time.Time `json:"next_send_at,omitempty"`
+	LastSentAt *time.Time `json:"last_sent_at,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"-"`
 }
 
 // SmartBeaconConfig is a singleton (id=1) row holding the global
@@ -783,35 +877,35 @@ type PacketFilter struct {
 // tactical callsign). See the APRS messages feature plan for the full
 // design.
 type Message struct {
-	ID             uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
-	Direction      string         `gorm:"not null;index:idx_msg_direction_unread,priority:1" json:"direction"` // "in" | "out"
-	OurCall        string         `gorm:"size:9;not null;index:idx_msg_peer,priority:1;index:idx_msg_to_time,priority:1" json:"our_call"`
-	PeerCall       string         `gorm:"size:9;not null;index:idx_msg_peer,priority:2;index:idx_msg_peer_time" json:"peer_call"`
-	FromCall       string         `gorm:"size:9;not null;index:idx_msg_from_time,priority:1;index:idx_msg_msgid_from,priority:2" json:"from_call"`
-	ToCall         string         `gorm:"size:9;not null;index:idx_msg_to_time,priority:2" json:"to_call"`
-	Text           string         `gorm:"size:200;not null" json:"text"`
-	MsgID          string         `gorm:"size:5;index:idx_msg_msgid_from,priority:1" json:"msg_id"`
-	CreatedAt      time.Time      `gorm:"not null;index:idx_msg_peer,priority:3;index:idx_msg_from_time,priority:2;index:idx_msg_to_time,priority:3;index:idx_msg_peer_time,priority:2;index:idx_msg_thread,priority:3" json:"created_at"`
-	UpdatedAt      time.Time      `gorm:"not null" json:"updated_at"`
-	ReceivedAt     *time.Time     `json:"received_at,omitempty"`
-	SentAt         *time.Time     `json:"sent_at,omitempty"`
-	AckedAt        *time.Time     `json:"acked_at,omitempty"`
-	AckState       string         `gorm:"size:16;not null;default:'none'" json:"ack_state"` // none | acked | rejected | broadcast
-	Source         string         `gorm:"size:4;not null;default:''" json:"source"`         // rf | is (string form of aprs.Direction)
-	Channel        uint32         `gorm:"not null;default:0" json:"channel"`
-	Path           string         `gorm:"size:64" json:"path"`                      // display path, e.g. "W1ABC*,WIDE1-1*"
-	Via            string         `gorm:"size:64" json:"via"`                       // last used digipeater
-	RawTNC2        string         `gorm:"column:raw_tnc2;size:512" json:"raw_tnc2"` // archival raw text
-	Unread         bool           `gorm:"not null;default:false;index:idx_msg_direction_unread,priority:2" json:"unread"`
-	Attempts       uint32         `gorm:"not null;default:0" json:"attempts"`
-	NextRetryAt    *time.Time     `json:"next_retry_at,omitempty"`
-	FailureReason  string         `gorm:"size:128" json:"failure_reason"`
-	ReplyAckID     string         `gorm:"size:5" json:"reply_ack_id"` // inbound: APRS11 reply-ack id we observed
-	IsAck          bool           `gorm:"not null;default:false" json:"is_ack"`
-	IsRej          bool           `gorm:"not null;default:false" json:"is_rej"`
-	IsBulletin     bool           `gorm:"not null;default:false" json:"is_bulletin"`
-	IsNWS          bool           `gorm:"column:is_nws;not null;default:false" json:"is_nws"`
-	PreferIS       bool           `gorm:"column:prefer_is;not null;default:false" json:"prefer_is"`
+	ID            uint64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	Direction     string     `gorm:"not null;index:idx_msg_direction_unread,priority:1" json:"direction"` // "in" | "out"
+	OurCall       string     `gorm:"size:9;not null;index:idx_msg_peer,priority:1;index:idx_msg_to_time,priority:1" json:"our_call"`
+	PeerCall      string     `gorm:"size:9;not null;index:idx_msg_peer,priority:2;index:idx_msg_peer_time" json:"peer_call"`
+	FromCall      string     `gorm:"size:9;not null;index:idx_msg_from_time,priority:1;index:idx_msg_msgid_from,priority:2" json:"from_call"`
+	ToCall        string     `gorm:"size:9;not null;index:idx_msg_to_time,priority:2" json:"to_call"`
+	Text          string     `gorm:"size:200;not null" json:"text"`
+	MsgID         string     `gorm:"size:5;index:idx_msg_msgid_from,priority:1" json:"msg_id"`
+	CreatedAt     time.Time  `gorm:"not null;index:idx_msg_peer,priority:3;index:idx_msg_from_time,priority:2;index:idx_msg_to_time,priority:3;index:idx_msg_peer_time,priority:2;index:idx_msg_thread,priority:3" json:"created_at"`
+	UpdatedAt     time.Time  `gorm:"not null" json:"updated_at"`
+	ReceivedAt    *time.Time `json:"received_at,omitempty"`
+	SentAt        *time.Time `json:"sent_at,omitempty"`
+	AckedAt       *time.Time `json:"acked_at,omitempty"`
+	AckState      string     `gorm:"size:16;not null;default:'none'" json:"ack_state"` // none | acked | rejected | broadcast
+	Source        string     `gorm:"size:4;not null;default:''" json:"source"`         // rf | is (string form of aprs.Direction)
+	Channel       uint32     `gorm:"not null;default:0" json:"channel"`
+	Path          string     `gorm:"size:64" json:"path"`                      // display path, e.g. "W1ABC*,WIDE1-1*"
+	Via           string     `gorm:"size:64" json:"via"`                       // last used digipeater
+	RawTNC2       string     `gorm:"column:raw_tnc2;size:512" json:"raw_tnc2"` // archival raw text
+	Unread        bool       `gorm:"not null;default:false;index:idx_msg_direction_unread,priority:2" json:"unread"`
+	Attempts      uint32     `gorm:"not null;default:0" json:"attempts"`
+	NextRetryAt   *time.Time `json:"next_retry_at,omitempty"`
+	FailureReason string     `gorm:"size:128" json:"failure_reason"`
+	ReplyAckID    string     `gorm:"size:5" json:"reply_ack_id"` // inbound: APRS11 reply-ack id we observed
+	IsAck         bool       `gorm:"not null;default:false" json:"is_ack"`
+	IsRej         bool       `gorm:"not null;default:false" json:"is_rej"`
+	IsBulletin    bool       `gorm:"not null;default:false" json:"is_bulletin"`
+	IsNWS         bool       `gorm:"column:is_nws;not null;default:false" json:"is_nws"`
+	PreferIS      bool       `gorm:"column:prefer_is;not null;default:false" json:"prefer_is"`
 	// SendPath is the effective per-message transport override stamped
 	// from the conversation's ConversationPrefs at send time. Empty ('')
 	// means "defer to the global MessagePreferences.FallbackPolicy".
@@ -864,11 +958,11 @@ type MessageCounter struct {
 // messaging preferences. Seeded at migrate-time with defaults if no row
 // exists. See plan Phase 3 for semantics.
 type MessagePreferences struct {
-	ID               uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
-	FallbackPolicy   string    `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
-	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
-	RetryMaxAttempts uint32    `gorm:"not null;default:4" json:"retry_max_attempts"`
-	RetentionDays    uint32    `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
+	ID               uint32 `gorm:"primaryKey;autoIncrement" json:"-"`
+	FallbackPolicy   string `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
+	DefaultPath      string `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
+	RetryMaxAttempts uint32 `gorm:"not null;default:4" json:"retry_max_attempts"`
+	RetentionDays    uint32 `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
 	// MaxMessageTextOverride raises the default 67-char cap on
 	// addressee-line direct messages up to 200. 0 (the column default,
 	// and the value seen on pre-upgrade rows after GORM AutoMigrate
@@ -890,7 +984,7 @@ type MessagePreferences struct {
 // customized contact, not one per contact).
 //
 // Two independent knobs, matching the ThreadHeader popover:
-//   - SendPath: per-conversation transport override. Empty ('') defers
+//   - SendPath: per-conversation transport override. Empty (”) defers
 //     to the global FallbackPolicy; otherwise one of rf_only | is_only |
 //     both. Answers issue #453's "keep my local radio messages off
 //     APRS-IS" — set a contact to rf_only and every message (including
@@ -901,10 +995,10 @@ type MessagePreferences struct {
 //     just that contact instead of burning airtime retrying a device
 //     that will never answer. Defaults true (normal ack-and-retry).
 type ConversationPrefs struct {
-	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"-"`
-	ThreadKind string    `gorm:"size:10;not null;uniqueIndex:idx_convpref_thread,priority:1" json:"thread_kind"` // dm | tactical
-	ThreadKey  string    `gorm:"size:9;not null;uniqueIndex:idx_convpref_thread,priority:2" json:"thread_key"`   // peer callsign (dm) or tactical label
-	SendPath   string    `gorm:"size:16;not null;default:''" json:"send_path"`                                   // '' inherit | rf_only | is_only | both
+	ID         uint32 `gorm:"primaryKey;autoIncrement" json:"-"`
+	ThreadKind string `gorm:"size:10;not null;uniqueIndex:idx_convpref_thread,priority:1" json:"thread_kind"` // dm | tactical
+	ThreadKey  string `gorm:"size:9;not null;uniqueIndex:idx_convpref_thread,priority:2" json:"thread_key"`   // peer callsign (dm) or tactical label
+	SendPath   string `gorm:"size:16;not null;default:''" json:"send_path"`                                   // '' inherit | rf_only | is_only | both
 	// WaitForAck carries NO gorm default tag on purpose. A bool with
 	// `default:true` hits GORM's omit-zero-value-on-INSERT behavior:
 	// WaitForAck=false (a no-ACK contact — the whole point of the
@@ -997,17 +1091,17 @@ type Action struct {
 	// migrate_actions.go) for downgrade-safety; the application layer
 	// always provides an explicit value via the dto.Action wire shape,
 	// so dropping the gorm-side default here costs nothing.
-	OTPRequired         bool   `gorm:"not null"`
-	OTPCredentialID     *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
-	SenderAllowlist     string // CSV
-	ArgSchema           string `gorm:"type:text;default:'[]'"` // JSON list
-	ArgMode             string `gorm:"size:16;not null;default:'kv'"`
-	RateLimitSec        int    `gorm:"not null;default:5"`
-	QueueDepth          int    `gorm:"not null;default:8"`
-	MaxReplyLines       int    `gorm:"not null;default:1"`
-	Enabled             bool   `gorm:"not null"`
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
+	OTPRequired     bool   `gorm:"not null"`
+	OTPCredentialID *uint  `gorm:"column:otp_credential_id"` // FK to OTPCredential, nullable; ON DELETE SET NULL
+	SenderAllowlist string // CSV
+	ArgSchema       string `gorm:"type:text;default:'[]'"` // JSON list
+	ArgMode         string `gorm:"size:16;not null;default:'kv'"`
+	RateLimitSec    int    `gorm:"not null;default:5"`
+	QueueDepth      int    `gorm:"not null;default:8"`
+	MaxReplyLines   int    `gorm:"not null;default:1"`
+	Enabled         bool   `gorm:"not null"`
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // BeforeSave normalizes Name to uppercase and trims whitespace before

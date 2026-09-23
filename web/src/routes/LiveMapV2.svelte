@@ -34,6 +34,8 @@
   import { mountFixedPointsLayer } from '../lib/map/layers/fixed-points.js';
   import { fixedPointsStore } from '../lib/map/fixed-points-store.svelte.js';
   import FixedPointDialog from '../lib/map/fixed-point-dialog.svelte';
+  import CotDialog from '../lib/map/cot-dialog.svelte';
+  import { api } from '../lib/api.js';
   import { renderStationPopupHTML } from '../lib/map/popup.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
   import { mapState, MY_POSITION_ZOOM } from '../lib/map/map-store.svelte.js';
@@ -50,6 +52,7 @@
   import { online } from '../lib/stores/connection.js';
   import MapPinPlus from 'lucide-svelte/icons/map-pin-plus';
   import MapPinned from 'lucide-svelte/icons/map-pinned';
+  import Target from 'lucide-svelte/icons/target';
   import Copy from 'lucide-svelte/icons/copy';
 
   // Values are seconds (data store wants ms; multiplied at dispatch).
@@ -108,6 +111,7 @@
   let heatmapLayer = null;
   let heatmapTimer = null;
   let fixedPointsLayer = null;
+  let myLocationControl = null;
 
   // Bumping this key fully remounts <MaplibreMap>, which is how we recover
   // from a permanent WebGL context loss (graywolf#461): the map component's
@@ -396,6 +400,9 @@
   // clicked coordinates; onConfirm drops the point into the store.
   let fpDialog = $state({ open: false, lat: 0, lon: 0 });
 
+  // Add-CoT dialog state -- opened from the context menu's first item.
+  let cotDialog = $state({ open: false, lat: 0, lon: 0 });
+
   // Direct RX predicate: a station qualifies only if it was heard directly on
   // RF (RX, zero digi hops) WITHIN the active time range. The server tracks the
   // last direct-hearing time in last_direct_heard and never advances it on a
@@ -435,6 +442,52 @@
       toasts.error('Clipboard unavailable');
     }
   }
+
+  // Hands a Navigate link off to its native app via a custom URL scheme
+  // (Organic Maps `om://`, Apple Maps `maps://`). Desktop browsers have no
+  // Universal/App-Link handoff (that's iOS/Android-only), so a plain
+  // https:// link just opens the website even with the app installed -- the
+  // scheme is what makes the native app open, on any OS/browser.
+  //
+  // The scheme is set on THIS tab's location (top-level), not a hidden
+  // iframe: iOS/iPadOS Safari only reliably hands a scheme navigation off to
+  // its registered app -- and promptly fires blur/visibilitychange on this
+  // document -- when the navigation happens on the top frame. Routing it
+  // through a hidden iframe let the OS open the app *after* our fallback
+  // timer had already fired (the iframe's navigation doesn't reliably hide
+  // the top document in time), so operators saw both the app AND the https
+  // fallback tab open for every tap. A same-tab top-level navigation to an
+  // unregistered scheme is a silent no-op in every browser we support, so
+  // this is safe even when no app is installed to handle it.
+  //
+  // We race three signals -- blur (fires first, near-instant), pagehide,
+  // and visibilitychange -- because browsers vary in which one reports the
+  // app handoff soonest; whichever fires first cancels the fallback.
+  const NAV_FALLBACK_MS = 1200;
+  function openNativeOrFallback(scheme, fallback) {
+    let handedOff = false;
+    let fallbackTimer = null;
+    const markHandedOff = () => {
+      handedOff = true;
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      cleanup();
+    };
+    function cleanup() {
+      window.removeEventListener('blur', markHandedOff);
+      window.removeEventListener('pagehide', markHandedOff);
+      document.removeEventListener('visibilitychange', markHandedOff);
+    }
+    window.addEventListener('blur', markHandedOff, { once: true });
+    window.addEventListener('pagehide', markHandedOff, { once: true });
+    document.addEventListener('visibilitychange', markHandedOff, { once: true });
+
+    window.location.href = scheme;
+
+    fallbackTimer = setTimeout(() => {
+      cleanup();
+      if (!handedOff) window.open(fallback, '_blank', 'noopener,noreferrer');
+    }, NAV_FALLBACK_MS);
+  }
   // Hemispheric coords shown once in the menu header; the copy items
   // carry short labels so the menu stays narrow.
   function ctxMenuHeader() {
@@ -449,6 +502,14 @@
     const decimal = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
     const grid = toMaidenhead(lat, lon);
     return [
+      {
+        label: 'Add CoT',
+        icon: Target,
+        primary: true,
+        onSelect: () => {
+          cotDialog = { open: true, lat, lon };
+        },
+      },
       {
         label: 'Add fixed beacon here',
         icon: MapPinPlus,
@@ -544,9 +605,18 @@
     });
 
     // Wire path-link clicks: pan + reopen popup for the clicked digipeater.
+    // Also intercept Navigate links that carry a native scheme (Organic Maps,
+    // Apple Maps) so the desktop app gets first shot before the https
+    // fallback -- see openNativeOrFallback.
     const el = activePopup.getElement();
     if (el) {
       el.addEventListener('click', (ev) => {
+        const navLink = ev.target && ev.target.closest && ev.target.closest('.stn-nav-link[data-nav-scheme]');
+        if (navLink) {
+          ev.preventDefault();
+          openNativeOrFallback(navLink.dataset.navScheme, navLink.href);
+          return;
+        }
         const link = ev.target && ev.target.closest && ev.target.closest('.path-link');
         if (!link) return;
         ev.preventDefault();
@@ -623,6 +693,31 @@
     if (!tpos) return;
     mapRef?.panTo([tpos.lon, tpos.lat]);
     if (mapRef) openStationPopup(mapRef, target);
+  }
+
+  // Custom MapLibre IControl: single-button group placed below the NavigationControl
+  // at top-right that flies the camera to the operator's current position.
+  class MyLocationControl {
+    #container = null;
+    #onClick;
+    constructor(onClick) { this.#onClick = onClick; }
+    onAdd() {
+      this.#container = document.createElement('div');
+      this.#container.className = 'maplibregl-ctrl maplibregl-ctrl-group';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.title = 'Go to my position';
+      btn.setAttribute('aria-label', 'Go to my position');
+      btn.className = 'gw-my-location-btn';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/></svg>';
+      btn.addEventListener('click', this.#onClick);
+      this.#container.appendChild(btn);
+      return this.#container;
+    }
+    onRemove() {
+      this.#container?.parentNode?.removeChild(this.#container);
+      this.#container = null;
+    }
   }
 
   function onMapReady(map) {
@@ -735,6 +830,12 @@
     fixedPointsStore.load().catch((err) => {
       toasts.error(`Could not load fixed points: ${err.message}`);
     });
+    myLocationControl = new MyLocationControl(() => {
+      const my = dataStore.myPosition;
+      if (!my) return;
+      map.easeTo({ center: [my.lon, my.lat], zoom: MY_POSITION_ZOOM, duration: 600 });
+    });
+    map.addControl(myLocationControl, 'top-right');
     myPositionLayer = mountMyPositionLayer(map, () => dataStore.myPosition, {
       onMarkerEnter: () => {
         if (activePopup) return;
@@ -1265,6 +1366,7 @@
     hoverPathLayer?.destroy();
     myPositionLayer?.destroy();
     fixedPointsLayer?.destroy();
+    if (myLocationControl) { mapRef?.removeControl(myLocationControl); myLocationControl = null; }
     radarLayer = null;
     frontsLayer = null;
     heatmapLayer = null;
@@ -1579,6 +1681,20 @@
         toasts.success(`Added "${p.name}"`);
       } catch (err) {
         toasts.error(`Could not add point: ${err.message}`);
+      }
+    }}
+  />
+
+  <CotDialog
+    bind:open={cotDialog.open}
+    lat={cotDialog.lat}
+    lon={cotDialog.lon}
+    onConfirm={async (payload) => {
+      try {
+        await api.post('/cot-targets', payload);
+        toasts.success(`Cursor-on-Target sent: ${payload.object_name}`);
+      } catch (err) {
+        toasts.error(`Could not send Cursor-on-Target: ${err.message}`);
       }
     }}
   />
@@ -1930,6 +2046,15 @@
      icon and vertically centered, so its width doesn't shift the icon
      off-target. align-items:flex-end right-justifies the temp chip to the
      callsign's right edge regardless of callsign length. */
+  /* "Go to my position" button inside MapLibre's ctrl-group. The outer
+     div/button sizing comes from maplibre-gl.css (.maplibregl-ctrl-group button);
+     we just center the SVG icon inside. */
+  :global(.gw-my-location-btn) {
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+  }
+
   :global(.gw-station-marker) {
     width: 21px;
     height: 21px;
@@ -2037,6 +2162,8 @@
     box-shadow: var(--map-overlay-shadow);
     padding: 12px;
     font-size: 13px;
+    /* Updated Width for better readability */
+    width: 14rem;
   }
   :global(.gw-fixed-popup .maplibregl-popup-close-button) {
     color: var(--map-overlay-fg);
@@ -2088,6 +2215,8 @@
     box-shadow: var(--map-overlay-shadow);
     padding: 12px;
     font-size: 13px;
+    /* Updated Width for better readability */
+    width: 14rem;
   }
   :global(.gw-station-popup.maplibregl-popup-anchor-top .maplibregl-popup-tip) {
     border-bottom-color: var(--map-overlay-bg) !important;
@@ -2189,6 +2318,7 @@
     text-decoration: none;
     outline: none;
   }
+
   :global(.stn-weather) { font-size: 12px; }
   :global(.stn-weather-row) {
     display: flex;

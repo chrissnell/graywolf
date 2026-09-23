@@ -261,17 +261,23 @@ Source: [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`resolveTxChannel`
 - **Modem:** `pushConfiguration` (`pkg/modembridge/session.go`) filters disabled channels before emitting `ConfigureAudio` / `ConfigureChannel` / `ConfigurePtt`, so the Rust modem never opens the audio device or decodes the channel -- same treatment as the `InputDeviceID == nil` KISS-only skip.
 - **Governor egress:** `buildTxBackendSnapshot`, `kissTxChannelSet`, and `resolveTxChannel` (`pkg/app/wiring.go`) skip disabled channels (`disabledChannelSet`), so a disabled channel is never a TX target -- neither its modem backend nor a KISS-TNC interface bound to it. This composes with invariant 16c: the disabled filter and the two egress projections must stay in lockstep.
 - **KISS device:** a KISS interface whose `Channel` is disabled is stopped so its TNC device (serial fd / socket) is released. Boot goes through `kissComponent`; a live toggle goes through `webapi.notifyKissManager` (which re-reads the channel's enabled state) driven by `reconcileKissForChannel` on the channel update / enable-toggle handlers.
+- **Cached "Auto" TX channel (messages / iGate):** `resolveTxChannel`'s result is not re-read per send -- it is cached in `messages.Sender.txChannel` and `igate.Igate.txChannel` (both `atomic.Uint32`), refreshed only when `messages.Service.ReloadConfig` / `App.reloadIgate` run, which only happens when something sends on the `messagesReload` / `igateReload` channels. Disabling/re-enabling a channel (or a KISS interface) is a `resolveTxChannel` input just as much as the two governor-egress projections above, so it must also refresh these caches or an operator on "Auto" (`TxChannel == 0`) keeps transmitting messages/iGate traffic on a channel that was just disabled -- or stays stuck off a channel that was just re-enabled -- until an unrelated config save (messages preferences, iGate config, tactical/blocklist CRUD) happens to trigger `ReloadConfig`/`reloadIgate`. This was graywolf's "Auto TX channel becomes stale after enable/disable" bug.
+- **Uncached "Auto" TX channel (beacons):** Beacons also support `Channel == 0` = Auto (`beacon.Scheduler.AutoChannelResolver`, wired from `App.resolveTxChannel(ctx, 0)` in `wiring.go`), but deliberately do **not** copy the cached-`atomic.Uint32` pattern above. `sendBeaconWith` (`pkg/beacon/scheduler.go`) calls the resolver fresh on every scheduled fire and every `SendNow`, so there is no `beaconReload`/`signalTxRoutingReload` dependency and no staleness window to plug -- a beacon on Auto always transmits on whatever `resolveTxChannel(ctx, 0)` currently picks. This is possible because beacon fires are comparatively infrequent (typically minutes apart) so a fresh DB-backed resolution per send is cheap, unlike the messages/iGate hot paths the cache exists for. `Channel == 0` also has a second, unrelated meaning on an `is_only` beacon ("no RF leg" -- there is nothing to resolve); `AutoChannelResolver` is invoked only when `SendPath != is_only`, so the two zero-sentinels never collide.
 
-Toggling is hot: `PUT /api/channels/{id}/enabled` (and a full channel PUT) calls `notifyBridgeReload` (modem reconfigure + TX snapshot rebuild) and `reconcileKissForChannel`, so no restart is needed.
+Toggling is hot: `PUT /api/channels/{id}/enabled` (and a full channel PUT, and audio-device edit/delete) calls `notifyBridgeReload`, which now does three things -- modem reconfigure, TX-dispatcher snapshot rebuild (`notifyTxBackendReload`), and `signalTxRoutingReload` (fans out to `signalIgateReload` + `signalMessagesReload`) -- plus `reconcileKissForChannel`, so no restart is needed. KISS interface create/update/enable-toggle/delete (`webapi.notifyKissManager`, `deleteKiss`) call the same `signalTxRoutingReload` alongside their existing `notifyTxBackendReload`, since a KISS interface's `Enabled`/`Mode`/`AllowTxFromGovernor`/`Channel` fields are also `resolveTxChannel` inputs (invariant 16c). Both downstream reload paths (`Service.ReloadConfig`, `App.reloadIgate`) are idempotent no-ops when the resolved channel is unchanged, so firing the signal on every mutation (rather than only on the ones that provably changed eligibility) is deliberate and cheap.
 
-*Why:* The feature (graywolf#517) lets an operator park a channel -- e.g. an HF radio usually on voice -- without deleting its config. "Parked" only holds if the channel is inert on *all three* surfaces; a miss on any one leaves the device open or the channel silently egressing. Note the store-layer caveat: `Channel.Enabled` carries a `default:true` GORM tag, so `CreateChannel` cannot distinguish an explicit `false` from an unset zero value -- a create-disabled request is honored one layer up in `webapi.createChannel` off the request's `*bool`, and `dto.ChannelRequest.Enabled` is a pointer for the same reason.
+*Why:* The feature (graywolf#517) lets an operator park a channel -- e.g. an HF radio usually on voice -- without deleting its config. "Parked" only holds if the channel is inert on *all four* surfaces above; a miss on any one leaves the device open, the channel silently egressing, or a cached TX selection pointed at a channel that's no longer there. Note the store-layer caveat: `Channel.Enabled` carries a `default:true` GORM tag, so `CreateChannel` cannot distinguish an explicit `false` from an unset zero value -- a create-disabled request is honored one layer up in `webapi.createChannel` off the request's `*bool`, and `dto.ChannelRequest.Enabled` is a pointer for the same reason.
 
-Two deliberate scoping choices: (1) disabling does **not** trigger the channel-referrer guard (no 409) -- it is a reversible park with the config preserved, mirroring the unguarded KISS `setKissEnabled` toggle; `computeTxCapability` intentionally ignores `Enabled` so the guard fires only on real config changes (e.g. removing the output device), not on a park. (2) `computeChannelBacking` / `computeTxCapability` are config-level projections and also ignore `Enabled`; the disabled state is surfaced to the operator by the Channels page (`ChannelRow.svelte`: Disabled badge, dimmed card, a "Disabled" backing row in place of live/down) rather than by mutating those pure functions -- keeping them keyed only on backing config, not runtime enable state.
+Two deliberate scoping choices: (1) disabling does **not** trigger the channel-referrer guard (no 409) -- it is a reversible park with the config preserved, mirroring the unguarded KISS `setKissEnabled` toggle; `computeTxCapability` intentionally ignores `Enabled` so the guard fires only on real config changes (e.g. removing the output device), not on a park. (2) `computeChannelBacking` / `computeTxCapability` are config-level projections and also ignore `Enabled`; the disabled state is surfaced to the operator by the Channels page (`ChannelRow.svelte`: Disabled badge, dimmed card, a "Disabled" backing row in place of live/down) rather than by mutating those pure functions -- keeping them keyed only on backing config, not runtime enable state. (3) `signalTxRoutingReload` is deliberately *not* wired into the KISS supervisor's live `OnReload` callback (fired on TCP-client reconnect/backoff) -- `resolveTxChannel` is a pure config projection that doesn't care about live connection health, so signaling there would just be reload noise on a flaky link.
 
 Source: [`../../pkg/modembridge/session.go`](../../pkg/modembridge/session.go) (`pushConfiguration`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`disabledChannelSet`, `buildTxBackendSnapshot`, `kissTxChannelSet`, `resolveTxChannel`, `kissComponent`),
-[`../../pkg/webapi/channels.go`](../../pkg/webapi/channels.go) (`setChannelEnabled`, `reconcileKissForChannel`, `createChannel`),
-[`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`notifyKissManager`).
+[`../../pkg/messages/sender.go`](../../pkg/messages/sender.go) (`Sender.txChannel`, `SetTxChannel`), [`../../pkg/messages/service.go`](../../pkg/messages/service.go) (`Service.ReloadConfig`),
+[`../../pkg/igate/igate.go`](../../pkg/igate/igate.go) (`Igate.txChannel`, `SetTxChannel`),
+[`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go) (`sendBeaconWith`, `AutoChannelResolver`),
+[`../../pkg/webapi/server.go`](../../pkg/webapi/server.go) (`notifyBridgeReload`, `signalTxRoutingReload`),
+[`../../pkg/webapi/channels.go`](../../pkg/webapi/channels.go) (`setChannelEnabled`, `updateChannel`, `deleteChannel`, `reconcileKissForChannel`, `createChannel`),
+[`../../pkg/webapi/kiss.go`](../../pkg/webapi/kiss.go) (`notifyKissManager`, `deleteKiss`).
 
 ### 17. RX fanout carries provenance via `ingress.Source` (in-process)
 
@@ -806,8 +812,11 @@ cannot outlive the app, because no single mechanism covers both cases.
   `targetSdk=36` forces edge-to-edge on Android 15+, where the platform no longer
   auto-insets the content view or resizes the window for the soft keyboard.
   `MainActivity.applyWindowInsets` calls `WindowCompat.setDecorFitsSystemWindows(window, false)`
-  and a `setOnApplyWindowInsetsListener` that pads the WebView by the side bars and
-  `max(systemBars.bottom, ime.bottom)` -- but **leaves the top inset at 0 on purpose**.
+  and a `setOnApplyWindowInsetsListener` that pads the WebView by the side/bottom
+  navigation bars and `max(navBars.bottom, ime.bottom)` -- but **leaves the top inset at
+  0 on purpose**. The inset types used are `statusBars()` for the status bar and
+  `navigationBars()` for the nav bar -- NOT the combined `systemBars()`, which some OEM
+  ROMs under-report when `setDecorFitsSystemWindows(false)` is set.
   The split is load-bearing and not interchangeable:
   - **Top is owned by CSS, fed the inset by native.** The SPA's mobile top bar is
     `position:fixed; top:0` (`web/.../Sidebar.svelte`), and a fixed element is pinned to
@@ -818,7 +827,7 @@ cannot outlive the app, because no single mechanism covers both cases.
     `env(safe-area-inset-top)` alone: Android WebView derives that env var from the
     display cutout, not the status bar, and returns 0 (or wrong values below WebView 140)
     on most devices -- relying on it is what made the first GH #390 fix regress. Instead
-    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`systemBars.top`,
+    `MainActivity.applyTopInsetToCss` injects the real status-bar inset (`statusBars.top`,
     converted to CSS px) as the `--android-inset-top` custom property on the document root,
     re-applied from `onPageFinished` because each `loadUrl` swaps in a fresh document.
     `web/src/app.css` defines `--safe-area-top: max(env(safe-area-inset-top),
@@ -832,12 +841,22 @@ cannot outlive the app, because no single mechanism covers both cases.
     inherits the override. Do NOT re-add `bars.top` to the WebView padding, do NOT make the
     top bar depend on `env(safe-area-inset-top)` directly, and keep `viewport-fit=cover` in
     `web/index.html` (it is still needed for the env() path on iOS / mobile browsers).
-  - **Bottom is owned by native padding.** `env()` cannot express the keyboard, so the
-    IME padding is the cross-system load-bearing bit: it shrinks the web viewport above
-    the keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
+  - **Bottom is split: keyboard owned by native padding; navigation bar owned by CSS.**
+    `env()` cannot express the keyboard, so `max(navBars.bottom, ime.bottom)` native padding
+    on the WebView is the keyboard load-bearing bit: it shrinks the web viewport above the
+    keyboard so the SPA's sticky compose bar (`web/.../ComposeBar.svelte`,
     `position:absolute; bottom:0`) is never covered. That component skips its own
     `visualViewport` translateY when `Platform.isAndroid` so the two mechanisms don't
     stack into a double-offset; the web translate stays the path for mobile browsers.
+    For `position:fixed` elements such as chonky-ui toasts, native WebView padding does
+    NOT reliably shrink `window.innerHeight` (it only works for the keyboard via
+    `adjustResize`). On Android with 3-button navigation, `env(safe-area-inset-bottom)` is
+    also 0 (the nav bar is opaque). `MainActivity.applyBottomInsetToCss` therefore injects
+    `navBars.bottom` (in CSS px) as `--android-inset-bottom`; `app.css` defines
+    `--safe-area-bottom: max(env(safe-area-inset-bottom), var(--android-inset-bottom, 0px))`
+    and overrides `.toast { bottom: calc(1.5rem + var(--safe-area-bottom, 0px)) }` so toasts
+    clear the nav bar. Any new fixed-bottom element must read `--safe-area-bottom` for the
+    same reason.
   The manifest's `android:windowSoftInputMode="adjustResize"` is the pre-API-30 fallback:
   there `WindowInsetsCompat.Type.ime()` reports 0, so adjustResize resizes the decor
   frame instead, re-firing the same listener -- do NOT drop it assuming the inset path
@@ -1371,19 +1390,18 @@ marker (drawn at `positions[0]`) and popup badge labeled it `APRS-IS` -- the bug
 in graywolf GitHub #394. The marker is always `positions[0]`, so the filter must
 classify off that same fix.
 
-*Top-level fields vs. positions[0] -- they are NOT the same.*
-`stationcache.updateMetadata` overwrites the **station-level** `Direction`/
-`Via`/`Gated` (exposed as the top-level `StationDTO` fields, and what the popup
-badge reads via `popup.js` `s.direction` and `viaText`'s `s.via === 'is'`) with
-the **latest** packet on every update, unconditionally. `positions[0]`, by
-contrast, is rfRank-protected for static re-beacons. For the common case (a
-fresh or moving station) `positions[0]` *is* the latest fix and matches the
-badge; they diverge only for a static station heard on RF then re-beaconed via
-IS, where `positions[0]` stays `RX` (rfRank) while the top-level badge flips to
-`IS`. RF Only intentionally keys on the rfRank-protected `positions[0]`, so that
-static station stays visible (next paragraph) even though its popup badge may
-read APRS-IS. Do **not** "fix" that by classifying off the top-level fields --
-that would re-hide RF-reachable static stations.
+*Station-level fields are latest-packet metadata, with a short same-fix RF preference window.*
+`updateMetadata` writes station-level reception metadata
+(`Direction`/`Via`/`Gated`/`Hops`/`Path`/`Channel`) from the latest packet.
+For a static same-position re-reception, `positions[0]` still keeps the
+rfRank-best copy of that fix (direct RF > digipeated RF > gated/IS/TX), but
+station-level fields only keep the prior RF-stronger value when the lower-rank
+copy arrives within `sameFixRFPreferenceWindow` (currently 2 minutes).
+
+Result: near-simultaneous duplicate receptions of the same beacon still read
+as `RX` (the intended RF-over-IS tie-break), while a delayed IS-only period
+eventually flips the station-level badge/table to `IS` as operators expect.
+RF Only intentionally keys on `positions[0]` directly and is unaffected.
 
 *How to apply:* keep RF Only keyed on `positions[0]` only. Static stations are
 preserved -- `stationcache`'s static-rebeacon merge folds the most RF-reachable
@@ -1393,18 +1411,13 @@ qualifies. RF Only is the looser companion to Direct RX (#48): it keeps
 RF-digipeated stations (`hops > 0`) and drops only APRS-IS and Internet-to-RF
 gated current fixes.
 
-*Surfacing the divergence in the popup (graywolf #482).* The badge-vs-`positions[0]`
-divergence above reads as a filter bug to operators: a station badged `APRS-IS`
-that stays visible under RF Only looks wrong even though it is correct. #482 was
-the second report of exactly this. The popup now renders an `RF-reachable`
-note (`popup.js`, class `.stn-rf-reachable`) whenever
-`rfReachableDespiteNonRfLatest(s)` holds -- the plotted fix (`positions[0]`)
-qualifies as RF-heard while the **latest** packet did not arrive over RF
-(`s.direction !== 'RX' || s.gated`). The RF Only toggle also carries a `title`
-tooltip stating the "ever RF-reachable at the current fix" semantics. This is a
-labeling affordance only; it does **not** change the predicate. If you ever make
-RF Only key on current-packet recency instead (the #482 option 2), retire this
-note too.
+*Badge-vs-`positions[0]` divergence is expected and explained.* Station-level
+fields answer "what did we hear most recently?" (with the short same-fix RF
+tie-break above), while `positions[0]` answers "what fix is plotted now?" and
+retains rfRank-best metadata for that fix. `rfReachableDespiteNonRfLatest`
+(`rf-only-core.js`) intentionally detects this divergence so the popup can
+explain why a station may still qualify under RF Only when its latest packet
+badge is non-RF.
 
 Source: [`../../web/src/lib/map/rf-only-core.js`](../../web/src/lib/map/rf-only-core.js)
 (`isRfOnly`, `rfReachableDespiteNonRfLatest`),
@@ -1611,10 +1624,20 @@ deliberately double-feeds (RF hook *and* OnISSent); that is harmless because
 for both legs so the fix keeps `rfRank` 0 (our own transmission, never
 counted as RF-reachability evidence).
 
+**Cursor-on-Target (`pkg/cot`) joins this pattern identically.** A CoT's RF
+leg is covered by the same governor TX hook (`source.Kind == "beacon" ||
+source.Kind == "cot"`); its IS leg has its own `cot.Options.OnISSent`
+callback, wired in `pkg/app/wiring.go` right next to the beacon one, doing
+the identical `stationcache.ExtractEntry(pkt, "cot", "TX", channel)` extract.
+Without it an `is_only` CoT target would reach APRS-IS but never appear on
+the local map, for exactly the reason #438 describes for beacons.
+
 Source: [`../../pkg/beacon/scheduler.go`](../../pkg/beacon/scheduler.go)
 (`sendBeaconWith` IS leg, `Options.OnISSent`),
+[`../../pkg/cot/scheduler.go`](../../pkg/cot/scheduler.go)
+(`send` IS leg, `Options.OnISSent`),
 [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go)
-(governor TX hook + `OnISSent` wiring),
+(governor TX hook + both `OnISSent` wirings),
 [`../../pkg/beacon/scheduler_test.go`](../../pkg/beacon/scheduler_test.go)
 (`TestOnISSent_FiresForISOnly`, `TestOnISSent_NotFiredForRFOnly`).
 
@@ -2011,3 +2034,69 @@ Source: [`../../pkg/kiss/manager.go`](../../pkg/kiss/manager.go)
 (`stopManaged`, `Manager.Start`, `managedServer.serveDone`,
 `serveShutdownGrace`);
 [`../../pkg/kiss/manager_rebind_test.go`](../../pkg/kiss/manager_rebind_test.go).
+
+### 68. RF ingestion must never share a synchronous write with APRS-IS ingestion
+
+`stationcache.PersistentCache` (`pkg/stationcache/persistent.go`) hands
+every `Update`/`RecordRxEvent` call off to a single background writer
+goroutine via a bounded channel (`writeQueueCapacity`, 512) instead of
+calling into `historydb` synchronously from the caller. The writer
+coalesces pending work over `writeFlushInterval` (150ms) into one
+`WriteEntries` / `RecordRxEvents` transaction each. `MemCache.Update` (the
+in-memory part) stays synchronous -- only the SQLite write is async.
+
+*Why:* Both the RF ingest path (`dispatchRxFrame`, the single
+`rxFanoutWG` consumer goroutine) and the APRS-IS ingest path
+(`onIGateIsRxPacket`, called synchronously from `Igate.handleISLine` on
+the APRS-IS client's read loop) called `stationCache.Update` /
+`RecordRxEvent` directly. Position Log's `historydb.DB` opens with
+`SetMaxOpenConns(1)`, so with persistence enabled the two paths
+serialized against the same single SQLite connection. A busy APRS-IS
+server filter (e.g. a 100km radius around a populated area) could
+generate enough write volume to delay the RF path through that shared
+connection -- the RF ingest path uses a bounded, non-blocking channel
+send from the KISS-TNC producer (`kissTncProduce`), so once
+`dispatchRxFrame` is delayed long enough for the shared `rxFanout`
+channel to fill, further off-air frames are silently dropped. This was
+graywolf's "RF packets stop while the iGate is on" report (2026-09) on a
+KISS/BLE-backed channel with Position Log enabled.
+
+Any future caller of `PersistentCache.Update`/`RecordRxEvent` (or a new
+persistence path added alongside them) must go through the same queue --
+adding a second direct caller of `historydb.WriteEntries`/`RecordRxEvent`
+from a latency-sensitive goroutine reintroduces the exact contention this
+invariant closes.
+
+Source: [`../../pkg/stationcache/persistent.go`](../../pkg/stationcache/persistent.go)
+(`writeLoop`, `Update`, `RecordRxEvent`);
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go) (`dispatchRxFrame`);
+[`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`onIGateIsRxPacket`);
+[`../../pkg/igate/igate.go`](../../pkg/igate/igate.go) (`handleISLine`).
+
+### 69. Every KISS server-listen broadcast write is bounded by a hung-peer deadline
+
+`kiss.Server.Broadcast` (the RX-echo path used by `BroadcastFromChannel`
+and called once per RF frame from `dispatchRxFrame`) sets a per-connection
+write deadline (`Server.broadcastDeadline`, default
+`instanceTxSocketDeadline` = 10s) before every client write, and closes
+that client's connection on a timeout/error. This mirrors `TxBroadcast`'s
+existing hung-peer guard, which covers the governor-driven TX path.
+
+*Why:* `Broadcast` runs inline on the single RX-fanout consumer goroutine.
+Before this deadline existed, a single stalled or slow-reading KISS
+client (a monitoring app that stopped draining its socket, or a dead TCP
+peer) could block `net.Conn.Write` indefinitely, stalling every
+subsequent RF frame system-wide regardless of its source -- a plausible
+independent contributor to the same "RF packets stop" class of report as
+invariant 68.
+
+Corollary: any new per-connection write path added to `kiss.Server` (RX
+echo, TX broadcast, or otherwise) must set a bounded write deadline the
+same way -- an un-deadlined `net.Conn.Write` on a fan-out path is a
+latent full-stall bug.
+
+Source: [`../../pkg/kiss/server.go`](../../pkg/kiss/server.go)
+(`Broadcast`, `TxBroadcast`, `broadcastDeadline`);
+[`../../pkg/kiss/server_test.go`](../../pkg/kiss/server_test.go)
+(`TestServerBroadcast_StalledClientDoesNotBlockOthers`).
+

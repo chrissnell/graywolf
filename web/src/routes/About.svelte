@@ -87,7 +87,7 @@
 
 <style>
   .about-content {
-    max-width: 560px;
+    /* Left Empty */
   }
 
   /* Shared section wrapper — "This install", "Updates", "What's new". */

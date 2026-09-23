@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Box } from '@chrissnell/chonky-ui';
+  import { Button, Box, Badge } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { online } from '../lib/stores/connection.js';
   import { formatAltitude, formatSpeed } from '../lib/settings/units.js';
@@ -8,19 +8,71 @@
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
+  import { channelsStore, start as startChannels } from '../lib/stores/channels.svelte.js';
+  import { SUMMARY_KISS_TNC, HEALTH_LIVE, isTxCapable } from '../lib/channelBacking.js';
+  import { groupBeaconsByChannel } from '../lib/beaconsByChannel.js';
 
   let packets = $state([]);
   let status = $state(null);
   let position = $state(null);
   let beacons = $state([]);
   let stationCallsign = $state('');
-  let audioDevices = $state([]);
   let pollTimer = $state(null);
+
+  // Log feed fills whatever viewport space is left below it, so there's no
+  // dead space on tall screens, but never shrinks below a usable 400px.
+  // Measured (not hardcoded per-section heights) so it stays correct as the
+  // channel/stats grids reflow at different widths and row counts.
+  const MIN_FEED_HEIGHT = 400;
+  let feedSectionEl;
+  let feedHeight = $state(MIN_FEED_HEIGHT);
+  let feedResizeObserver;
+
+  function recomputeFeedHeight() {
+    if (!feedSectionEl) {
+      return;
+    }
+    const top = feedSectionEl.getBoundingClientRect().top;
+    const footerHeight = document.querySelector('.app-footer')?.offsetHeight ?? 0;
+    // The 48 is the main body padding top and bottom added together.
+    const available = window.innerHeight - top - 48 - footerHeight; // mirror main-content's bottom padding, leave room for the app footer
+    // `feedHeight` only sizes PacketLogViewer's scrollable body — its toolbar
+    // (live dot, toggles, entry count) renders above that and adds to the
+    // section's real footprint, so fitting the *body* to `available` still
+    // overflows the viewport by the toolbar's height. Infer that chrome from
+    // what's already on screen (rather than hardcoding a guess that breaks
+    // if the toolbar wraps to two lines) and size the body to compensate.
+    const chrome = Math.max(0, feedSectionEl.offsetHeight - feedHeight);
+    feedHeight = Math.max(MIN_FEED_HEIGHT, Math.round(available - chrome));
+  }
+
+  // Cross-references status channel ids with the backing data from /api/channels.
+  let channelMetaById = $derived(
+    Object.fromEntries((channelsStore.list || []).map(c => [c.id, c]))
+  );
+
+  // The channel the app will use for TX when "Auto" is selected — mirrors
+  // resolveTxChannel(0): first enabled TX-capable channel in config order.
+  let firstTxChannelId = $derived(
+    (channelsStore.list || []).find(c => c.enabled !== false && isTxCapable(c))?.id ?? null
+  );
 
   let offline = $derived(!$online);
 
-  let hasInput = $derived(audioDevices.some(d => d.direction === 'input'));
-  let hasOutput = $derived(audioDevices.some(d => d.direction === 'output'));
+  // Station readiness must reflect the channel's actual backend (modem
+  // OR kiss-tnc), not the raw /api/audio-devices list: a KISS/BLE-backed
+  // channel has no audio device at all yet can be fully RX/TX live, and an
+  // audio device row existing (e.g. a phone's mic) doesn't mean any channel
+  // is actually using it. HEALTH_LIVE already means "at least one backend
+  // instance is up", so it's the right signal for both chips.
+  let hasInput = $derived(
+    (channelsStore.list || []).some(c => c.enabled !== false && c.backing?.health === HEALTH_LIVE)
+  );
+  let hasOutput = $derived(
+    (channelsStore.list || []).some(
+      c => c.enabled !== false && c.backing?.health === HEALTH_LIVE && isTxCapable(c)
+    )
+  );
 
   // When contact with the server is lost, the polled values we hold are
   // stale — drop them so the cards fall back to placeholder dashes instead
@@ -43,16 +95,11 @@
   let txActive = $state({});
   let sendingBeacon = $state({});
 
-  // Group enabled beacons by channel
-  let beaconsByChannel = $derived(
-    beacons.reduce((acc, b) => {
-      if (b.enabled) {
-        if (!acc[b.channel]) acc[b.channel] = [];
-        acc[b.channel].push(b);
-      }
-      return acc;
-    }, {})
-  );
+  // Group enabled beacons by the channel card they should show a
+  // "Beacon Now" button on. Auto (channel=0) beacons bucket under
+  // firstTxChannelId so the button tracks wherever the app would
+  // actually transmit, surviving an enable/disable channel swap.
+  let beaconsByChannel = $derived(groupBeaconsByChannel(beacons, firstTxChannelId));
 
   // Same auto-refresh / auto-scroll switches as the APRS Logs page, rendered
   // in the packet feed's own toolbar via Chonky's LogViewer toolbarToggles.
@@ -89,9 +136,21 @@
     loadData();
     loadBeacons();
     loadStationCallsign();
-    loadAudioDevices();
+    startChannels(); // backing data (modem vs kiss-tnc) drives readiness + card rendering
     pollTimer = setInterval(loadData, 5000);
-    return () => clearInterval(pollTimer);
+
+    recomputeFeedHeight();
+    window.addEventListener('resize', recomputeFeedHeight);
+    // Catches layout shifts recomputeFeedHeight's own resize listener can't
+    // see: channel/stats cards appearing or wrapping as data/status load in.
+    feedResizeObserver = new ResizeObserver(recomputeFeedHeight);
+    feedResizeObserver.observe(document.body);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener('resize', recomputeFeedHeight);
+      feedResizeObserver?.disconnect();
+    };
   });
 
   async function loadData() {
@@ -138,10 +197,6 @@
       const s = await api.get('/station/config');
       stationCallsign = s?.callsign ?? '';
     } catch (_) {}
-  }
-
-  async function loadAudioDevices() {
-    try { audioDevices = await api.get('/audio-devices') || []; } catch (_) {}
   }
 
   async function sendBeaconNow(beaconId) {
@@ -223,7 +278,7 @@
   // LogViewer now — nothing to wire up here beyond passing `packets` through.
 </script>
 
-<PageHeader title="Dashboard" subtitle="Live station overview" />
+<PageHeader title={stationCallsign ? `${stationCallsign} Dashboard` : 'Dashboard'} subtitle="Live station overview" />
 
 {#if offline}
   <div class="conn-lost" role="alert">
@@ -236,11 +291,11 @@
   <div class="readiness-row">
     <div class="ready-chip" class:ok={hasInput}>
       <span class="ready-dot">{hasInput ? '\u25CF' : '\u25CB'}</span>
-      <span>RX {hasInput ? 'Ready' : 'No Input'}</span>
+      <span>RX {hasInput ? 'Ready' : 'Not Ready'}</span>
     </div>
     <div class="ready-chip" class:ok={hasOutput}>
       <span class="ready-dot">{hasOutput ? '\u25CF' : '\u25CB'}</span>
-      <span>TX Audio {hasOutput ? 'Ready' : 'No Output'}</span>
+      <span>TX {hasOutput ? 'Ready' : 'Not Ready'}</span>
     </div>
   </div>
 {/if}
@@ -251,16 +306,30 @@
     {#each status.channels as ch}
       {@const channelBeacons = beaconsByChannel[ch.id] || []}
       {@const audioPeak = ch.device_peak_dbfs || ch.audio_peak}
-      <div class="ch-card">
+      {@const isKissTnc = channelMetaById[ch.id]?.backing?.summary === SUMMARY_KISS_TNC}
+      {@const kissBacking = channelMetaById[ch.id]?.backing}
+      {@const isDisabled = channelMetaById[ch.id]?.enabled === false}
+      {@const isFirstTxChannel = ch.id === firstTxChannelId}
+      <div class="ch-card" class:disabled={isDisabled}>
         <div class="ch-header">
-          <span class="ch-title">CH{ch.id}: {ch.name}</span>
+          <div class="ch-title-row">
+            <span class="ch-title">CH{ch.id}: {ch.name}</span>
+            {#if isDisabled}
+              <Badge variant="warning">Disabled</Badge>
+            {/if}
+            {#if isFirstTxChannel}
+              <Badge variant="success">★ TX</Badge>
+            {/if}
+          </div>
           <span class="ch-modem">{ch.modem_type.toUpperCase()} {ch.bit_rate} bd</span>
         </div>
 
         <div class="ch-indicators">
-          <span class="indicator" class:active={ch.dcd_state}>
-            <span class="ind-dot dcd"></span> DCD
-          </span>
+          {#if !isKissTnc}
+            <span class="indicator" class:active={ch.dcd_state}>
+              <span class="ind-dot dcd"></span> DCD
+            </span>
+          {/if}
           <span class="indicator" class:active={rxActive[ch.id]}>
             <span class="ind-dot rx"></span> RX
           </span>
@@ -269,17 +338,27 @@
           </span>
         </div>
 
-        <div class="ch-audio">
-          <div class="level-bar">
-            <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+        {#if isKissTnc}
+          {@const live = kissBacking?.health === HEALTH_LIVE}
+          <div class="ch-tnc-status">
+            <span class="tnc-glyph {live ? 'live' : 'down'}" aria-hidden="true">{live ? '\u25CF' : '\u25CB'}</span>
+            <span class="tnc-status-text">TNC {live ? 'Connected' : 'Disconnected'}</span>
           </div>
-          <span class="level-value">{formatPeak(audioPeak)}</span>
-        </div>
+        {:else}
+          <div class="ch-audio">
+            <div class="level-bar">
+              <div class="level-fill" style="width: {isDisabled ? 0 : peakToPercent(audioPeak)}%; background: {isDisabled ? '' : levelColor(audioPeak)}"></div>
+            </div>
+            <span class="level-value">{formatPeak(audioPeak)}</span>
+          </div>
+        {/if}
 
         <div class="ch-stats">
           <span>RX: <strong>{ch.rx_frames || 0}</strong></span>
           <span>TX: <strong>{ch.tx_frames || 0}</strong></span>
-          <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          {#if !isKissTnc}
+            <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          {/if}
         </div>
 
         {#if channelBeacons.length > 0}
@@ -338,13 +417,13 @@
 </div>
 
 <!-- Live Packet Feed -->
-<div class="feed-section">
+<div class="feed-section" bind:this={feedSectionEl}>
   {#if packets.length === 0}
     <Box><div class="empty">Waiting for packets...</div></Box>
   {:else}
     <PacketLogViewer
       {packets}
-      height="400px"
+      height="{feedHeight}px"
       live={logPrefsState.autoRefresh}
       autoscroll={logPrefsState.autoScroll}
       {toolbarToggles}
@@ -421,10 +500,25 @@
     flex-direction: column;
     gap: 12px;
   }
+  /* A disabled channel is inert; dim the card and dash its border. */
+  .ch-card.disabled {
+    opacity: 0.65;
+    border-style: dashed;
+  }
+
   .ch-header {
     display: flex;
     justify-content: space-between;
-    align-items: baseline;
+    align-items: center;
+    gap: 8px;
+  }
+  .ch-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    flex: 1;
+    min-width: 0;
   }
   .ch-title {
     font-size: 15px;
@@ -499,6 +593,27 @@
     white-space: nowrap;
     min-width: 55px;
     text-align: right;
+  }
+
+  /* ── KISS-TNC connection status (replaces dBFS bar) ── */
+  .ch-tnc-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .tnc-glyph {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .tnc-glyph.live { color: var(--color-success, #3fb950); }
+  .tnc-glyph.down { color: var(--color-warning, #d29922); }
+  .tnc-status-text {
+    color: var(--color-text-muted);
+    font-weight: 500;
   }
 
   /* ── channel stats ────────────────────────────── */

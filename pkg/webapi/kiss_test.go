@@ -780,6 +780,74 @@ func TestNotifyKissManager_SerialReload(t *testing.T) {
 	}
 }
 
+// TestKiss_SignalsTxRouting is the regression guard for the "Auto TX
+// channel goes stale" bug on the KISS side: create, update,
+// enable-toggle, and delete must all wake the iGate/messages reload
+// drainers (not just the Phase 3 TX-dispatcher signal), since any of
+// these can change kissTxChannelSet's answer.
+func TestKiss_SignalsTxRouting(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	msgCh := make(chan struct{}, 1)
+	igCh := make(chan struct{}, 1)
+	srv.SetMessagesReload(msgCh)
+	srv.SetIgateReload(igCh)
+
+	drain := func(t *testing.T, label string) {
+		t.Helper()
+		select {
+		case <-msgCh:
+		default:
+			t.Errorf("%s: expected messages reload signal", label)
+		}
+		select {
+		case <-igCh:
+		default:
+			t.Errorf("%s: expected igate reload signal", label)
+		}
+	}
+
+	createBody, _ := json.Marshal(map[string]any{"type": "tcp", "tcp_port": 21001, "channel": 1})
+	createRec := doPost(mux, "/api/kiss", createBody)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d: %s", createRec.Code, createRec.Body.String())
+	}
+	var created dto.KissResponse
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	drain(t, "create")
+
+	updBody, _ := json.Marshal(map[string]any{"type": "tcp", "tcp_port": 21001, "channel": 1, "mode": "tnc"})
+	updReq := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(created.ID), bytes.NewReader(updBody))
+	updReq.Header.Set("Content-Type", "application/json")
+	updRec := httptest.NewRecorder()
+	mux.ServeHTTP(updRec, updReq)
+	if updRec.Code != http.StatusOK {
+		t.Fatalf("update status = %d: %s", updRec.Code, updRec.Body.String())
+	}
+	drain(t, "update")
+
+	enBody, _ := json.Marshal(map[string]any{"enabled": false})
+	enReq := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(created.ID)+"/enabled", bytes.NewReader(enBody))
+	enReq.Header.Set("Content-Type", "application/json")
+	enRec := httptest.NewRecorder()
+	mux.ServeHTTP(enRec, enReq)
+	if enRec.Code != http.StatusOK {
+		t.Fatalf("enable-toggle status = %d: %s", enRec.Code, enRec.Body.String())
+	}
+	drain(t, "enable-toggle")
+
+	delReq := httptest.NewRequest(http.MethodDelete, "/api/kiss/"+itoa(created.ID), nil)
+	delRec := httptest.NewRecorder()
+	mux.ServeHTTP(delRec, delReq)
+	if delRec.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d: %s", delRec.Code, delRec.Body.String())
+	}
+	drain(t, "delete")
+}
+
 // doPost is a small request helper so each test case stays readable.
 func doPost(mux *http.ServeMux, path string, body []byte) *httptest.ResponseRecorder {
 	var r *http.Request

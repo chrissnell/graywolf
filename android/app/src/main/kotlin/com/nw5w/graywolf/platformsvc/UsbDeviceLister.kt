@@ -52,7 +52,8 @@ internal object UsbDeviceLister {
                 .setPid(dev.productId)
                 .setProduct(dev.productName ?: "")
                 .setManufacturer(dev.manufacturerName ?: "")
-                .setDevicePath(dev.deviceName ?: "")
+                // getDeviceName() is @NonNull, unlike productName/manufacturerName.
+                .setDevicePath(dev.deviceName)
                 .addAllClasses(classes)
                 .build()
         }

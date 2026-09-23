@@ -49,6 +49,9 @@ var andEnvKeys = []string{
 	"GRAYWOLF_PLATFORM_SOCKET",
 	"GRAYWOLF_LISTEN",
 	"GRAYWOLF_LISTEN_TOKEN",
+	"GRAYWOLF_STORAGE_LOCATION",
+	"GRAYWOLF_SD_CARD_PATH",
+	"GRAYWOLF_INTERNAL_PATH",
 }
 
 func clearEnv(t *testing.T, keys ...string) {
@@ -59,12 +62,15 @@ func clearEnv(t *testing.T, keys ...string) {
 
 func happyEnv() map[string]string {
 	return map[string]string{
-		"GRAYWOLF_DB":              "/tmp/graywolf.db",
-		"GRAYWOLF_HISTORY_DB":      "/tmp/graywolf-history.db",
-		"GRAYWOLF_TILE_CACHE":      "/tmp/tiles",
-		"GRAYWOLF_MODEM_SOCKET":    "/tmp/modem.sock",
-		"GRAYWOLF_PLATFORM_SOCKET": "@/tmp/platform.sock",
-		"GRAYWOLF_LISTEN":          "127.0.0.1:8080",
-		"GRAYWOLF_LISTEN_TOKEN":    "tok-abc",
+		"GRAYWOLF_DB":               "/tmp/graywolf.db",
+		"GRAYWOLF_HISTORY_DB":       "/tmp/graywolf-history.db",
+		"GRAYWOLF_TILE_CACHE":       "/tmp/tiles",
+		"GRAYWOLF_MODEM_SOCKET":     "/tmp/modem.sock",
+		"GRAYWOLF_PLATFORM_SOCKET":  "@/tmp/platform.sock",
+		"GRAYWOLF_LISTEN":           "127.0.0.1:8080",
+		"GRAYWOLF_LISTEN_TOKEN":     "tok-abc",
+		"GRAYWOLF_STORAGE_LOCATION": "internal",
+		"GRAYWOLF_SD_CARD_PATH":     "",
+		"GRAYWOLF_INTERNAL_PATH":    "/tmp/files",
 	}
 }

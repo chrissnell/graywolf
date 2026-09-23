@@ -14,8 +14,11 @@ const defaultSessionMaxAge = 7 * 24 * time.Hour // 7 days
 
 // Handlers groups the auth HTTP endpoints.
 type Handlers struct {
-	Auth   *AuthStore
-	Secure bool // set true when binding to non-loopback
+	Auth *AuthStore
+	// Secure marks the session cookie Secure. Always false today: the caller
+	// (pkg/app/wiring.go wireHTTP) hardcodes it false because graywolf has no
+	// TLS support, regardless of bind address.
+	Secure bool
 	// Logger receives structured error logs. If nil, slog.Default() is used.
 	Logger *slog.Logger
 	// SessionMaxAge, when non-zero, overrides the default 7-day session

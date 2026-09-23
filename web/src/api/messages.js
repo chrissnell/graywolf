@@ -128,6 +128,18 @@ export function resendMessage(id) {
   return api.post(`/messages/${encodeURIComponent(id)}/resend`);
 }
 
+/**
+ * POST /api/messages/{id}/abort — cancels a pending DM's next
+ * scheduled retry and marks it terminally "aborted" (the row is not
+ * deleted). 200 with the refreshed row, or 409 if the message is
+ * already in a terminal state (acked/rejected/broadcast) or inbound.
+ * @param {number} id
+ * @returns {Promise<MessageResponse>}
+ */
+export function abortMessage(id) {
+  return api.post(`/messages/${encodeURIComponent(id)}/abort`);
+}
+
 // --- Conversations --------------------------------------------------
 
 /**

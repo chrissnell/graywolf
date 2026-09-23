@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { Button, Input, Toggle, Box, Radio, RadioGroup, Badge, Checkbox, AlertDialog } from '@chrissnell/chonky-ui';
+  import { Button, Input, Toggle, Radio, RadioGroup, Badge, Checkbox, AlertDialog, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
   import { unitsState } from '../lib/settings/units-store.svelte.js';
@@ -15,12 +15,8 @@
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
   import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
-  import {
-    channelRefStatus,
-    buildChannelsById,
-    STATUS_OK,
-    STATUS_DELETED,
-  } from '../lib/channelRefStatus.js';
+  import { buildChannelsById } from '../lib/channelRefStatus.js';
+  import { beaconChannelDisplay } from '../lib/beaconChannelDisplay.js';
   import {
     PRIMARY_TABLE, ALTERNATE_TABLE, SPRITE_URLS, CELL_PX,
     backgroundPosition, loadSymbols, describe,
@@ -61,22 +57,29 @@
   // backend runtime guard (D6) is what ultimately refuses to transmit.
   let stationCallsign = $state('');
 
+  // SmartBeaconing tuning, moved here (from the former BeaconSettings
+  // page) so it lives one tab over from the beacons it governs.
+  let smartBeacon = $state({
+    enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
+    min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
+  });
+  let savingSB = $state(false);
+
   let beacons = $state([]);
+  // Beacon ids currently mid-flight on the inline enable/disable toggle,
+  // so the switch can show a disabled state and can't be double-fired
+  // while the PUT is in-flight.
+  let togglingBeaconIds = $state(new Set());
   // Channels come from the shared channelsStore (D9) so every picker
   // page sees coherent backing state. Legacy local `channels` array is
-  // retained only as a $derived view on top of the store so
-  // channelName() and the modal channel-defaulting code paths keep
-  // working without changes.
+  // retained only as a $derived view on top of the store so the modal
+  // channel-defaulting code paths keep working without changes.
   let channels = $derived(channelsStore.list);
   // Map<id, channel> for O(1) list-card lookups via channelRefStatus.
   // Rebuilt on every channelsStore poll, which is the desired
   // behaviour -- the pill tracks the last polled state (plan D4 /
   // "Risks & non-goals").
   let channelsById = $derived(buildChannelsById(channels));
-  let smartBeacon = $state({
-    enabled: false, fast_speed: '60', fast_rate: '60', slow_speed: '5', slow_rate: '1800',
-    min_turn_angle: '28', turn_slope: '26', min_turn_time: '30',
-  });
   // The server expands {{version}} through text/template at beacon
   // send time, so storing the literal template lets the comment track
   // upgrades without edits.
@@ -93,7 +96,7 @@
   // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
     type: 'position', object_name: '',
-    channel: '', callsign: '', callsign_override: false,
+    channel: 0, callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
     position_format: 'compressed', ambiguity: 0,
@@ -121,6 +124,9 @@
   // modal.
   let selectedChannelObj = $derived.by(() => {
     const n = parseInt(form.channel, 10);
+    // channel 0 = Auto; no channel object has id 0, so lookupChannel
+    // returns undefined and txBlock's `if (!c) return null;` below
+    // already treats Auto as "not blocked" for free.
     return lookupChannel(n);
   });
   // APRS-IS-only beacons carry no RF leg, so the radio channel is
@@ -185,15 +191,9 @@
     }
     prevModalOpen = isOpen;
   });
-  let savingSB = $state(false);
   let pickerOpen = $state(false);
   let symbolMeta = $state(null);
   loadSymbols().then((m) => symbolMeta = m);
-
-  function channelName(id) {
-    const c = channels.find(c => c.id === id);
-    return c ? c.name : `Channel #${id}`;
-  }
 
   function formatInterval(seconds) {
     if (!seconds) return '—';
@@ -250,14 +250,7 @@
 
   onMount(async () => {
     beacons = await api.get('/beacons') || [];
-    const sb = await api.get('/smart-beacon');
-    if (sb) smartBeacon = {
-      enabled: sb.enabled,
-      fast_speed: String(sb.fast_speed), fast_rate: String(sb.fast_rate),
-      slow_speed: String(sb.slow_speed), slow_rate: String(sb.slow_rate),
-      min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
-      min_turn_time: String(sb.min_turn_time),
-    };
+    loadCotTargets();
     // Station callsign drives the inherited-placeholder and the list's
     // "inherited" rendering. Failure is non-fatal — the page stays
     // usable, beacons are still authorable, and the placeholder just
@@ -268,6 +261,14 @@
     } catch {
       stationCallsign = '';
     }
+    const sb = await api.get('/smart-beacon');
+    if (sb) smartBeacon = {
+      enabled: sb.enabled,
+      fast_speed: String(sb.fast_speed), fast_rate: String(sb.fast_rate),
+      slow_speed: String(sb.slow_speed), slow_rate: String(sb.slow_rate),
+      min_turn_angle: String(sb.min_turn_angle), turn_slope: String(sb.turn_slope),
+      min_turn_time: String(sb.min_turn_time),
+    };
     // Deep-link entry from the map context menu's "Add fixed beacon
     // here" item: open the create modal with pos_source=fixed and the
     // clicked coordinates prefilled. Await the channels store's first
@@ -285,19 +286,37 @@
     }
   });
 
+  async function saveSmartBeacon(e) {
+    e.preventDefault();
+    savingSB = true;
+    try {
+      await api.put('/smart-beacon', {
+        enabled: smartBeacon.enabled,
+        fast_speed: parseInt(smartBeacon.fast_speed),
+        fast_rate: parseInt(smartBeacon.fast_rate),
+        slow_speed: parseInt(smartBeacon.slow_speed),
+        slow_rate: parseInt(smartBeacon.slow_rate),
+        min_turn_angle: parseInt(smartBeacon.min_turn_angle),
+        turn_slope: parseInt(smartBeacon.turn_slope),
+        min_turn_time: parseInt(smartBeacon.min_turn_time),
+      });
+      toasts.success('SmartBeaconing saved');
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      savingSB = false;
+    }
+  }
+
   function openCreate() {
     editing = null;
     form.type = 'position';
     form.object_name = '';
-    // A radioless (APRS-IS-only) station has no channels at all. Rather
-    // than block beacon creation, default to an APRS-IS-only beacon so
-    // the operator can get on the network with no RF setup; the channel
-    // picker stays hidden until they pick an RF send path.
-    if (channels.length === 0) {
-      form.channel = '';
-    } else {
-      form.channel = String(channels[0].id);
-    }
+    // Default new beacons to Auto so they survive a future channel
+    // renumbering/swap without an edit. Auto only matters once an RF
+    // send path is chosen below; a radioless station still falls
+    // through to is_only regardless of this value.
+    form.channel = 0;
     form.callsign = '';
     form.callsign_override = false;
     callsignError = '';
@@ -336,7 +355,7 @@
     Object.assign(form, row, {
       type: row.type || 'position',
       object_name: row.object_name || '',
-      channel: String(row.channel),
+      channel: row.channel,
       callsign: rowCall,
       callsign_override: rowCall !== '',
       symbol_table: row.symbol_table || '/',
@@ -383,7 +402,7 @@
       // so the value is unambiguous even when switching from an RF beacon
       // that had a channel selected.
       channelId = 0;
-    } else if (!Number.isFinite(channelId) || channelId <= 0) {
+    } else if (!Number.isFinite(channelId) || channelId < 0) {
       toasts.error('Channel required');
       return;
     }
@@ -518,10 +537,9 @@
       if (!cfg) throw new Error('SmartBeacon settings unavailable');
       if (cfg.enabled) return;
       await api.put('/smart-beacon', { ...cfg, enabled: true });
-      smartBeacon = { ...smartBeacon, enabled: true };
       toasts.success('SmartBeaconing enabled so your tracker beacons transmit');
     } catch (err) {
-      toasts.error(`Beacon saved, but SmartBeaconing could not be enabled automatically: ${err.message || 'enable it in the SmartBeaconing panel below.'}`);
+      toasts.error(`Beacon saved, but SmartBeaconing could not be enabled automatically: ${err.message || 'enable it on the Smart Beaconing tab.'}`);
     }
   }
 
@@ -553,33 +571,110 @@
     }
   }
 
-  async function saveSmartBeacon(e) {
-    e.preventDefault();
-    savingSB = true;
+  // Inline enable/disable from the card, without opening the edit
+  // modal. There is no dedicated partial-update route for beacons (as
+  // there is for channels), so this PUTs the full row back with only
+  // `enabled` flipped -- everything else is unchanged.
+  async function toggleBeaconEnabled(row, next) {
+    togglingBeaconIds.add(row.id);
+    togglingBeaconIds = new Set(togglingBeaconIds);
     try {
-      await api.put('/smart-beacon', {
-        enabled: smartBeacon.enabled,
-        fast_speed: parseInt(smartBeacon.fast_speed),
-        fast_rate: parseInt(smartBeacon.fast_rate),
-        slow_speed: parseInt(smartBeacon.slow_speed),
-        slow_rate: parseInt(smartBeacon.slow_rate),
-        min_turn_angle: parseInt(smartBeacon.min_turn_angle),
-        turn_slope: parseInt(smartBeacon.turn_slope),
-        min_turn_time: parseInt(smartBeacon.min_turn_time),
-      });
-      toasts.success('SmartBeaconing saved');
+      const { id, ...rest } = row;
+      const updated = await api.put(`/beacons/${row.id}`, { ...rest, enabled: next });
+      beacons = beacons.map((b) => (b.id === row.id ? updated : b));
+      toasts.success(`Beacon ${next ? 'enabled' : 'disabled'}`);
+    } catch (err) {
+      toasts.error(`Failed to ${next ? 'enable' : 'disable'} beacon: ${err.message}`);
+    } finally {
+      togglingBeaconIds.delete(row.id);
+      togglingBeaconIds = new Set(togglingBeaconIds);
+    }
+  }
+
+  // --- Cursor-on-Target (CoT) tabs -------------------------------------
+  // CoT targets are only ever created from the live map's "Add CoT"
+  // dialog -- this page can view, manually resend, and delete them, but
+  // has no create form of its own (see cot-dialog.svelte).
+  let activeTab = $state('beacons'); // 'beacons' | 'smart-beaconing' | 'active-cot' | 'inactive-cot'
+  let cotTargets = $state([]);
+  let cotDeleteTarget = $state(null);
+  let cotDeleteOpen = $state(false);
+  let deleteAllInactiveOpen = $state(false);
+
+  // `active` is computed server-side (tx_count < num_transmits) and is
+  // the single source of truth for which tab a target belongs to.
+  let activeCotTargets = $derived(cotTargets.filter((t) => t.active));
+  let inactiveCotTargets = $derived(cotTargets.filter((t) => !t.active));
+
+  async function loadCotTargets() {
+    try {
+      cotTargets = await api.get('/cot-targets') || [];
+    } catch (err) {
+      toasts.error(`Could not load Cursor-on-Targets: ${err.message}`);
+    }
+  }
+
+  // Manual resend: never touches the target's tx_count/num_transmits
+  // counter (see docs/wiki/invariants.md) -- the list doesn't need a
+  // refresh after this succeeds.
+  async function handleCotSendNow(t) {
+    try {
+      await api.post(`/cot-targets/${t.id}/send`, {});
+      toasts.success(`Cursor-on-Target sent: ${t.object_name}`);
+    } catch (err) {
+      toasts.error(err.message);
+    }
+  }
+
+  function confirmDeleteCot(t) {
+    cotDeleteTarget = t;
+    cotDeleteOpen = true;
+  }
+
+  async function executeDeleteCot() {
+    if (!cotDeleteTarget) return;
+    try {
+      await api.delete(`/cot-targets/${cotDeleteTarget.id}`);
+      toasts.success('Cursor-on-Target deleted');
+      await loadCotTargets();
     } catch (err) {
       toasts.error(err.message);
     } finally {
-      savingSB = false;
+      cotDeleteOpen = false;
+      cotDeleteTarget = null;
+    }
+  }
+
+  async function executeDeleteAllInactiveCot() {
+    try {
+      const res = await api.delete('/cot-targets/inactive');
+      const n = res?.deleted ?? 0;
+      toasts.success(`Deleted ${n} inactive Cursor-on-Target${n === 1 ? '' : 's'}`);
+      await loadCotTargets();
+    } catch (err) {
+      toasts.error(err.message);
+    } finally {
+      deleteAllInactiveOpen = false;
     }
   }
 </script>
 
-<PageHeader title="Beacons" subtitle="APRS beacon configuration">
-  <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
+<PageHeader title="Beacons" subtitle="APRS beacon configuration and Cursor-on-Target objects">
+  {#if activeTab === 'beacons'}
+    <Button variant="primary" onclick={openCreate}>+ Add Beacon</Button>
+  {:else if activeTab === 'inactive-cot' && inactiveCotTargets.length > 0}
+    <Button variant="danger" onclick={() => deleteAllInactiveOpen = true}>Delete all</Button>
+  {/if}
 </PageHeader>
 
+<div class="tabs">
+  <button class="tab" class:active={activeTab === 'beacons'} onclick={() => activeTab = 'beacons'}>Beacons</button>
+  <button class="tab" class:active={activeTab === 'smart-beaconing'} onclick={() => activeTab = 'smart-beaconing'}>Smart Beaconing</button>
+  <button class="tab" class:active={activeTab === 'active-cot'} onclick={() => activeTab = 'active-cot'}>Active Cursor-on-Targets</button>
+  <button class="tab" class:active={activeTab === 'inactive-cot'} onclick={() => activeTab = 'inactive-cot'}>Inactive Cursor-on-Targets</button>
+</div>
+
+{#if activeTab === 'beacons'}
 <!-- Gated on lastUpdated (set only after a successful fetch) so the
      banner doesn't flash before the channels store's first load, and
      stays hidden if that fetch errors — we don't claim "no channels"
@@ -600,19 +695,7 @@
 {:else}
   <div class="beacon-grid">
     {#each beacons as b}
-      {@const isOnly = b.send_path === 'is_only'}
-      {@const refStatus = channelRefStatus(b.channel, channelsById)}
-      {@const broken = !isOnly && refStatus.status !== STATUS_OK}
-      {@const pillAriaLabel = broken
-        ? (refStatus.status === STATUS_DELETED
-            ? `Channel #${b.channel} deleted`
-            : `${refStatus.channel?.name ?? `Channel #${b.channel}`} unreachable: ${refStatus.reason}`)
-        : `Channel ${refStatus.channel?.name ?? `#${b.channel}`}`}
-      {@const pillTitle = broken
-        ? (refStatus.status === STATUS_DELETED
-            ? `Channel #${b.channel} deleted`
-            : `Unreachable: ${refStatus.reason}`)
-        : ''}
+      {@const disp = beaconChannelDisplay(b, channelsById)}
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
@@ -638,7 +721,12 @@
             {/if}
           </div>
           <div class="beacon-badges">
-            <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+            <Toggle
+              checked={b.enabled}
+              onCheckedChange={(v) => toggleBeaconEnabled(b, v)}
+              disabled={togglingBeaconIds.has(b.id)}
+              aria-label={`${b.enabled ? 'Disable' : 'Enable'} beacon ${beaconLabel(b, stationCallsign)}`}
+            />
             {#if b.type === 'object'}
               <Badge variant="info">Object</Badge>
             {:else if b.type === 'tracker'}
@@ -652,28 +740,17 @@
           </div>
         </div>
 
-        <div class="beacon-channel" class:broken>
-          {#if isOnly}
-            <span class="channel-label">Send to</span>
-            <span class="channel-value">APRS-IS only (no radio)</span>
-          {:else}
+        <div class="beacon-channel" class:broken={disp.broken}>
           <span
             class="channel-label"
-            class:danger={broken}
-            aria-label={pillAriaLabel}
-            title={pillTitle}
+            class:danger={disp.broken}
+            aria-label={disp.ariaLabel}
+            title={disp.title}
           >
-            {#if refStatus.status === STATUS_DELETED}
-              Channel deleted
-            {:else if broken}
-              Unreachable: {refStatus.reason}
-            {:else}
-              Channel
-            {/if}
+            {disp.label}
           </span>
-          {#if refStatus.status !== STATUS_DELETED}
-            <span class="channel-value">{channelName(b.channel)}</span>
-          {/if}
+          {#if disp.showValue}
+            <span class="channel-value">{disp.value}</span>
           {/if}
         </div>
 
@@ -717,8 +794,9 @@
     {/each}
   </div>
 {/if}
+{/if}
 
-<div style="margin-top: 24px;">
+{#if activeTab === 'smart-beaconing'}
   <Box title="SmartBeaconing">
     <p class="sb-intro">
       SmartBeaconing adjusts your beacon rate based on how you're moving.
@@ -779,7 +857,103 @@
       </div>
     </form>
   </Box>
-</div>
+{/if}
+
+{#snippet cotCard(t)}
+  {@const disp = beaconChannelDisplay(t, channelsById)}
+  <div class="beacon-card">
+    <div class="beacon-header">
+      <div class="beacon-identity">
+        <span
+          class="symbol-swatch"
+          style="background-image: url({SPRITE_URLS[t.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(t.symbol || 'D', CELL_PX)};"
+          aria-hidden="true"
+        >
+          {#if t.overlay && t.symbol_table === ALTERNATE_TABLE}
+            <span class="symbol-swatch-overlay">{t.overlay}</span>
+          {/if}
+        </span>
+        <span class="beacon-callsign">{t.object_name}</span>
+        <span class="beacon-callsign-inherited">via {stationCallsign || '(not set)'}</span>
+      </div>
+      <div class="beacon-badges">
+        {#if t.send_path === 'is_only'}
+          <Badge variant="info">APRS-IS only</Badge>
+        {:else if t.send_path === 'both'}
+          <Badge variant="info">APRS-IS</Badge>
+        {/if}
+      </div>
+    </div>
+
+    <div class="beacon-channel" class:broken={disp.broken}>
+      <span
+        class="channel-label"
+        class:danger={disp.broken}
+        aria-label={disp.ariaLabel}
+        title={disp.title}
+      >
+        {disp.label}
+      </span>
+      {#if disp.showValue}
+        <span class="channel-value">{disp.value}</span>
+      {/if}
+    </div>
+
+    <div class="beacon-details">
+      <div class="detail-row">
+        <span class="detail-label">Destination</span>
+        <span class="detail-value">{t.destination}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Path</span>
+        <span class="detail-value">{t.path || '—'}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">Position</span>
+        <span class="detail-value">{t.latitude.toFixed(4)}, {t.longitude.toFixed(4)}</span>
+      </div>
+      <div class="detail-row">
+        <span class="detail-label">TX Count</span>
+        <span class="detail-value">{t.tx_count}/{t.num_transmits}</span>
+      </div>
+      {#if t.comment}
+        <div class="detail-row">
+          <span class="detail-label">Comment</span>
+          <span class="detail-value detail-comment">{t.comment}</span>
+        </div>
+      {/if}
+    </div>
+
+    <div class="beacon-actions">
+      <Button variant="ghost" onclick={() => handleCotSendNow(t)}>Beacon Now</Button>
+      <Button variant="danger" onclick={() => confirmDeleteCot(t)}>Delete</Button>
+    </div>
+  </div>
+{/snippet}
+
+{#if activeTab === 'active-cot'}
+  {#if activeCotTargets.length === 0}
+    <div class="empty-state">No active Cursor-on-Targets. Add one from the Live Map's right-click menu.</div>
+  {:else}
+    <div class="beacon-grid">
+      {#each activeCotTargets as t (t.id)}
+        {@render cotCard(t)}
+      {/each}
+    </div>
+  {/if}
+{/if}
+
+{#if activeTab === 'inactive-cot'}
+  {#if inactiveCotTargets.length === 0}
+    <div class="empty-state">No inactive Cursor-on-Targets.</div>
+  {:else}
+    <div class="beacon-grid">
+      {#each inactiveCotTargets as t (t.id)}
+        {@render cotCard(t)}
+      {/each}
+    </div>
+  {/if}
+{/if}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit Beacon' : 'New Beacon'} class="beacon-modal">
   <div class="beacon-form-grid">
@@ -804,8 +978,9 @@
       {#if isTracker}
         <div class="tracker-note">
           This beacon transmits your live GPS position and adjusts its rate
-          using the <strong>SmartBeaconing</strong> settings below. Saving it
-          turns SmartBeaconing on automatically.
+          using the <strong>SmartBeaconing</strong> settings on the
+          Smart Beaconing tab. Saving it turns SmartBeaconing on
+          automatically.
         </div>
       {/if}
       {#if form.type === 'object'}
@@ -833,13 +1008,15 @@
           </div>
         {:else}
           <FormField label="Channel" id="bcn-channel"
-            hint="Radio channel this beacon transmits on. Defined on the Channels page.">
+            hint="Radio channel this beacon transmits on. Choose Auto to always use the first APRS-eligible channel — handy if you change radios or channels later.">
             <ChannelListbox
               id="bcn-channel"
               bind:value={form.channel}
-              valueType="string"
+              valueType="number"
               channels={channels}
               capabilityFilter={txPredicate}
+              allowNone
+              noneLabel="Auto (first APRS-eligible channel)"
             />
           </FormField>
         {/if}
@@ -1035,7 +1212,62 @@
   </AlertDialog.Content>
 </AlertDialog>
 
+<!-- Delete confirmation: single Cursor-on-Target -->
+<AlertDialog bind:open={cotDeleteOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete Cursor-on-Target</AlertDialog.Title>
+    <AlertDialog.Description>
+      Are you sure you want to delete "{cotDeleteTarget?.object_name || '(unset)'}"? This cannot be undone.
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={executeDeleteCot}>Delete</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
+<!-- Delete confirmation: all inactive Cursor-on-Targets -->
+<AlertDialog bind:open={deleteAllInactiveOpen}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>Delete all inactive Cursor-on-Targets</AlertDialog.Title>
+    <AlertDialog.Description>
+      Are you sure you want to delete all {inactiveCotTargets.length} inactive Cursor-on-Target{inactiveCotTargets.length === 1 ? '' : 's'}? This cannot be undone.
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={executeDeleteAllInactiveCot}>Delete all</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
 <style>
+  /* Tab bar — same look as CoTSettings.svelte's tabs; no shared
+     Tabs component exists yet, so this is duplicated per-page. */
+  .tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .tab {
+    padding: 8px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab:hover {
+    color: var(--text-primary);
+  }
+  .tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
   .empty-state {
     text-align: center;
     color: var(--text-muted);
@@ -1190,30 +1422,6 @@
     color: white !important;
   }
 
-  .sb-intro {
-    font-size: 14px;
-    line-height: 1.5;
-    color: var(--color-text-muted, #888);
-    margin: 0 0 16px 0;
-  }
-  .sb-section-label {
-    margin: 20px 0 4px 0;
-    font-size: 14px;
-    font-weight: 600;
-  }
-  .sb-section-desc {
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--color-text-muted, #888);
-    margin: 0 0 8px 0;
-  }
-  .sb-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 0 16px;
-    margin-top: 12px;
-  }
-  .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 
   /* Wider modal for the two-column beacon form. */
@@ -1456,4 +1664,30 @@
     border-color: var(--color-warning, #d29922);
     background: var(--color-warning-muted, rgba(210, 153, 34, 0.15));
   }
+
+  /* Smart Beaconing tab (moved from CoTSettings.svelte). */
+  .sb-intro {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 16px 0;
+  }
+  .sb-section-label {
+    margin: 20px 0 4px 0;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .sb-section-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-muted, #888);
+    margin: 0 0 8px 0;
+  }
+  .sb-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0 16px;
+    margin-top: 12px;
+  }
+  .form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 </style>

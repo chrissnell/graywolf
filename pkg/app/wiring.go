@@ -25,6 +25,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/callsign"
 	"github.com/chrissnell/graywolf/pkg/clocksync"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/cot"
 	"github.com/chrissnell/graywolf/pkg/demoseed"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -215,6 +216,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Station cache (map's last-known-state store) ------------------
 	a.stationCache = stationcache.NewPersistentCache(a.logger)
+	// On Android, inject the platform client into the kiss package so
+	// ScanBLEMobilinkd and OpenBLEMobilinkd can route through the Kotlin BLE bridge.
+	a.injectAndroidBLEClient()
 	plCfg, _ := a.store.GetPositionLogConfig(ctx)
 	// On Android, default the position log to enabled on first boot.
 	// The desktop default (off) protects SD-card-based Pi installs from
@@ -349,9 +353,14 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		}
 		if bcns, err := a.store.ListBeacons(ctx); err == nil && len(bcns) == 0 {
 			b := &configstore.Beacon{
-				Type:        "position",
-				Channel:     2,
-				Callsign:    "NW5W-8",
+				Type:     "position",
+				Channel:  2,
+				Callsign: "NW5W-8",
+				// Path/SlotSeconds no longer have a DB-level default
+				// (see models.go), so this seed sets the values that
+				// default used to provide.
+				Path:        "WIDE1-1",
+				SlotSeconds: -1,
 				Enabled:     true,
 				UseGps:      false,
 				Latitude:    40.47624,
@@ -377,6 +386,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 			if err := a.stationCache.Reconfigure(hdb); err != nil {
 				a.logger.Warn("failed to hydrate from history db", "err", err)
 			}
+			a.histdb = hdb
 		}
 	}
 
@@ -495,9 +505,9 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 		plog.Record(e)
 
-		// Feed our own beacon position into the station cache.
-		if source.Kind == "beacon" && pkt != nil {
-			if entries := stationcache.ExtractEntry(pkt, "beacon", "TX", channel); len(entries) > 0 {
+		// Feed our own beacon/CoT position into the station cache.
+		if (source.Kind == "beacon" || source.Kind == "cot") && pkt != nil {
+			if entries := stationcache.ExtractEntry(pkt, source.Kind, "TX", channel); len(entries) > 0 {
 				sc.Update(entries)
 			}
 		}
@@ -619,13 +629,62 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 				a.stationCache.Update(entries)
 			}
 		},
+		// Reuses the same resolveTxChannel messages/iGate call for their
+		// own Auto option (see resolveTxChannel doc + invariant 16c/16d).
+		// Unlike their cached atomic.Uint32, this re-resolves fresh on
+		// every send inside sendBeaconWith, so no reload-signal wiring
+		// is needed here.
+		AutoChannelResolver: func(rctx context.Context) uint32 {
+			return a.resolveTxChannel(rctx, 0)
+		},
 	})
+
 	if err != nil {
 		return fmt.Errorf("beacon scheduler init: %w", err)
 	}
 	a.beaconSched = beaconSched
 	a.beaconReload = make(chan struct{}, 1)
 	a.smartBeaconReload = make(chan struct{}, 1)
+
+	// --- Cursor-on-Target (CoT) scheduler -------------------------------
+	// Stateless (see cotSched doc on App): polls configstore for due
+	// targets rather than holding an in-memory schedule, so no reload
+	// channel is needed here.
+	cotSched, err := cot.New(cot.Options{
+		Sink:         a.gov,
+		Store:        a.store, // *configstore.Store satisfies cot.Store
+		Logger:       a.logger,
+		ChannelModes: a.store, // *configstore.Store satisfies ChannelModeLookup
+		// CoT objects always transmit under the inherited station
+		// callsign -- there is no per-target override (per spec).
+		StationCallsignResolver: a.store.ResolveStationCallsign,
+		// IS-leg counterpart of the governor TX hook above (mirrors
+		// beacon.Options.OnISSent / invariant 57): feeds an is_only
+		// CoT's own position into the station cache, since that leg
+		// never reaches the governor.
+		OnISSent: func(frame *ax25.Frame, channel uint32) {
+			if frame == nil || !frame.IsUI() {
+				return
+			}
+			pkt, err := aprs.Parse(frame)
+			if err != nil || pkt == nil {
+				return
+			}
+			pkt.Channel = int(channel)
+			if entries := stationcache.ExtractEntry(pkt, "cot", "TX", channel); len(entries) > 0 {
+				a.stationCache.Update(entries)
+			}
+		},
+		// Reuses the same resolveTxChannel messages/beacon/iGate call for
+		// their own Auto option (see resolveTxChannel doc + invariant 16d).
+		AutoChannelResolver: func(rctx context.Context) uint32 {
+			return a.resolveTxChannel(rctx, 0)
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("cot scheduler init: %w", err)
+	}
+	a.cotSched = cotSched
 
 	// --- Messages: LocalTxRing is shared by iGate gating + messages ----
 	//
@@ -643,6 +702,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 	if ig := a.ig.Load(); ig != nil {
 		a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
+		a.cotSched.SetISSink(newCotISSink(ig, a.plog))
 	}
 
 	// --- Messages service ---------------------------------------------
@@ -732,6 +792,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		a.digipeaterComponent(),
 		a.gpsComponent(),
 		a.beaconComponent(),
+		a.cotComponent(),
 		a.bridgeComponent(),
 		a.agwComponent(),
 		a.igateComponent(),
@@ -978,7 +1039,7 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 	}
 	a.plog.Record(packetlog.Entry{
 		Channel:   uint32(pkt.Channel),
-		Direction: packetlog.DirRX,
+		Direction: packetlog.DirIS,
 		Source:    "igate-is",
 		Raw:       pkt.Raw,
 		Display:   line,
@@ -986,8 +1047,10 @@ func (a *App) onIGateIsRxPacket(pkt *aprs.DecodedAPRSPacket, line string) {
 		Decoded:   pkt,
 		Notes:     "is-rx",
 	})
-	// IS-received packet — cache as via=is, direction=IS so the map can
-	// distinguish APRS-IS arrivals from RF receptions.
+	// IS-received packet — cache as via=is, direction=IS. stationcache's
+	// classifyRFOrIS decides whether the station's Direction badge stays
+	// RX (a recent RF reception confirms it) or reads IS, so this call
+	// always reports the ground truth for this specific reception.
 	if entries := stationcache.ExtractEntry(pkt, "igate-is", "IS", uint32(pkt.Channel)); len(entries) > 0 {
 		a.stationCache.Update(entries)
 	}
@@ -1345,6 +1408,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	if err := mapsCache.MigrateLegacyArchives(context.Background()); err != nil {
 		a.logger.Warn("legacy archive migration failed", "err", err)
 	}
+	if err := mapsCache.AdoptOrphanArchives(context.Background()); err != nil {
+		a.logger.Warn("orphan archive adoption failed", "err", err)
+	}
 	if err := mapsCache.BackfillBBoxes(context.Background()); err != nil {
 		a.logger.Warn("bbox backfill failed", "err", err)
 	}
@@ -1379,6 +1445,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		Catalog:            catalog,
 		Style:              styleCache,
 		Demo:               a.cfg.Demo,
+		StorageLocation:    a.cfg.StorageLocation,
+		SdCardPath:         a.cfg.SdCardPath,
+		InternalPath:       a.cfg.InternalPath,
 	})
 	if err != nil {
 		return fmt.Errorf("webapi new: %w", err)
@@ -1406,6 +1475,9 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	apiSrv.SetBeaconReload(a.beaconReload)
 	apiSrv.SetSmartBeaconReload(a.smartBeaconReload)
 	apiSrv.SetBeaconSendNow(a.beaconSched.SendNow)
+	apiSrv.SetCotSendNow(a.cotSched.SendNow)
+	apiSrv.SetCotSendScheduled(a.cotSched.SendScheduled)
+	apiSrv.SetCotSendKill(a.cotSched.SendKill)
 	apiSrv.SetDigipeaterReload(a.digipeaterReload)
 	apiSrv.SetAgwReload(a.agwReload)
 	apiSrv.SetTxBackendReload(a.txBackendReload)
@@ -1454,6 +1526,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	// builds return nil so GET /api/kiss/available-usb-serial-devices
 	// responds 501 Not Implemented (see usbserialsource_default.go).
 	apiSrv.SetUsbSerialSource(a.usbSerialSourceForWebapi())
+
+	// BLE Mobilinkd scanner. Non-Android builds wire a real BLE scan
+	// backed by kiss.ScanBLEMobilinkd (see blesource_desktop.go); Android
+	// returns nil so GET /api/kiss/ble-device-scan responds 501.
+	apiSrv.SetBLEScanner(a.bleDeviceScannerForWebapi())
+	apiSrv.SetBLERepairer(a.bleDeviceRepairerForWebapi())
 
 	// PTT device source for the unified PTT tab. Android returns a
 	// live adapter backed by the platformsvc client (see
@@ -1528,6 +1606,12 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	webapi.RegisterPackets(apiSrv, apiMux, a.plog, a.stationPos)
 	webapi.RegisterStations(apiSrv, apiMux, a.stationCache)
 	webapi.RegisterHeatmap(apiSrv, apiMux, a.stationCache)
+	webapi.RegisterStationAliases(apiSrv, apiMux, func() webapi.AliasStore {
+		if a.histdb == nil {
+			return nil
+		}
+		return a.histdb
+	})
 	webapi.RegisterPosition(apiSrv, apiMux, a.stationPos)
 	// /api/system-logs reads the slog ring buffer. a.cfg.LogBuffer is a
 	// concrete *logbuffer.DB that may be nil; assign through a typed
@@ -1617,7 +1701,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 	})
 	mux.Handle("GET /tiles/", webauth.RequireAuth(a.authStore)(tilesAdapter))
 
-	mux.Handle("/", web.SPAHandler())
+	mux.Handle("/", web.SPAHandler(a.cfg.Version))
 
 	a.httpSrv = &http.Server{
 		Addr:              a.cfg.HTTPAddr,
@@ -1743,6 +1827,7 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 		if err := a.stationCache.Reconfigure(nil); err != nil {
 			a.logger.Warn("disable position log", "err", err)
 		}
+		a.histdb = nil
 		return
 	}
 	hdb, err := historydb.Open(a.cfg.HistoryDBPath)
@@ -1754,6 +1839,7 @@ func (a *App) reconfigurePositionLog(ctx context.Context) {
 	if err := a.stationCache.Reconfigure(hdb); err != nil {
 		a.logger.Warn("reconfigure position log", "err", err)
 	}
+	a.histdb = hdb
 }
 
 func (a *App) governorComponent() namedComponent {
@@ -1828,6 +1914,7 @@ func (a *App) backgroundStatsComponent() namedComponent {
 				// the pattern used for the TX governor above.
 				lastKissRate := map[uint32]uint64{}
 				lastKissQueue := map[uint32]uint64{}
+				var prevStationCacheDropped uint64
 				for {
 					select {
 					case <-ctx.Done():
@@ -1852,6 +1939,13 @@ func (a *App) backgroundStatsComponent() namedComponent {
 						prev = s
 
 						a.syncKissTncDropMetrics(ctx, lastKissRate, lastKissQueue)
+
+						if a.stationCache != nil {
+							if cur := a.stationCache.WriteDropped(); cur > prevStationCacheDropped {
+								a.metrics.StationCacheWriteDropped.Add(float64(cur - prevStationCacheDropped))
+								prevStationCacheDropped = cur
+							}
+						}
 					}
 				}
 			}()
@@ -2065,6 +2159,32 @@ func (a *App) kissComponent() namedComponent {
 						GateTxToIs:          ki.GateTxToIs,
 						OnReload:            a.notifyTxBackendReload,
 						OpenFunc:            a.kissSerialOpenFunc(),
+					})
+					continue
+				case configstore.KissTypeBLEDevice:
+					// BLE KISS to Mobilinkd TNC3/TNC4. No baud rate; always TNC
+					// mode (the device owns the modem and PTT). The peripheral
+					// address (macOS UUID or Linux MAC) lives in ki.Device.
+					// Skip if no address — operator saves first, scans after.
+					if ki.Device == "" {
+						continue
+					}
+					a.kissMgr.StartSerial(ctx, ki.ID, kiss.SerialConfig{
+						Name:                name,
+						Device:              ki.Device,
+						BaudRate:            0,
+						Mode:                kiss.ModeTnc,
+						ChannelMap:          map[uint8]uint32{0: ch},
+						ReconnectInitMs:     5000,
+						ReconnectMaxMs:      5000,
+						Logger:              a.logger,
+						TncIngressRateHz:    ki.TncIngressRateHz,
+						TncIngressBurst:     ki.TncIngressBurst,
+						AllowTxFromGovernor: ki.AllowTxFromGovernor,
+						AllowConnectedMode:  ki.AllowConnectedMode,
+						GateTxToIs:          ki.GateTxToIs,
+						OnReload:            a.notifyTxBackendReload,
+						OpenFunc:            kiss.OpenBLEDevice,
 					})
 					continue
 				default:
@@ -2532,6 +2652,30 @@ func (a *App) beaconComponent() namedComponent {
 	}
 }
 
+// cotComponent starts the Cursor-on-Target scheduler's poll loop. Unlike
+// beaconComponent there is no reload-signal goroutine: cotSched is
+// stateless (it queries configstore fresh on every 5s tick), so a
+// settings change or a newly-created target is simply picked up on the
+// next poll without needing to be told.
+func (a *App) cotComponent() namedComponent {
+	return namedComponent{
+		name: "cot",
+		start: func(ctx context.Context) error {
+			a.cotWG.Add(1)
+			go func() {
+				defer a.cotWG.Done()
+				if err := a.cotSched.Run(ctx); err != nil {
+					a.logger.Error("cot scheduler", "err", err)
+				}
+			}()
+			return nil
+		},
+		stop: func(shutdownCtx context.Context) error {
+			return waitGroup(shutdownCtx, &a.cotWG, "cot scheduler")
+		},
+	}
+}
+
 // loadBeaconConfigs reads the current beacon rows and the global
 // SmartBeacon singleton from configstore, maps each beacon through
 // beaconConfigFromStore against the same singleton, and seeds the
@@ -2906,6 +3050,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(nil)
 		}
+		if a.cotSched != nil {
+			a.cotSched.SetISSink(nil)
+		}
 		a.lastAppliedIgateFilter = ""
 		return
 	}
@@ -2932,6 +3079,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 		if a.beaconSched != nil {
 			a.beaconSched.SetISSink(newBeaconISSink(ig, a.plog))
 		}
+		if a.cotSched != nil {
+			a.cotSched.SetISSink(newCotISSink(ig, a.plog))
+		}
 		a.lastAppliedIgateFilter = composed
 		if err := ig.Start(ctx); err != nil {
 			a.logger.Error("igate reload: start", "err", err)
@@ -2941,6 +3091,9 @@ func (a *App) reloadIgate(ctx context.Context) {
 			a.igateOut.SetIgate(nil)
 			if a.beaconSched != nil {
 				a.beaconSched.SetISSink(nil)
+			}
+			if a.cotSched != nil {
+				a.cotSched.SetISSink(nil)
 			}
 			a.lastAppliedIgateFilter = ""
 			return

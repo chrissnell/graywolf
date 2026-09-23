@@ -49,6 +49,7 @@ func (s *Server) registerMessages(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/messages/{id}/read", s.markMessageRead)
 	mux.HandleFunc("POST /api/messages/{id}/unread", s.markMessageUnread)
 	mux.HandleFunc("POST /api/messages/{id}/resend", s.resendMessage)
+	mux.HandleFunc("POST /api/messages/{id}/abort", s.abortMessage)
 }
 
 // parseUint64ID parses a uint64 path segment. Message rows use uint64
@@ -547,6 +548,71 @@ func (s *Server) resendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, dto.MessageFromModel(*cur))
+}
+
+// abortMessage cancels a pending DM's next scheduled retry and marks
+// the row terminally "aborted"; unlike deleteMessage, the row remains
+// visible in the thread. Tactical rows are single-shot broadcasts with
+// no retry ladder, so there is nothing to cancel — rejected with 400.
+//
+// @Summary  Abort message
+// @Tags     messages
+// @ID       abortMessage
+// @Produce  json
+// @Param    id  path     int true "Message id"
+// @Success  200 {object} dto.MessageResponse
+// @Failure  400 {object} webtypes.ErrorResponse
+// @Failure  404 {object} webtypes.ErrorResponse
+// @Failure  409 {object} webtypes.ErrorResponse
+// @Failure  500 {object} webtypes.ErrorResponse
+// @Failure  503 {object} webtypes.ErrorResponse
+// @Security CookieAuth
+// @Router   /messages/{id}/abort [post]
+func (s *Server) abortMessage(w http.ResponseWriter, r *http.Request) {
+	svc, ok := s.requireMessagesSvc(w)
+	if !ok {
+		return
+	}
+	store, ok := s.requireMessagesStore(w)
+	if !ok {
+		return
+	}
+	id, err := parseUint64ID(r.PathValue("id"))
+	if err != nil {
+		badRequest(w, "invalid id")
+		return
+	}
+	row, err := store.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			notFound(w)
+			return
+		}
+		s.internalError(w, r, "abort lookup", err)
+		return
+	}
+	if row.Direction != "out" {
+		conflict(w, "abort requires an outbound message")
+		return
+	}
+	if row.ThreadKind != messages.ThreadKindDM {
+		badRequest(w, "abort is only supported for direct-message threads")
+		return
+	}
+	if err := svc.Abort(r.Context(), id); err != nil {
+		if errors.Is(err, messages.ErrCannotAbort) {
+			conflict(w, err.Error())
+			return
+		}
+		s.internalError(w, r, "abort message", err)
+		return
+	}
+	cur, err := store.GetByID(r.Context(), id)
+	if err != nil {
+		s.internalError(w, r, "abort reload", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, dto.MessageFromModel(*cur))
 }
 
 // --- Conversations -------------------------------------------------------

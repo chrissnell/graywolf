@@ -19,6 +19,10 @@
             "description": "Beacon configuration and send-now."
         },
         {
+            "name": "cot",
+            "description": "Cursor-on-Target: map-dropped APRS objects with a finite decaying retransmit schedule."
+        },
+        {
             "name": "fixed-points",
             "description": "Operator-placed map landmarks, shared across devices."
         },
@@ -1421,6 +1425,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Profile ID",
                         "name": "id",
                         "in": "path",
@@ -1468,6 +1473,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Profile ID",
                         "name": "id",
                         "in": "path",
@@ -1524,6 +1530,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Profile ID",
                         "name": "id",
                         "in": "path",
@@ -1564,6 +1571,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Profile ID",
                         "name": "id",
                         "in": "path",
@@ -1756,6 +1764,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Transcript session ID",
                         "name": "id",
                         "in": "path",
@@ -1797,6 +1806,7 @@
                 "parameters": [
                     {
                         "type": "integer",
+                        "format": "int32",
                         "description": "Transcript session ID",
                         "name": "id",
                         "in": "path",
@@ -2362,6 +2372,70 @@
                 }
             }
         },
+        "/channels/{id}/enabled": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "channels"
+                ],
+                "summary": "Enable or disable a channel",
+                "operationId": "setChannelEnabled",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Channel id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Enabled flag",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ChannelEnabledRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ChannelResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/channels/{id}/ptt": {
             "post": {
                 "security": [
@@ -2586,6 +2660,325 @@
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/cot-settings": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Returns the global parameters every new CoT target\nsnapshots at creation time. Returns defaults when no\nconfiguration has been saved yet.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Get Cursor-on-Target settings",
+                "operationId": "getCotSettings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotSettingsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Replaces the global CoT parameters. Does not affect any\nCoT target already created -- each target snapshots\nthese settings for itself at creation time.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Update Cursor-on-Target settings",
+                "operationId": "updateCotSettings",
+                "parameters": [
+                    {
+                        "description": "CoT settings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotSettingsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotSettingsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/cot-targets": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "List Cursor-on-Target objects",
+                "operationId": "listCotTargets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.CotTargetResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "description": "Snapshots the current CoT settings onto the new target\nand transmits it immediately under the station\ncallsign. The immediate send is best-effort: on failure\nthe target is still created and the scheduler retries\nit on its next poll.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Create a Cursor-on-Target object",
+                "operationId": "createCotTarget",
+                "parameters": [
+                    {
+                        "description": "CoT target definition",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotTargetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotTargetResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/cot-targets/inactive": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Delete every inactive (exhausted) Cursor-on-Target object",
+                "operationId": "deleteInactiveCotTargets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotDeleteInactiveResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/cot-targets/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Delete a Cursor-on-Target object",
+                "operationId": "deleteCotTarget",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "CoT target id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/cot-targets/{id}/send": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "cot"
+                ],
+                "summary": "Send a Cursor-on-Target object now",
+                "operationId": "sendCotTarget",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "CoT target id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CotSendResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -3927,6 +4320,48 @@
                 }
             }
         },
+        "/kiss/ble-device-scan": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "text/event-stream"
+                ],
+                "tags": [
+                    "kiss"
+                ],
+                "summary": "Scan for Mobilinkd BLE TNC devices (desktop only)",
+                "operationId": "scanBLEMobilinkd",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Scan duration in seconds (default 15, max 60)",
+                        "name": "timeout",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "SSE stream of BLEMobilinkdDevice objects"
+                    },
+                    "409": {
+                        "description": "scan already in progress",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "501": {
+                        "description": "not available on this platform",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/kiss/bonded-bt-devices": {
             "get": {
                 "security": [
@@ -4669,6 +5104,209 @@
                 }
             }
         },
+        "/messages/blocklist": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "List blocked call signs",
+                "operationId": "listBlockedCallsigns",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Block a call sign",
+                "operationId": "createBlockedCallsign",
+                "parameters": [
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/blocklist/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update a blocked call sign",
+                "operationId": "updateBlockedCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Blocklist entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Blocklist entry",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.BlockedCallsignResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Unblock a call sign",
+                "operationId": "deleteBlockedCallsign",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Blocklist entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/messages/config": {
             "get": {
                 "security": [
@@ -4796,6 +5434,122 @@
                     },
                     "503": {
                         "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/conversations/{kind}/{key}/prefs": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Get conversation preferences",
+                "operationId": "getConversationPrefs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "thread kind (dm|tactical)",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "peer callsign or tactical label",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Update conversation preferences",
+                "operationId": "putConversationPrefs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "thread kind (dm|tactical)",
+                        "name": "kind",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "peer callsign or tactical label",
+                        "name": "key",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Preferences",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.ConversationPrefsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -5311,6 +6065,70 @@
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/messages/{id}/abort": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "messages"
+                ],
+                "summary": "Abort message",
+                "operationId": "abortMessage",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Message id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.MessageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
@@ -6284,6 +7102,51 @@
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/webapi.pttCapabilities"
+                        }
+                    }
+                }
+            }
+        },
+        "/ptt/check-device": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "ptt"
+                ],
+                "summary": "Check a PTT device path",
+                "operationId": "checkPttDevice",
+                "parameters": [
+                    {
+                        "description": "Device path to inspect",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/dto.CheckDeviceRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/dto.CheckDeviceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
                         }
                     }
                 }
@@ -7715,7 +8578,8 @@
                     "description": "original AX.25 frame bytes",
                     "type": "array",
                     "items": {
-                        "type": "integer"
+                        "type": "integer",
+                        "format": "int32"
                     }
                 },
                 "source": {
@@ -7965,7 +8829,8 @@
             "properties": {
                 "altitude": {
                     "description": "meters (0 if none reported)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "ambiguity": {
                     "description": "0..4, digits of ambiguity introduced by spaces",
@@ -7980,7 +8845,8 @@
                 },
                 "daodatum": {
                     "description": "DAO datum byte (APRS101 DAO extension), 0 if not present",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "hasAlt": {
                     "type": "boolean"
@@ -7990,7 +8856,8 @@
                 },
                 "latitude": {
                     "description": "decimal degrees, positive north",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "localTime": {
                     "description": "true if the timestamp was the '/' local-time form (APRS101 ch 6)",
@@ -7998,7 +8865,8 @@
                 },
                 "longitude": {
                     "description": "decimal degrees, positive east",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "phg": {
                     "description": "decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present",
@@ -8010,7 +8878,8 @@
                 },
                 "speed": {
                     "description": "knots",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "symbol": {
                     "$ref": "#/definitions/aprs.Symbol"
@@ -8025,10 +8894,12 @@
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "table": {
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 }
             }
         },
@@ -8038,7 +8909,8 @@
                 "analog": {
                     "type": "array",
                     "items": {
-                        "type": "number"
+                        "type": "number",
+                        "format": "float64"
                     }
                 },
                 "analogHas": {
@@ -8054,7 +8926,8 @@
                 },
                 "digital": {
                     "description": "bits 0..7 (only lower 8)",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "hasDigital": {
                     "type": "boolean"
@@ -8070,7 +8943,8 @@
             "properties": {
                 "bits": {
                     "description": "BITS. sense-bits bitmap (active-high per bit)",
-                    "type": "integer"
+                    "type": "integer",
+                    "format": "int32"
                 },
                 "eqns": {
                     "description": "a, b, c coefficients per analog channel",
@@ -8078,7 +8952,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -8153,17 +9028,21 @@
                 },
                 "pressure": {
                     "description": "tenths of millibar (e.g. 10132 = 1013.2)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rain1Hour": {
                     "description": "hundredths of an inch",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rain24Hour": {
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rainSinceMid": {
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "rawRainCounter": {
                     "description": "raw rain counter ('#' field)",
@@ -8171,7 +9050,8 @@
                 },
                 "snowfall24h": {
                     "description": "inches (via 's' after 'g')",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "softwareType": {
                     "description": "one-letter software code (e.g. 'w', 'x', 'd')",
@@ -8179,7 +9059,8 @@
                 },
                 "temperature": {
                     "description": "degrees F",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "weatherUnitTag": {
                     "description": "2..4 ASCII letters identifying the unit/model",
@@ -8191,11 +9072,13 @@
                 },
                 "windGust": {
                     "description": "mph (5-minute peak)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 },
                 "windSpeed": {
                     "description": "mph (1-minute sustained)",
-                    "type": "number"
+                    "type": "number",
+                    "format": "float64"
                 }
             }
         },
@@ -9015,6 +9898,43 @@
                 }
             }
         },
+        "dto.BlockedCallsignRequest": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "note": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.BlockedCallsignResponse": {
+            "type": "object",
+            "properties": {
+                "callsign": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "dto.BlocklistEntryRequest": {
             "type": "object",
             "properties": {
@@ -9202,6 +10122,14 @@
                 }
             }
         },
+        "dto.ChannelEnabledRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.ChannelKissTncEntry": {
             "type": "object",
             "properties": {
@@ -9267,6 +10195,10 @@
                 "decoder_offset": {
                     "type": "integer"
                 },
+                "enabled": {
+                    "description": "Enabled gates whether graywolf brings the channel up. A pointer so\nan omitted field means \"leave at the default\" (true) rather than\n\"disable\": older clients and partial callers that never send the\nkey keep their channels running. ToModel substitutes true when nil.\nA channel PUT is a full-resource replace, so an editor that echoes\nthe row's current enabled value preserves a disabled state across\nunrelated field edits.",
+                    "type": "boolean"
+                },
                 "fix_bits": {
                     "type": "string"
                 },
@@ -9326,6 +10258,10 @@
                 "decoder_offset": {
                     "type": "integer"
                 },
+                "enabled": {
+                    "description": "Enabled gates whether graywolf brings the channel up. A pointer so\nan omitted field means \"leave at the default\" (true) rather than\n\"disable\": older clients and partial callers that never send the\nkey keep their channels running. ToModel substitutes true when nil.\nA channel PUT is a full-resource replace, so an editor that echoes\nthe row's current enabled value preserves a disabled state across\nunrelated field edits.",
+                    "type": "boolean"
+                },
                 "fix_bits": {
                     "type": "string"
                 },
@@ -9379,6 +10315,58 @@
                 }
             }
         },
+        "dto.CheckDeviceRequest": {
+            "type": "object",
+            "properties": {
+                "device_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CheckDeviceResponse": {
+            "type": "object",
+            "properties": {
+                "char_device": {
+                    "type": "boolean"
+                },
+                "exists": {
+                    "type": "boolean"
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.ConversationPrefsRequest": {
+            "type": "object",
+            "properties": {
+                "send_path": {
+                    "description": "SendPath overrides transport for this conversation. Empty ('')\nmeans \"inherit the global fallback policy\"; otherwise one of\nrf_only | is_only | both.",
+                    "type": "string"
+                },
+                "wait_for_ack": {
+                    "description": "WaitForAck, when false, sends DMs to this contact once and skips\nthe retry ladder (no re-sends) — for handhelds that never ACK.\nDefaults true.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "dto.ConversationPrefsResponse": {
+            "type": "object",
+            "properties": {
+                "send_path": {
+                    "type": "string"
+                },
+                "thread_key": {
+                    "type": "string"
+                },
+                "thread_kind": {
+                    "type": "string"
+                },
+                "wait_for_ack": {
+                    "type": "boolean"
+                }
+            }
+        },
         "dto.ConversationSummary": {
             "type": "object",
             "properties": {
@@ -9411,6 +10399,198 @@
                 },
                 "unread_count": {
                     "type": "integer"
+                }
+            }
+        },
+        "dto.CotDeleteInactiveResponse": {
+            "type": "object",
+            "properties": {
+                "deleted": {
+                    "type": "integer",
+                    "example": 3
+                }
+            }
+        },
+        "dto.CotSendResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "example": "sent"
+                }
+            }
+        },
+        "dto.CotSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "decay_factor": {
+                    "type": "number",
+                    "example": 2
+                },
+                "destination": {
+                    "type": "string",
+                    "example": "APGRWO"
+                },
+                "num_transmits": {
+                    "type": "integer",
+                    "example": 4
+                },
+                "path": {
+                    "type": "string",
+                    "example": "WIDE1-1,WIDE2-1"
+                },
+                "second_tx_delay_seconds": {
+                    "type": "integer",
+                    "example": 300
+                },
+                "send_path": {
+                    "type": "string",
+                    "enum": [
+                        "rf",
+                        "both",
+                        "is_only"
+                    ],
+                    "example": "rf"
+                },
+                "type": {
+                    "description": "Type is reserved for a future non-object CoT kind; only \"object\"\nvalidates today.",
+                    "type": "string",
+                    "enum": [
+                        "object"
+                    ],
+                    "example": "object"
+                }
+            }
+        },
+        "dto.CotSettingsResponse": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                },
+                "decay_factor": {
+                    "type": "number"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "num_transmits": {
+                    "type": "integer"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "second_tx_delay_seconds": {
+                    "type": "integer"
+                },
+                "send_path": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                }
+            }
+        },
+        "dto.CotTargetRequest": {
+            "type": "object",
+            "properties": {
+                "comment": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "object_name": {
+                    "type": "string",
+                    "example": "WOOFWOOF"
+                },
+                "overlay": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string",
+                    "example": "D"
+                },
+                "symbol_table": {
+                    "type": "string",
+                    "example": "/"
+                }
+            }
+        },
+        "dto.CotTargetResponse": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "channel": {
+                    "type": "integer"
+                },
+                "comment": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "decay_factor": {
+                    "type": "number"
+                },
+                "destination": {
+                    "type": "string"
+                },
+                "first_sent_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "last_sent_at": {
+                    "type": "string"
+                },
+                "latitude": {
+                    "type": "number"
+                },
+                "longitude": {
+                    "type": "number"
+                },
+                "next_send_at": {
+                    "type": "string"
+                },
+                "num_transmits": {
+                    "type": "integer"
+                },
+                "object_name": {
+                    "type": "string"
+                },
+                "overlay": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "second_tx_delay_seconds": {
+                    "type": "integer"
+                },
+                "send_path": {
+                    "type": "string"
+                },
+                "symbol": {
+                    "type": "string"
+                },
+                "symbol_table": {
+                    "type": "string"
+                },
+                "tx_count": {
+                    "type": "integer"
+                },
+                "type": {
+                    "type": "string"
                 }
             }
         },
@@ -9584,6 +10764,18 @@
                 "baud_rate": {
                     "type": "integer"
                 },
+                "fixed_alt": {
+                    "description": "metres above MSL; 0 = unspecified",
+                    "type": "number"
+                },
+                "fixed_lat": {
+                    "description": "decimal degrees, north positive (source=fixed)",
+                    "type": "number"
+                },
+                "fixed_lon": {
+                    "description": "decimal degrees, east positive (source=fixed)",
+                    "type": "number"
+                },
                 "gpsd_host": {
                     "type": "string"
                 },
@@ -9606,6 +10798,18 @@
                 },
                 "enabled": {
                     "type": "boolean"
+                },
+                "fixed_alt": {
+                    "description": "metres above MSL; 0 = unspecified",
+                    "type": "number"
+                },
+                "fixed_lat": {
+                    "description": "decimal degrees, north positive (source=fixed)",
+                    "type": "number"
+                },
+                "fixed_lon": {
+                    "description": "decimal degrees, east positive (source=fixed)",
+                    "type": "number"
                 },
                 "gpsd_host": {
                     "type": "string"
@@ -9786,6 +10990,10 @@
         "dto.KissRequest": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "description": "AllowConnectedMode opts a KISS interface in to passing non-UI\n(connected-mode) AX.25 frames through to the radio instead of\ndropping them, so connected-mode packet apps (Pat/Winlink via the\nkernel AX.25 stack + kissattach) can use graywolf as a raw KISS\nmodem. Default false; the far end owns the LAPB session state.",
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "description": "AllowTxFromGovernor opts this TNC-mode interface in to receive\nframes from the TX governor (beacon / digipeater / iGate /\nKISS / AGW submissions). Only meaningful when Mode == \"tnc\";\nthe validator rejects true with any other mode. Default false\non migrated rows so existing TNC servers do not silently start\ntransmitting; Phase 4 sets the DTO default to true for newly\ncreated tcp-client rows.",
                     "type": "boolean"
@@ -9844,6 +11052,9 @@
         "dto.KissResponse": {
             "type": "object",
             "properties": {
+                "allow_connected_mode": {
+                    "type": "boolean"
+                },
                 "allow_tx_from_governor": {
                     "type": "boolean"
                 },
@@ -11024,6 +12235,10 @@
                     "description": "human-friendly name (e.g. USB product string)",
                     "type": "string"
                 },
+                "enhancements_enabled": {
+                    "description": "EnhancementsEnabled is Windows-only: the endpoint has audio\n\"enhancements\" (system effects / APOs) active, which corrupt\nAFSK/packet audio. Always false on Linux/macOS.",
+                    "type": "boolean"
+                },
                 "host_api": {
                     "type": "string"
                 },
@@ -11155,6 +12370,11 @@
                 "DirRX": "heard on the air",
                 "DirTX": "transmitted by us"
             },
+            "x-enum-descriptions": [
+                "heard on the air",
+                "transmitted by us",
+                "APRS-IS upload/download (iGate)"
+            ],
             "x-enum-varnames": [
                 "DirRX",
                 "DirTX",
@@ -11448,6 +12668,10 @@
                     "description": "IsObject is true for APRS objects and items; false for regular stations.",
                     "type": "boolean"
                 },
+                "last_direct_heard": {
+                    "description": "LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard\ndirectly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero\ntime) means the station has never been heard directly. The Live Map \"Direct\nRX\" filter requires this to fall within the selected time range.",
+                    "type": "string"
+                },
                 "last_heard": {
                     "description": "LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.",
                     "type": "string"
@@ -11465,7 +12689,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -11489,7 +12714,7 @@
                     "type": "string"
                 },
                 "via": {
-                    "description": "Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.",
+                    "description": "Via is how the most recent packet reached us: \"rf\" (heard on radio) or \"is\" (received from APRS-IS).",
                     "type": "string"
                 },
                 "weather": {
@@ -11558,7 +12783,8 @@
                     "items": {
                         "type": "array",
                         "items": {
-                            "type": "number"
+                            "type": "number",
+                            "format": "float64"
                         }
                     }
                 },
@@ -11571,7 +12797,7 @@
                     "type": "string"
                 },
                 "via": {
-                    "description": "Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct.",
+                    "description": "Via is how this position packet reached us: \"rf\" (heard on radio) or \"is\" (received from APRS-IS).",
                     "type": "string"
                 }
             }
@@ -11734,6 +12960,10 @@
         "webapi.VersionResponse": {
             "type": "object",
             "properties": {
+                "commit": {
+                    "description": "Commit is the build-time git commit of the running server. The web\nUI captures (version, commit) at load and re-checks this endpoint to\nnotice when the server binary changed underneath it (e.g. the\noperator upgraded graywolf) so it can prompt a reload. Including the\ncommit — not just the release version — means a same-version rebuild\nfrom source is still detected.",
+                    "type": "string"
+                },
                 "platform": {
                     "description": "Platform is runtime.GOOS of the server process — \"windows\", \"linux\",\n\"darwin\", etc. The UI uses it to surface platform-specific guidance\n(e.g. the Windows app-volume warning on the Audio Devices page).",
                     "type": "string"

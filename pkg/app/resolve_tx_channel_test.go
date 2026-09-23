@@ -12,21 +12,23 @@ import (
 )
 
 // TestResolveTxChannel exercises the fallback truth table in
-// (*App).resolveTxChannel: configured-with-modem returns configured;
-// configured-without-modem falls back to the lowest modem-backed
-// channel; configured-not-present falls back the same way; no
-// modem-backed channel returns the lowest channel ID overall and logs
-// the dedicated "tx will fail at submit" warning; an empty channel
-// list returns the configured value unchanged.
+// (*App).resolveTxChannel: any non-zero configured channel that has a
+// governor TX backend (modem or KISS-TNC) is returned as-is; a zero
+// configured value (auto-select) picks the lowest modem-backed channel
+// or, failing that, the lowest channel overall with a warn log; an
+// empty channel list returns the configured value unchanged.
 func TestResolveTxChannel(t *testing.T) {
 	ctx := context.Background()
 
 	// channelSpec describes a row to seed. modem=true binds an audio
-	// input device (via U32Ptr); modem=false leaves InputDeviceID nil
-	// to model a KISS-only or otherwise unbacked channel.
+	// input device (via U32Ptr); kissTnc=true instead gives the channel
+	// a KISS-TNC governor backend (AllowTxFromGovernor) so it is a valid
+	// egress target without a modem device. Neither flag models an
+	// unbacked channel.
 	type channelSpec struct {
-		name  string
-		modem bool
+		name    string
+		modem   bool
+		kissTnc bool
 	}
 
 	mkStore := func(t *testing.T, specs []channelSpec) (*configstore.Store, []uint32) {
@@ -58,6 +60,16 @@ func TestResolveTxChannel(t *testing.T) {
 			if err := s.CreateChannel(ctx, ch); err != nil {
 				t.Fatalf("CreateChannel %q: %v", sp.name, err)
 			}
+			if sp.kissTnc {
+				ki := &configstore.KissInterface{
+					Name: sp.name + "-tnc", InterfaceType: "tcp", ListenAddr: ":8001",
+					Channel: ch.ID, Enabled: true, Mode: configstore.KissModeTnc,
+					AllowTxFromGovernor: true,
+				}
+				if err := s.CreateKissInterface(ctx, ki); err != nil {
+					t.Fatalf("CreateKissInterface %q: %v", sp.name, err)
+				}
+			}
 			ids = append(ids, ch.ID)
 		}
 		return s, ids
@@ -72,28 +84,29 @@ func TestResolveTxChannel(t *testing.T) {
 	}{
 		{
 			name:          "configured channel has modem returns configured",
-			specs:         []channelSpec{{"a", true}, {"b", true}},
+			specs:         []channelSpec{{name: "a", modem: true}, {name: "b", modem: true}},
 			configuredIdx: 1,
 			wantIdx:       1,
 		},
 		{
-			name:             "configured channel without modem falls back to lowest with modem",
-			specs:            []channelSpec{{"a", true}, {"b", false}},
-			configuredIdx:    1,
-			wantIdx:          0,
-			wantWarnContains: "no modem backend",
+			// KISS-TNC-backed channels are valid TX targets; honour the operator's choice.
+			name:          "configured channel without modem but with kiss-tnc backend returns configured",
+			specs:         []channelSpec{{name: "a", modem: true}, {name: "b", kissTnc: true}},
+			configuredIdx: 1,
+			wantIdx:       1,
 		},
 		{
 			name:             "configured channel id absent falls back to lowest with modem",
-			specs:            []channelSpec{{"a", true}, {"b", true}},
+			specs:            []channelSpec{{name: "a", modem: true}, {name: "b", modem: true}},
 			configuredIdx:    -1, // configured=0; resolver does not match any row
 			wantIdx:          0,
 			wantWarnContains: "",
 		},
 		{
-			name:             "no channel has modem returns lowest id and warns",
-			specs:            []channelSpec{{"a", false}, {"b", false}},
-			configuredIdx:    1,
+			// Auto-select (configured=0) with no modem channels logs 'tx will fail'.
+			name:             "auto-select with no modem channels returns lowest id and warns",
+			specs:            []channelSpec{{name: "a"}, {name: "b"}},
+			configuredIdx:    -1,
 			wantIdx:          0,
 			wantWarnContains: "tx will fail at submit",
 		},

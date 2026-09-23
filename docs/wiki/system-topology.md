@@ -22,9 +22,10 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | HTTP listen (flag default) | `127.0.0.1:8080` | [`../../pkg/app/flags.go`](../../pkg/app/flags.go) |
 | HTTP listen (shipped systemd) | `0.0.0.0:8080` (overrides flag default) | [`../../packaging/systemd/graywolf.service`](../../packaging/systemd/graywolf.service) |
 | Server entry | `pkg/webapi/server.go` | [`../../pkg/webapi/`](../../pkg/webapi/) |
-| SPA fallback | `web/embed.go::SPAHandler` | [`../../web/embed.go`](../../web/embed.go) |
+| SPA fallback | `web/embed.go::SPAHandler(version)` -- `index.html` is served `Cache-Control: no-cache` with an ETag keyed off the build version (forces revalidation every load so a redeploy is never masked by a stale client cache); `/assets/*` (Vite content-hashed) get `public, max-age=31536000, immutable`; everything else under `dist/` (favicons, fonts, aprs-symbols) gets `public, max-age=3600`. `web/vite.config.js` sets `emptyOutDir: true` so stale hashed chunks from prior builds don't accumulate and get embedded. | [`../../web/embed.go`](../../web/embed.go) |
 | Public (no-auth) endpoints | `/api/version`, `/api/auth/setup` | [`../../pkg/webapi/server.go`](../../pkg/webapi/server.go) |
 | WebSocket endpoint | `GET /api/ax25/terminal` (auth required, same-origin only). One WS per active LAPB session; multi-tab via multiple WS. JSON envelopes (`pkg/ax25termws/envelope.go`) carry connect/data/disconnect/abort and state/data_rx/link_stats/error in both directions. | [`../../pkg/webapi/ax25_terminal.go`](../../pkg/webapi/ax25_terminal.go) |
+| Safari + bare LAN IP causes a full reload on every SPA navigation | Confirmed WebKit-specific: Safari does not extend the trust it gives `localhost`/named hosts to a numeric private IP (`http://192.168.x.x:8080`) reached over plain HTTP, and does a real top-level reload on every `svelte-spa-router` hash navigation -- visible in the Network tab as the log resetting and re-fetching `index.html`/JS/CSS. Not reproducible in Chromium; not caused by graywolf's caching, bundle size, or routing code (all ruled out and fixed independently -- see `web/embed.go`'s Cache-Control policy above). Fix is operator-side, not code: reach graywolf via its mDNS/Bonjour hostname (`http://<name>.local:8080`, from macOS System Settings -> General -> Sharing) instead of the IP; documented in `docs/handbook/installation.html`'s "Connect to the Web UI" section. | (no code fix -- browser behavior) |
 | OpenAPI reference | [`../handbook/api.html`](../handbook/api.html), [`../handbook/openapi.yaml`](../handbook/openapi.yaml) | (handbook copy of swag-generated spec) |
 | Prometheus metrics | `GET /metrics` on the main HTTP listener (no auth, same bind as UI) | [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) |
 | pprof debug listener (optional, off by default) | `-pprof <addr>` flag; e.g. `127.0.0.1:6060`. Dedicated listener + mux, **no auth**, exposes `/debug/pprof/{heap,goroutine,profile,trace,allocs,block,mutex,cmdline,symbol}`. Bind loopback only. Non-loopback bind logs a warning at startup. | [`../../pkg/app/wiring.go`](../../pkg/app/wiring.go) (`pprofComponent`) |
@@ -49,6 +50,7 @@ sibling of the graywolf binary, `./target/release/graywolf-modem`, `$PATH`
 | KISS over Serial | configurable via UI | [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go) | [`../handbook/kiss-serial.html`](../handbook/kiss-serial.html) |
 | KISS over USB Serial (Android) | configurable via UI (Android tablet build only); type `usbserial`; vid:pid stored in `serial_device`; baud in `baud_rate`; bytes flow over the platform UDS to `UsbSerialAdapter`, then through `SerialSupervisor` into `pkg/kiss` (same data path as KISS over Bluetooth) | [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go) (shared supervisor) + [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/UsbSerialAdapter.kt) (USB serial byte relay) | [`../handbook/kiss-usb-serial.html`](../handbook/kiss-usb-serial.html) |
 | KISS over Bluetooth (Android) | configurable via UI (Android tablet build only) | [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go) (shared supervisor) + [`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt) (RFCOMM byte relay) | [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html) |
+| KISS over BLE (desktop) | configurable via UI (type `ble-device`); no OS pairing required; BLE address stored in `serial_device` (CoreBluetooth UUID on macOS, MAC on Linux); scanned in real time via `GET /api/kiss/ble-device-scan` (SSE); always TNC mode; requires CGO_ENABLED=1 on macOS (CoreBluetooth), pure-Go BlueZ D-Bus on Linux | [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go) (shared supervisor) + [`../../pkg/kiss/ble.go`](../../pkg/kiss/ble.go) (tinygo.org/x/bluetooth transport) | [`../handbook/kiss-bluetooth.html`](../handbook/kiss-bluetooth.html) |
 | AGWPE over TCP | `0.0.0.0:8000` (default when unset) | [`../../pkg/agw/`](../../pkg/agw/), [`../../pkg/webapi/dto/agw.go`](../../pkg/webapi/dto/agw.go) | [`../handbook/agwpe.html`](../handbook/agwpe.html) |
 
 Adding a KISS InterfaceType requires updating dispatch in two independent places -- see [invariant 34](invariants.md).
@@ -200,6 +202,20 @@ On disk the slashes become subdirectory separators:
 installs (where every archive sat directly in `<TileCacheDir>/`) are
 migrated on startup by `mapsCache.MigrateLegacyArchives` (file move)
 and `store.MigrateMapsDownloadSlugs` (DB row update); both idempotent.
+
+`GET /api/maps/downloads` (and thus the settings-page "Downloaded"
+list) is driven entirely by the `maps_downloads` DB table, not a
+filesystem scan -- so a `.pmtiles` file dropped into `<TileCacheDir>`
+out-of-band (e.g. a tile-cache directory copied from another install
+to share downloads without re-fetching them) is otherwise invisible to
+the UI and the region picker offers to download it again. Startup runs
+`mapsCache.AdoptOrphanArchives`, which walks `<TileCacheDir>` for
+`.pmtiles` files with no matching row and inserts a `complete` row for
+each (bbox/maxZoom read from the archive's own PMTiles v3 header,
+`bytes_total`/`downloaded_at` from the file's size/mtime). Idempotent:
+a slug that already has a row (any status) is left untouched, so a
+failed download is never silently flipped to complete by a partial
+file.
 
 The `/tiles/{multi-segment}.pmtiles` route on the outer mux strips the
 prefix and `.pmtiles` suffix, sets the rest as the slug, and delegates

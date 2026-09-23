@@ -10,16 +10,22 @@
   // Actions (per plan):
   //   - Reply privately to [sender]   (tactical incoming only — always top)
   //   - Copy text / Copy callsign / Copy raw
+  //   - Resend / Abort / Delete       (outbound DM only — see gating below)
   //   - Mark unread                   (incoming only)
-  //   - Resend                        (outgoing + terminal state only)
   //
-  // Deletion is intentionally NOT in this menu — the only delete path is
-  // the inbox checkboxes + Delete toolbar (ConversationList). Adding a
-  // per-bubble shortcut here would create a parallel UX with weaker
-  // confirmation guarantees.
+  // Resend/Abort/Delete gating (DM outbound only — tactical is single-shot
+  // broadcast with no retry ladder to cancel or resend into):
+  //   - Abort:  status hasn't reached any terminal state yet (not heard,
+  //             not rejected/failed/timed-out/aborted already).
+  //   - Resend/Delete: status IS one of the four terminal-unsuccessful
+  //             states (rejected, failed, timeout, aborted). A per-message
+  //             Delete here is narrower than the inbox's bulk thread
+  //             delete (ConversationList) — it only ever targets a send
+  //             that didn't work out, never a heard/pending/inbound row.
 
   import { onMount } from 'svelte';
   import { Icon } from '@chrissnell/chonky-ui';
+  import { describeMessageStatus } from '../../lib/messageStatusLabel.js';
 
   /** @type {{
    *    open: boolean,
@@ -34,6 +40,9 @@
    *    onReplyPrivate?: (fromCall: string) => void,
    *    onMarkUnread?: (msg: any) => void,
    *    onResend?: (msg: any) => void,
+   *    onAbort?: (msg: any) => void,
+   *    onDelete?: (msg: any) => void,
+   *    retryMaxAttempts?: number,
    *  }}
    */
   let {
@@ -49,13 +58,29 @@
     onReplyPrivate,
     onMarkUnread,
     onResend,
+    onAbort,
+    onDelete,
+    retryMaxAttempts = 4,
   } = $props();
 
   const isOut = $derived(msg?.direction === 'out');
   const status = $derived(msg?.status || '');
-  const canResend = $derived(isOut && (status === 'rejected' || status === 'failed'));
+  // Shared gate for Resend + Delete: any message worth offering a retry
+  // on is also a message worth letting the operator discard instead.
+  const isTerminalUnsuccessful = $derived(
+    isOut && !isTactical && ['rejected', 'failed', 'timeout', 'aborted'].includes(status),
+  );
+  const canResend = $derived(isTerminalUnsuccessful);
+  const canDelete = $derived(isTerminalUnsuccessful);
+  // AckState is still "none" — not yet heard, not yet any other terminal
+  // state — so there's a pending retry left to cancel.
+  const canAbort = $derived(
+    isOut && !isTactical && ['queued', 'tx_submitted', 'sent_rf', 'sent_is'].includes(status),
+  );
+  const showSendControls = $derived(canResend || canAbort || canDelete);
   const sender = $derived(msg?.from_call || '');
   const showReply = $derived(isTactical && !isOut && !!sender);
+  const statusFooter = $derived(describeMessageStatus(msg, isTactical, retryMaxAttempts));
 
   function close() {
     open = false;
@@ -130,6 +155,27 @@
       <Icon name="copy" size="sm" />
       <span>Copy raw</span>
     </button>
+    {#if showSendControls}
+      <div class="sep" role="separator"></div>
+      {#if canResend}
+        <button type="button" class="item" role="menuitem" onclick={() => pick(onResend)}>
+          <Icon name="refresh-cw" size="sm" />
+          <span>Resend</span>
+        </button>
+      {/if}
+      {#if canAbort}
+        <button type="button" class="item" role="menuitem" onclick={() => pick(onAbort)}>
+          <Icon name="x" size="sm" />
+          <span>Abort</span>
+        </button>
+      {/if}
+      {#if canDelete}
+        <button type="button" class="item danger" role="menuitem" onclick={() => pick(onDelete)}>
+          <Icon name="trash-2" size="sm" />
+          <span>Delete</span>
+        </button>
+      {/if}
+    {/if}
     {#if !isOut}
       <div class="sep" role="separator"></div>
       <button type="button" class="item" role="menuitem" onclick={() => pick(onMarkUnread)}>
@@ -137,12 +183,13 @@
         <span>Mark unread</span>
       </button>
     {/if}
-    {#if canResend}
-      <div class="sep" role="separator"></div>
-      <button type="button" class="item" role="menuitem" onclick={() => pick(onResend)}>
-        <Icon name="refresh-cw" size="sm" />
-        <span>Resend</span>
-      </button>
+    {#if msg}
+      <div class="menu-footer" data-testid="context-menu-footer">
+        <span>{statusFooter.label}</span>
+        {#if statusFooter.attemptsText}
+          <span>· {statusFooter.attemptsText}</span>
+        {/if}
+      </div>
     {/if}
   </div>
 {/if}
@@ -195,9 +242,21 @@
     color: var(--color-primary);
     font-weight: 600;
   }
+  .item.danger {
+    color: var(--color-danger);
+  }
   .sep {
     height: 1px;
     background: var(--color-border);
     margin: 4px 0;
+  }
+  .menu-footer {
+    display: flex;
+    gap: 4px;
+    padding: 6px 12px 4px;
+    margin-top: 2px;
+    border-top: 1px solid var(--color-border);
+    font-size: 11px;
+    color: var(--color-text-muted);
   }
 </style>

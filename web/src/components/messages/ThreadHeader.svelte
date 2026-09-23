@@ -293,14 +293,10 @@
 
   @media (max-width: 767px) {
     .chips { padding-left: 0; }
-    /* Let actions wrap to their own row below the title so the
-       tactical name isn't crushed to "GR…" next to a Monitor toggle
-       and "Invite Users" button. */
-    .primary { flex-wrap: wrap; }
-    .actions {
-      flex: 1 1 100%;
-      justify-content: flex-end;
-      margin-top: 2px;
-    }
+    /* Keep the callsign and action buttons on a single row — the title
+       already truncates (min-width: 0 + ellipsis), so it yields space
+       to the actions instead of pushing them to a second row. */
+    .action-label { display: none; }
+    .invite-btn { padding: 0; width: 32px; }
   }
 </style>
