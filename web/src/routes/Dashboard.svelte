@@ -19,6 +19,33 @@
   let stationCallsign = $state('');
   let pollTimer = $state(null);
 
+  // Log feed fills whatever viewport space is left below it, so there's no
+  // dead space on tall screens, but never shrinks below a usable 400px.
+  // Measured (not hardcoded per-section heights) so it stays correct as the
+  // channel/stats grids reflow at different widths and row counts.
+  const MIN_FEED_HEIGHT = 400;
+  let feedSectionEl;
+  let feedHeight = $state(MIN_FEED_HEIGHT);
+  let feedResizeObserver;
+
+  function recomputeFeedHeight() {
+    if (!feedSectionEl) {
+      return;
+    }
+    const top = feedSectionEl.getBoundingClientRect().top;
+    const footerHeight = document.querySelector('.app-footer')?.offsetHeight ?? 0;
+    // The 48 is the main body padding top and bottom added together.
+    const available = window.innerHeight - top - 48 - footerHeight; // mirror main-content's bottom padding, leave room for the app footer
+    // `feedHeight` only sizes PacketLogViewer's scrollable body — its toolbar
+    // (live dot, toggles, entry count) renders above that and adds to the
+    // section's real footprint, so fitting the *body* to `available` still
+    // overflows the viewport by the toolbar's height. Infer that chrome from
+    // what's already on screen (rather than hardcoding a guess that breaks
+    // if the toolbar wraps to two lines) and size the body to compensate.
+    const chrome = Math.max(0, feedSectionEl.offsetHeight - feedHeight);
+    feedHeight = Math.max(MIN_FEED_HEIGHT, Math.round(available - chrome));
+  }
+
   // Cross-references status channel ids with the backing data from /api/channels.
   let channelMetaById = $derived(
     Object.fromEntries((channelsStore.list || []).map(c => [c.id, c]))
@@ -111,7 +138,19 @@
     loadStationCallsign();
     startChannels(); // backing data (modem vs kiss-tnc) drives readiness + card rendering
     pollTimer = setInterval(loadData, 5000);
-    return () => clearInterval(pollTimer);
+
+    recomputeFeedHeight();
+    window.addEventListener('resize', recomputeFeedHeight);
+    // Catches layout shifts recomputeFeedHeight's own resize listener can't
+    // see: channel/stats cards appearing or wrapping as data/status load in.
+    feedResizeObserver = new ResizeObserver(recomputeFeedHeight);
+    feedResizeObserver.observe(document.body);
+
+    return () => {
+      clearInterval(pollTimer);
+      window.removeEventListener('resize', recomputeFeedHeight);
+      feedResizeObserver?.disconnect();
+    };
   });
 
   async function loadData() {
@@ -378,13 +417,13 @@
 </div>
 
 <!-- Live Packet Feed -->
-<div class="feed-section">
+<div class="feed-section" bind:this={feedSectionEl}>
   {#if packets.length === 0}
     <Box><div class="empty">Waiting for packets...</div></Box>
   {:else}
     <PacketLogViewer
       {packets}
-      height="400px"
+      height="{feedHeight}px"
       live={logPrefsState.autoRefresh}
       autoscroll={logPrefsState.autoScroll}
       {toolbarToggles}
