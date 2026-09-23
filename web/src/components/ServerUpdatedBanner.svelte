@@ -64,7 +64,7 @@
   .server-updated-banner {
     position: sticky;
     top: 0;
-    z-index: 50;
+    z-index: 500;
     display: flex;
     align-items: center;
     gap: 12px;
