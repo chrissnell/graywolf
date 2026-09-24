@@ -70,7 +70,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | `webapi` (USB serial) | REST endpoint listing connected USB serial devices | `pkg/webapi/kiss_usb.go` (`GET /api/kiss/available-usb-serial-devices`) |
 | `webapi` (host serial ports) | REST endpoint listing host serial ports (COM*/dev/tty*/cu.*) for the desktop `serial` interface "Detected ports" dropdown; reuses `gps.EnumerateSerialPorts` | `pkg/webapi/kiss_serial_ports.go` (`GET /api/kiss/available-serial-ports`) |
 | `app` (USB serial source) | Build-tag dispatch for the USB serial device source (Android vs. stub) | `pkg/app/usbserialsource_android.go`, `pkg/app/usbserialsource_default.go` |
-| `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/k/K/m/X/x/y/Y/V) | `server.go`, `protocol.go` |
+| `agw` | AGWPE TCP server (direwolf-compatible subset: R/G/g/X/x/m/M/V/K/C/v/D/d/Y). Connected mode is outbound only and drives `ax25conn.Manager`, so it inherits the channel-mode gate in [invariant 23](invariants.md) | `server.go`, `protocol.go`, `connected.go` |
 | `ipcproto` | Generated Go bindings for `proto/graywolf.proto` | `graywolf.pb.go` (regen via `make proto`) |
 | `modembridge` | Supervises Rust modem child + IPC state machine + dispatcher + status cache + DCD publisher. `Bridge.TransmitTestSignal` sends the `TransmitTestSignal` IPC message and returns a `TestSignalResult`. | `bridge.go`, `supervisor.go`, `ipc_unix.go`, `ipc_windows.go`, `dispatcher.go`, `session.go`, `status_cache.go` |
 | `txgovernor` | Centralized TX gate: per-channel rate limits, dedup, priority queue | `governor.go`, `pqueue.go`, `sink.go` |

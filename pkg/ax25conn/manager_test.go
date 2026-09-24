@@ -141,20 +141,10 @@ func TestManager_ChannelModePacketAccepted(t *testing.T) {
 func TestManager_DispatchRoutes(t *testing.T) {
 	m := newTestManager(t)
 	defer m.Close()
+	// Open already starts the session's Run loop internally (in its own
+	// goroutine, tied to the manager's lifetime); running it again here
+	// raced two goroutines over the same Session.
 	_, s := openTestSession(t, m, 1, "KE7XYZ-1", "BBS-3", "op1")
-
-	// Fire up Run so the session drains its input channel.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	done := make(chan struct{})
-	go func() {
-		s.Run(ctx)
-		close(done)
-	}()
-	defer func() {
-		cancel()
-		<-done
-	}()
 
 	// Inbound SABM in DISCONNECTED → DM. Wait briefly to ensure the
 	// session has consumed the event.

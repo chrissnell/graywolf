@@ -133,7 +133,32 @@
       <li><strong>Monitor frames</strong> &mdash; receive decoded AX.25 packets</li>
       <li><strong>Unproto frames</strong> &mdash; transmit UI (unnumbered information) packets</li>
       <li><strong>Raw frames</strong> &mdash; send and receive raw AX.25 data</li>
+      <li><strong>Connected-mode sessions</strong> &mdash; call out to a remote
+        station, with or without digipeaters, and exchange data over the
+        link. Clients such as Paracon, AGWTerm and EasyTerm can use
+        graywolf as their TNC for BBS and node access.</li>
     </ul>
+
+    <h2>Connected Mode</h2>
+
+    <p>
+      Connected mode is outbound only. Your AGWPE client can raise a link to
+      a remote station, but an incoming call from the air is not handed to
+      AGWPE clients.
+    </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          The channel your AGWPE port maps to must have its mode set to
+          <strong>Packet</strong> or <strong>APRS + Packet</strong> on the
+          Channels page. Channels are APRS-only by default, and an APRS-only
+          channel refuses connected-mode calls. Your client will report the
+          attempt as disconnected with the reason.
+        </p>
+      </div>
+    </div>
 
     <div class="callout info">
       <span class="callout-icon">&#9432;</span>
