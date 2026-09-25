@@ -38,6 +38,12 @@ type Config struct {
 	CommentCmd  []string // already-split argv; empty = static comment
 	Format      string   // "compressed" | "uncompressed" | "mic_e" (APRS101 ch 9/6/10)
 	Ambiguity   int      // 0..4; trailing position digits blanked per APRS101 ch 6 table 8
+	// MicEMessageCode is the resolved 0-7 Mic-E wire code (APRS101 ch 10
+	// table 8), only used when Format == "mic_e". Already resolved from
+	// configstore.Beacon.MicEMessageCode's string enum by the adapter
+	// (see MicEMessageCodeFromName) so the scheduler never has to know
+	// about the name<->wire-code mapping.
+	MicEMessageCode int
 	Messaging   bool
 	ObjectName  string             // for TypeObject
 	CustomInfo  string             // for TypeCustom (raw info field override)

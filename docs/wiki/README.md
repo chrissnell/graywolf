@@ -25,6 +25,8 @@ roles.
 - [`glossary.md`](glossary.md) -- domain terms as graywolf uses them, with source pointers.
 - [`actions.md`](actions.md) -- the `@@`-prefixed APRS Actions subsystem: trigger surface, classifier topology, source-aware reply, lifecycle, schema.
 - [`remote-actions.md`](remote-actions.md) -- outbound Actions: macro + remote-OTP credential CRUD; the Messages drawer that fires `@@<otp>#<action>` at remote stations.
+- [`bulletins.md`](bulletins.md) -- APRS bulletin board: slot taxonomy, ingest/upsert flow, outbound send topology (scheduler, APRS-IS dual-path), database migration notes, app wiring, frontend wiring.
+- [`notifications.md`](notifications.md) -- clickable new-message/new-bulletin/station-emergency popup notifications: unread-badge push-vs-poll fix, the toast/OS/both notification mode, the shared bulletins store, the `#/bulletins?focus=<id>` deep-link, and the Emergency-only station-alert threshold.
 
 ## Maintenance
 

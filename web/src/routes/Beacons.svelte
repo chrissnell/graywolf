@@ -85,6 +85,14 @@
   let editing = $state(null);
   let deleteTarget = $state(null);
   let deleteOpen = $state(false);
+  // Confirm-before-commit for the two Mic-E status codes that alarm
+  // other operators' radios (Priority/Emergency). pendingMicECode holds
+  // the value the operator just picked while the dialog is open; if
+  // they cancel, form.mic_e_message_code is reverted to
+  // micEConfirmPrevious rather than left on the alarming value.
+  let micEConfirmOpen = $state(false);
+  let pendingMicECode = $state(null);
+  let micEConfirmPrevious = $state('off_duty');
   // `callsign_override` drives the D3 compact checkbox pattern. It's
   // UI-only state: on save it gates whether `callsign` is sent as the
   // trimmed/uppercased override or as the empty "inherit" sentinel.
@@ -96,7 +104,7 @@
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
-    position_format: 'compressed', ambiguity: 0,
+    position_format: 'compressed', ambiguity: 0, mic_e_message_code: 'off_duty',
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
     smart_beacon: false,
@@ -163,6 +171,20 @@
     (form.position_format === 'uncompressed' || form.position_format === 'mic_e'),
   );
   let useAmbiguity = $derived(form.ambiguity > 0);
+  // The Mic-E status/message code (APRS101 ch 10 table 8) only has
+  // somewhere to live in Mic-E's destination-callsign bits -- compressed
+  // and uncompressed position reports carry no equivalent field.
+  let showMicEStatus = $derived(showFormat && form.position_format === 'mic_e');
+  const MIC_E_MESSAGE_CODE_OPTIONS = [
+    { value: 'off_duty', label: 'Off Duty' },
+    { value: 'en_route', label: 'En Route' },
+    { value: 'in_service', label: 'In Service' },
+    { value: 'returning', label: 'Returning' },
+    { value: 'committed', label: 'Committed' },
+    { value: 'special', label: 'Special' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'emergency', label: 'Emergency!' },
+  ];
   const TX_CALLOUT_ID = 'bcn-tx-callout';
   let calloutEl = $state(null);
   // Scroll the callout into view on modal open when it's already
@@ -345,6 +367,7 @@
       position_format: row.position_format || 'compressed',
       send_path: row.send_path || 'rf',
       ambiguity: row.ambiguity ?? 0,
+      mic_e_message_code: row.mic_e_message_code || 'off_duty',
       pos_source: row.use_gps ? 'gps' : 'fixed',
       latitude: row.latitude != null ? String(row.latitude) : '',
       longitude: row.longitude != null ? String(row.longitude) : '',
@@ -528,6 +551,35 @@
   function confirmDelete(row) {
     deleteTarget = row;
     deleteOpen = true;
+  }
+
+  // Picking Priority or Emergency for the operator's own beacon status
+  // triggers real audible/visual alarms on other operators' compatible
+  // APRS radios (Kenwood/Yaesu/Icom) and monitoring software -- APRS101
+  // ch 10 table 8. Gate those two choices behind a confirm dialog so a
+  // misclick (or a beacon left set to Emergency after a one-off test)
+  // doesn't alarm the network. Every other code is cosmetic/tactical
+  // and commits immediately.
+  function handleMicECodeChange(next) {
+    if (next === 'priority' || next === 'emergency') {
+      micEConfirmPrevious = form.mic_e_message_code;
+      pendingMicECode = next;
+      micEConfirmOpen = true;
+      return;
+    }
+    form.mic_e_message_code = next;
+  }
+
+  function confirmMicECode() {
+    form.mic_e_message_code = pendingMicECode;
+    micEConfirmOpen = false;
+    pendingMicECode = null;
+  }
+
+  function cancelMicECode() {
+    form.mic_e_message_code = micEConfirmPrevious;
+    micEConfirmOpen = false;
+    pendingMicECode = null;
   }
 
   async function executeDelete() {
@@ -927,6 +979,21 @@
             {/if}
           </FormField>
         {/if}
+        {#if showMicEStatus}
+          <FormField label="Status" id="bcn-mic-e-status"
+            hint="Off Duty is the safe default for routine tracking. Priority and Emergency! trigger audible/visual alarms on compatible APRS radios and monitoring software -- only use them for an actual situation, never for testing.">
+            <select
+              id="bcn-mic-e-status"
+              value={form.mic_e_message_code}
+              onchange={(e) => handleMicECodeChange(e.currentTarget.value)}
+              class="bcn-amb-select"
+            >
+              {#each MIC_E_MESSAGE_CODE_OPTIONS as opt (opt.value)}
+                <option value={opt.value}>{opt.label}</option>
+              {/each}
+            </select>
+          </FormField>
+        {/if}
       {/if}
       <FormField label="Comment" id="bcn-comment"
         hint={"Tip: use {{version}} to insert the running graywolf version."}>
@@ -1031,6 +1098,34 @@
     <div class="modal-footer">
       <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
       <AlertDialog.Action class="danger-action" onclick={executeDelete}>Delete</AlertDialog.Action>
+    </div>
+  </AlertDialog.Content>
+</AlertDialog>
+
+<!-- Mic-E Priority/Emergency confirmation -->
+<AlertDialog bind:open={micEConfirmOpen} onOpenChange={(open) => { if (!open) cancelMicECode(); }}>
+  <AlertDialog.Content>
+    <AlertDialog.Title>
+      Set beacon status to {pendingMicECode === 'emergency' ? 'Emergency!' : 'Priority'}?
+    </AlertDialog.Title>
+    <AlertDialog.Description>
+      {#if pendingMicECode === 'emergency'}
+        This triggers audible and visual alarms on compatible APRS radios
+        (Kenwood, Yaesu, Icom) and monitoring software. Only use this for
+        an actual life-safety situation -- never for testing, and never
+        leave a beacon set to Emergency! after the situation has ended.
+      {:else}
+        Priority signals an elevated operational state above routine
+        traffic. It generally doesn't trigger hardware alarms, but avoid
+        leaving a beacon set to Priority outside of an actual tactical
+        or event assignment.
+      {/if}
+    </AlertDialog.Description>
+    <div class="modal-footer">
+      <AlertDialog.Cancel onclick={cancelMicECode}>Cancel</AlertDialog.Cancel>
+      <AlertDialog.Action class="danger-action" onclick={confirmMicECode}>
+        Set {pendingMicECode === 'emergency' ? 'Emergency!' : 'Priority'}
+      </AlertDialog.Action>
     </div>
   </AlertDialog.Content>
 </AlertDialog>
