@@ -8,6 +8,8 @@
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
+  import { channelsStore, start as startChannels } from '../lib/stores/channels.svelte.js';
+  import { SUMMARY_KISS_TNC, HEALTH_LIVE } from '../lib/channelBacking.js';
 
   let packets = $state([]);
   let status = $state(null);
@@ -16,6 +18,11 @@
   let stationCallsign = $state('');
   let audioDevices = $state([]);
   let pollTimer = $state(null);
+
+  // Cross-references status channel ids with the backing data from /api/channels.
+  let channelMetaById = $derived(
+    Object.fromEntries((channelsStore.list || []).map(c => [c.id, c]))
+  );
 
   let offline = $derived(!$online);
 
@@ -90,6 +97,7 @@
     loadBeacons();
     loadStationCallsign();
     loadAudioDevices();
+    startChannels(); // backing data (modem vs kiss-tnc) for dashboard card rendering
     pollTimer = setInterval(loadData, 5000);
     return () => clearInterval(pollTimer);
   });
@@ -251,6 +259,8 @@
     {#each status.channels as ch}
       {@const channelBeacons = beaconsByChannel[ch.id] || []}
       {@const audioPeak = ch.device_peak_dbfs || ch.audio_peak}
+      {@const isKissTnc = channelMetaById[ch.id]?.backing?.summary === SUMMARY_KISS_TNC}
+      {@const kissBacking = channelMetaById[ch.id]?.backing}
       <div class="ch-card">
         <div class="ch-header">
           <span class="ch-title">CH{ch.id}: {ch.name}</span>
@@ -258,9 +268,11 @@
         </div>
 
         <div class="ch-indicators">
-          <span class="indicator" class:active={ch.dcd_state}>
-            <span class="ind-dot dcd"></span> DCD
-          </span>
+          {#if !isKissTnc}
+            <span class="indicator" class:active={ch.dcd_state}>
+              <span class="ind-dot dcd"></span> DCD
+            </span>
+          {/if}
           <span class="indicator" class:active={rxActive[ch.id]}>
             <span class="ind-dot rx"></span> RX
           </span>
@@ -269,17 +281,27 @@
           </span>
         </div>
 
-        <div class="ch-audio">
-          <div class="level-bar">
-            <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+        {#if isKissTnc}
+          {@const live = kissBacking?.health === HEALTH_LIVE}
+          <div class="ch-tnc-status">
+            <span class="tnc-glyph {live ? 'live' : 'down'}" aria-hidden="true">{live ? '\u25CF' : '\u25CB'}</span>
+            <span class="tnc-status-text">TNC {live ? 'Connected' : 'Disconnected'}</span>
           </div>
-          <span class="level-value">{formatPeak(audioPeak)}</span>
-        </div>
+        {:else}
+          <div class="ch-audio">
+            <div class="level-bar">
+              <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+            </div>
+            <span class="level-value">{formatPeak(audioPeak)}</span>
+          </div>
+        {/if}
 
         <div class="ch-stats">
           <span>RX: <strong>{ch.rx_frames || 0}</strong></span>
           <span>TX: <strong>{ch.tx_frames || 0}</strong></span>
-          <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          {#if !isKissTnc}
+            <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          {/if}
         </div>
 
         {#if channelBeacons.length > 0}
@@ -499,6 +521,27 @@
     white-space: nowrap;
     min-width: 55px;
     text-align: right;
+  }
+
+  /* ── KISS-TNC connection status (replaces dBFS bar) ── */
+  .ch-tnc-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    background: var(--color-surface);
+    border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .tnc-glyph {
+    font-size: 14px;
+    line-height: 1;
+  }
+  .tnc-glyph.live { color: var(--color-success, #3fb950); }
+  .tnc-glyph.down { color: var(--color-warning, #d29922); }
+  .tnc-status-text {
+    color: var(--color-text-muted);
+    font-weight: 500;
   }
 
   /* ── channel stats ────────────────────────────── */
