@@ -19,6 +19,8 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.util.Log
 import com.nw5w.graywolf.usb.UsbPttAdapter
+import android.webkit.ConsoleMessage
+import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -80,6 +82,10 @@ class MainActivity : Activity() {
             finish()
             return
         }
+        // Debug builds only: lets `chrome://inspect` attach to this WebView
+        // over USB, and (independently of that) makes onConsoleMessage below
+        // actually fire for console.* calls and uncaught/unhandled JS errors.
+        WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         webView = WebView(this).also {
             it.settings.javaScriptEnabled = true
             it.settings.domStorageEnabled = true
@@ -122,6 +128,16 @@ class MainActivity : Activity() {
                         didReloadOnError = true
                         mainHandler.postDelayed({ view.reload() }, 1000)
                     }
+                }
+            }
+            // Without this, console.log/warn/error and uncaught JS exceptions
+            // (including "Uncaught (in promise)" for unhandled rejections --
+            // e.g. a failed lazy-route dynamic import) vanish silently; there's
+            // no other way to see them without a wired chrome://inspect session.
+            it.webChromeClient = object : WebChromeClient() {
+                override fun onConsoleMessage(msg: ConsoleMessage): Boolean {
+                    Log.d(TAG, "console: ${msg.message()} (${msg.sourceId()}:${msg.lineNumber()})")
+                    return true
                 }
             }
         }
