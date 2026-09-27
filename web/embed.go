@@ -7,7 +7,10 @@
 package web
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
+	"io"
 	"io/fs"
 	"net/http"
 	"strconv"
@@ -42,18 +45,22 @@ func Handler() http.Handler {
 // embedded dist/ and falls back to index.html for unmatched paths. This
 // enables client-side routing in the Svelte SPA.
 //
-// version seeds index.html's ETag. Without an explicit Cache-Control,
-// mobile Safari can keep serving a pre-redeploy index.html (and the
-// stale hashed bundle it points at) indefinitely, which surfaces as a
-// full-page reload/flicker on every SPA navigation until the operator
-// force-refreshes. Keying index.html's revalidation off the build
-// version guarantees every release invalidates old clients; the
-// content-hashed /assets/ files it references are safe to cache
-// forever since their filename changes whenever their content does.
-func SPAHandler(version string) http.Handler {
+// index.html's ETag is a content hash of index.html itself, not the app
+// version: an iterative dev rebuild (e.g. the Android Gradle build, which
+// vite-builds and re-embeds on every `assembleDebug`) usually doesn't bump
+// VERSION, so keying the ETag off version left WebKit/WebView clients
+// revalidating to a 304 and keeps serving a stale cached index.html --
+// which still points at old hashed /assets/ chunks that emptyOutDir just
+// deleted, surfacing as a 404 on dynamic import ("Failed to fetch
+// dynamically imported module"). Hashing index.html's actual bytes busts
+// the cache on every rebuild that changes anything it references,
+// regardless of VERSION. The content-hashed /assets/ files it references
+// are still safe to cache forever since their filename changes whenever
+// their content does.
+func SPAHandler() http.Handler {
 	fsys := FS()
 	fileServer := http.FileServer(http.FS(fsys))
-	indexETag := strconv.Quote(version)
+	indexETag := strconv.Quote(indexContentHash(fsys))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Try to serve the exact file first.
@@ -94,6 +101,22 @@ func serveIndex(w http.ResponseWriter, r *http.Request, fileServer http.Handler,
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("ETag", etag)
 	fileServer.ServeHTTP(w, r)
+}
+
+// indexContentHash returns a short sha256 hex digest of the embedded
+// index.html, or "unknown" if it can't be read (unreachable in practice --
+// go:embed guarantees dist/index.html exists).
+func indexContentHash(fsys fs.FS) string {
+	f, err := fsys.Open("index.html")
+	if err != nil {
+		return "unknown"
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
 // setAssetCacheControl distinguishes Vite's content-hashed bundle files
