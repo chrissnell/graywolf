@@ -72,6 +72,18 @@ func SPAHandler(version string) http.Handler {
 			return
 		}
 
+		// A missing /assets/* file is never a valid SPA route -- those
+		// filenames are content-hashed, so a miss means a client loaded
+		// before the last rebuild is asking for a chunk that no longer
+		// exists. SPA-falling-back to index.html here serves text/html
+		// for a .js request, which browsers refuse to execute (disallowed
+		// MIME type) and surfaces as an uncaught dynamic-import failure
+		// instead of a clean 404 the frontend can detect and recover from.
+		if strings.HasPrefix(path, "/assets/") {
+			http.NotFound(w, r)
+			return
+		}
+
 		// File not found — serve index.html for SPA routing.
 		r.URL.Path = "/"
 		serveIndex(w, r, fileServer, indexETag)
