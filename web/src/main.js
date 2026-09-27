@@ -4,6 +4,16 @@
 // auth silently.
 import './bootstrap.js';
 
+import { installStaleChunkReload } from './lib/staleChunkReload.js';
+
+// A lazy route (e.g. Login.svelte) can fail to load if the server was
+// rebuilt/restarted since this tab's bundle was fetched -- the chunk
+// hash it's asking for no longer exists. Auto-reload so the operator
+// isn't stuck on a broken screen after a session expiry redirects them
+// to #/login. Installed before mounting App so it catches a failure on
+// the very first route load.
+installStaleChunkReload();
+
 // Auto-import every theme stylesheet in graywolf/web/themes/. Each
 // file scopes its declarations under [data-theme="<id>"]; Vite
 // inlines them all so the final bundle contains every shipped theme.
