@@ -136,3 +136,15 @@ func TestBeaconRequest_Validate_BadPath(t *testing.T) {
 		t.Fatal("expected error for invalid path element")
 	}
 }
+
+// TestBeaconRequest_ToUpdate_Enabled: ToUpdate writes the request's value,
+// and an omitted key is false, as before Enabled became a *bool.
+func TestBeaconRequest_ToUpdate_Enabled(t *testing.T) {
+	tr := true
+	if (BeaconRequest{}).ToUpdate(1).Enabled {
+		t.Error("ToUpdate: omitted enabled gave true, want false")
+	}
+	if !(BeaconRequest{Enabled: &tr}).ToUpdate(1).Enabled {
+		t.Error("ToUpdate: enabled true gave false")
+	}
+}

@@ -61,7 +61,7 @@ type BeaconRequest struct {
 	SbTurnSlope    uint32  `json:"sb_turn_slope"`
 	SbMinTurnTime  uint32  `json:"sb_min_turn_time"`
 	SendPath       string  `json:"send_path" enums:"rf,both,is_only" example:"rf"`
-	Enabled        bool    `json:"enabled"`
+	Enabled        *bool   `json:"enabled,omitempty"`
 }
 
 // Validate rejects configurations that would cause the scheduler to
@@ -207,12 +207,13 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		SbTurnSlope:   r.SbTurnSlope,
 		SbMinTurnTime: r.SbMinTurnTime,
 		SendPath:      r.normalizedSendPath(),
-		Enabled:       r.Enabled,
+		Enabled:       r.Enabled == nil || *r.Enabled,
 	}
 }
 
 func (r BeaconRequest) ToUpdate(id uint32) configstore.Beacon {
 	m := r.ToModel()
+	m.Enabled = r.Enabled != nil && *r.Enabled
 	m.ID = id
 	return m
 }
@@ -266,7 +267,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 		SbTurnSlope:   r.SbTurnSlope,
 		SbMinTurnTime: r.SbMinTurnTime,
 		SendPath:      r.normalizedSendPath(),
-		Enabled:       r.Enabled,
+		Enabled:       r.Enabled != nil && *r.Enabled,
 	}
 }
 
