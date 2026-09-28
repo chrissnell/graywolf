@@ -469,13 +469,9 @@ func extractFilter(login string) string {
 // matrix. Each subtest provisions its own harness so state does not leak
 // across cases.
 //
-// Subtests do NOT t.Parallel() because configstore.OpenMemory() uses
-// the `file::memory:?cache=shared` DSN — every call in the same process
-// resolves to the same SQLite in-memory instance, so parallel subtests
-// would share tactical rows and iGate config. Each sub-test instead
-// stands up its own harness sequentially; total runtime is bounded by
-// the igate backoff's 1s Initial * N reconnects (~10-12 s for the full
-// matrix).
+// Subtests do NOT t.Parallel(). Each sub-test stands up its own harness
+// sequentially; total runtime is bounded by the igate backoff's 1s
+// Initial * N reconnects (~10-12 s for the full matrix).
 func TestIgateFilterIntegration_TacticalMutations(t *testing.T) {
 	// Case 1: create an enabled tactical → next login has g/T1.
 	t.Run("CreateEnabled_AppendsGClause", func(t *testing.T) {
