@@ -51,6 +51,44 @@ func TestBeaconCreate_HappyPath(t *testing.T) {
 	}
 }
 
+// TestBeaconCreate_EnabledFlag: an explicit enabled=false must persist a
+// disabled beacon despite the gorm `default:true` tag on Beacon.Enabled;
+// an explicit true and an omitted key both create an enabled beacon.
+func TestBeaconCreate_EnabledFlag(t *testing.T) {
+	for _, tc := range []struct {
+		name, enabled string // enabled: JSON fragment, "" = key omitted
+		want          bool
+	}{
+		{"explicit false", `,"enabled":false`, false},
+		{"explicit true", `,"enabled":true`, true},
+		{"omitted", ``, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := newTestServer(t)
+			mux := http.NewServeMux()
+			srv.RegisterRoutes(mux)
+
+			body := `{"type":"position","channel":1,"callsign":"N0CAL","latitude":37.5,"longitude":-122.0,"interval":1800` + tc.enabled + `}`
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/beacons", strings.NewReader(body)))
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("expected 201, got %d: %s", rec.Code, rec.Body.String())
+			}
+			var resp dto.BeaconResponse
+			if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+				t.Fatal(err)
+			}
+			row, err := srv.store.GetBeacon(context.Background(), resp.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if resp.Enabled != tc.want || row.Enabled != tc.want {
+				t.Errorf("Enabled: response %v, stored %v, want %v", resp.Enabled, row.Enabled, tc.want)
+			}
+		})
+	}
+}
+
 // TestBeaconCreate_PositionWithoutCoordsReturns400 is the one hand-coded
 // validation rule the legacy handler had.
 func TestBeaconCreate_PositionWithoutCoordsReturns400(t *testing.T) {
