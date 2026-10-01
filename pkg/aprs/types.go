@@ -197,6 +197,7 @@ type DecodedAPRSPacket struct {
 	ThirdParty    *DecodedAPRSPacket // recursively-decoded inner packet for '}' traffic (APRS101 ch 20)
 	Status        string             // for '>' status reports
 	Comment       string             // residual free-form text after structured fields
+	QSY           *QSY               // frequency/tone/offset parsed from a leading comment freq-spec (AFRS), nil if not present
 	Timestamp     time.Time
 	Channel       int
 	Quality       int // modem-reported quality (0..100) if available

@@ -60,6 +60,18 @@ type Config struct {
 	// SendPathRF for safety. SendPathISOnly skips RF entirely so a station
 	// with no radio can beacon to APRS-IS.
 	SendPath string
+	// QSY carries the operator's manually-configured operating
+	// frequency/tone/offset (AFRS freq-spec, see pkg/aprs/qsy.go).
+	// Restricted by the webapi DTO to type=="position" with no callsign
+	// override; QSYFreqMHz <= 0 means "no QSY configured". CallsignOverridden
+	// is a defense-in-depth guard so a hand-edited DB row can't sneak QSY
+	// onto a beacon transmitting under someone else's callsign.
+	QSYFreqMHz         float64
+	QSYToneType        string // "" | "ctcss" | "dcs"
+	QSYToneFreq        string
+	QSYOffsetMHz       float64
+	QSYHasOffset       bool
+	CallsignOverridden bool
 }
 
 // AutoChannelResolver resolves the live "Auto APRS Channel" target

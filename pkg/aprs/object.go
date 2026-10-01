@@ -35,6 +35,9 @@ func parseObject(pkt *DecodedAPRSPacket, info []byte) error {
 	if inner.DF != nil {
 		pkt.DF = inner.DF
 	}
+	if inner.QSY != nil {
+		pkt.QSY = inner.QSY
+	}
 	pkt.Object = obj
 	pkt.Type = PacketObject
 	return nil
@@ -73,6 +76,9 @@ func parseItem(pkt *DecodedAPRSPacket, info []byte) error {
 	}
 	if inner.DF != nil {
 		pkt.DF = inner.DF
+	}
+	if inner.QSY != nil {
+		pkt.QSY = inner.QSY
 	}
 	pkt.Item = item
 	pkt.Type = PacketItem

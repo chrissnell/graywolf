@@ -103,6 +103,7 @@
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
     smart_beacon: false,
+    add_qsy: false, qsy_freq: '', qsy_tone_type: '', qsy_tone_freq: '', qsy_offset: '',
   });
 
   let callsignError = $state('');
@@ -169,6 +170,27 @@
     (form.position_format === 'uncompressed' || form.position_format === 'mic_e'),
   );
   let useAmbiguity = $derived(form.ambiguity > 0);
+  // QSY (operating frequency/tone/offset) is restricted to a beacon that
+  // represents the operator's own station: type=position with no
+  // callsign override. Mirrors the backend eligibility rule enforced by
+  // dto.BeaconRequest.Validate() and the builder's defense-in-depth guard.
+  // `qsyEligible` gates whether the "Add QSY" toggle itself is offered;
+  // `showQsy` (eligible AND the operator has opted in) gates the fields.
+  let qsyEligible = $derived(form.type === 'position' && !form.callsign_override);
+  let showQsy = $derived(qsyEligible && form.add_qsy);
+  let showQsyTone = $derived(showQsy && form.qsy_tone_type !== '');
+  // Clear QSY state when eligibility is lost (type change or override
+  // turned on) so a stale value -- and a checked toggle the operator can
+  // no longer see -- can't slip through on save.
+  $effect(() => {
+    if (!qsyEligible && (form.add_qsy || form.qsy_freq || form.qsy_tone_type || form.qsy_tone_freq || form.qsy_offset)) {
+      form.add_qsy = false;
+      form.qsy_freq = '';
+      form.qsy_tone_type = '';
+      form.qsy_tone_freq = '';
+      form.qsy_offset = '';
+    }
+  });
   const TX_CALLOUT_ID = 'bcn-tx-callout';
   let calloutEl = $state(null);
   // Scroll the callout into view on modal open when it's already
@@ -212,6 +234,40 @@
     if (row.use_gps) return 'Live GPS fix';
     if (row.latitude === 0 && row.longitude === 0) return '—';
     return `${row.latitude.toFixed(4)}, ${row.longitude.toFixed(4)}`;
+  }
+
+  // Builds the AFRS frequency-spec prefix (e.g. "146.520MHz T100 +060")
+  // the backend prepends to the comment on the air -- mirrors
+  // aprs.EncodeQSY so the card shows the operator what actually
+  // transmits, not just the stored comment text. Returns '' when the
+  // beacon has no QSY frequency configured.
+  function formatQsyPrefix(row) {
+    if (!row.freq) return '';
+    const freq = parseFloat(row.freq);
+    if (Number.isNaN(freq)) return '';
+    let out = `${freq.toFixed(3)}MHz`;
+    if (row.tone === 'ctcss' && row.tone_freq) {
+      const tone = parseFloat(row.tone_freq);
+      if (!Number.isNaN(tone)) out += ` T${String(Math.floor(tone)).padStart(3, '0')}`;
+    } else if (row.tone === 'dcs' && row.tone_freq) {
+      out += ` D${String(row.tone_freq).padStart(3, '0')}`;
+    }
+    if (row.freq_offset) {
+      const offset = parseFloat(row.freq_offset);
+      if (!Number.isNaN(offset)) {
+        const tenths = Math.round(offset * 100);
+        out += ` ${tenths < 0 ? '-' : '+'}${String(Math.abs(tenths)).padStart(3, '0')}`;
+      }
+    }
+    return out;
+  }
+
+  // The full text actually transmitted in the comment field: the QSY
+  // prefix (if any) followed by the stored comment.
+  function formatFullComment(row) {
+    const qsy = formatQsyPrefix(row);
+    if (!qsy) return row.comment || '';
+    return row.comment ? `${qsy} ${row.comment}` : qsy;
   }
 
   // Kick the shared channels store (idempotent — safe if another
@@ -339,6 +395,11 @@
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
     form.enabled = true;
     form.smart_beacon = false;
+    form.add_qsy = false;
+    form.qsy_freq = '';
+    form.qsy_tone_type = '';
+    form.qsy_tone_freq = '';
+    form.qsy_offset = '';
     modalOpen = true;
   }
 
@@ -370,6 +431,11 @@
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
       slot: row.slot_seconds != null && row.slot_seconds >= 0 ? String(row.slot_seconds) : '',
+      add_qsy: !!row.freq,
+      qsy_freq: row.freq || '',
+      qsy_tone_type: row.tone || '',
+      qsy_tone_freq: row.tone_freq || '',
+      qsy_offset: row.freq_offset || '',
     });
     altInput = altInputFromFeet(form.alt_ft);
     altError = '';
@@ -462,6 +528,37 @@
       }
       slotSeconds = slotVal;
     }
+    // QSY (operating frequency/tone/offset): only sent when the section
+    // is visible (type=position, no callsign override) -- otherwise every
+    // field goes out empty so toggling type/override off a previously
+    // QSY-configured beacon clears it server-side instead of leaving
+    // stale data the DTO would then reject.
+    let qsyFreq = '', qsyTone = '', qsyToneFreq = '', qsyOffset = '';
+    if (showQsy) {
+      const freqNorm = form.qsy_freq.trim();
+      if (freqNorm !== '') {
+        const freqVal = parseFloat(freqNorm);
+        if (Number.isNaN(freqVal) || freqVal <= 0) {
+          toasts.error('QSY frequency must be a positive number in MHz');
+          return;
+        }
+        qsyFreq = freqNorm;
+      }
+      if (form.qsy_tone_type && !form.qsy_tone_freq.trim()) {
+        toasts.error('QSY tone value is required when a tone type is selected');
+        return;
+      }
+      qsyTone = form.qsy_tone_type;
+      qsyToneFreq = form.qsy_tone_freq.trim();
+      const offsetNorm = form.qsy_offset.trim();
+      if (offsetNorm !== '') {
+        if (Number.isNaN(parseFloat(offsetNorm))) {
+          toasts.error('QSY offset must be a number in MHz');
+          return;
+        }
+        qsyOffset = offsetNorm;
+      }
+    }
     const data = {
       ...form,
       callsign: callsignToSend,
@@ -473,11 +570,20 @@
       latitude: lat,
       longitude: lon,
       alt_ft: altFt,
+      freq: qsyFreq,
+      tone: qsyTone,
+      tone_freq: qsyToneFreq,
+      freq_offset: qsyOffset,
     };
     delete data.pos_source;
     delete data.callsign_override;
     delete data.slot;
     delete data.id;
+    delete data.add_qsy;
+    delete data.qsy_freq;
+    delete data.qsy_tone_type;
+    delete data.qsy_tone_freq;
+    delete data.qsy_offset;
     try {
       if (editing) {
         await api.put(`/beacons/${editing.id}`, data);
@@ -696,6 +802,7 @@
   <div class="beacon-grid">
     {#each beacons as b}
       {@const disp = beaconChannelDisplay(b, channelsById)}
+      {@const fullComment = formatFullComment(b)}
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
@@ -777,10 +884,10 @@
               <span class="detail-value">{b.slot_seconds}s past the hour</span>
             </div>
           {/if}
-          {#if b.comment}
+          {#if fullComment}
             <div class="detail-row">
               <span class="detail-label">Comment</span>
-              <span class="detail-value detail-comment">{b.comment}</span>
+              <span class="detail-value detail-comment">{fullComment}</span>
             </div>
           {/if}
         </div>
@@ -1102,6 +1209,39 @@
                 <option value={4}>Region ({altUnit === 'feet' ? '~69 mi' : '~111 km'})</option>
               </select>
             {/if}
+          </FormField>
+        {/if}
+      {/if}
+      {#if qsyEligible}
+        <FormField label="QSY" id="bcn-add-qsy"
+          hint="Publish the operating frequency (and optional tone/offset) where you can be reached. Appears as a prefix on the comment, e.g. 146.520MHz T100 +060.">
+          <label class="callsign-override-label" for="bcn-add-qsy-cb">
+            <Checkbox id="bcn-add-qsy-cb" bind:checked={form.add_qsy} />
+            <span>Add QSY</span>
+          </label>
+        </FormField>
+        {#if showQsy}
+          <FormField label="QSY frequency" id="bcn-qsy-freq"
+            hint="Operating frequency in MHz, published so other operators know where to reach you (e.g. a repeater or simplex frequency). Optional; leave blank for none.">
+            <Input id="bcn-qsy-freq" bind:value={form.qsy_freq} placeholder="146.520" />
+          </FormField>
+          <FormField label="QSY tone" id="bcn-qsy-tone"
+            hint="Optional CTCSS or DCS tone to publish alongside the frequency.">
+            <RadioGroup bind:value={form.qsy_tone_type}>
+              <div class="pos-source-row">
+                <Radio value="" label="None" />
+                <Radio value="ctcss" label="CTCSS" />
+                <Radio value="dcs" label="DCS" />
+              </div>
+            </RadioGroup>
+            {#if showQsyTone}
+              <Input id="bcn-qsy-tone-freq" bind:value={form.qsy_tone_freq}
+                placeholder={form.qsy_tone_type === 'dcs' ? 'e.g. 023' : 'e.g. 100.0'} />
+            {/if}
+          </FormField>
+          <FormField label="QSY offset" id="bcn-qsy-offset"
+            hint="Repeater offset in MHz, signed (e.g. -0.600 or +5.000). Optional; leave blank to omit.">
+            <Input id="bcn-qsy-offset" bind:value={form.qsy_offset} placeholder="e.g. -0.600" />
           </FormField>
         {/if}
       {/if}

@@ -218,6 +218,11 @@ type migration struct {
 //	    of how the column was created. Post-AutoMigrate; the ALTER is
 //	    skipped when AutoMigrate already added the column (columnExists
 //	    guard). See graywolf#517.
+//	31 — beacon_qsy_tone_freq: add the beacons.tone_freq column, the 4th
+//	    QSY field alongside the existing (repurposed) freq/tone/
+//	    freq_offset columns. No backfill: brand-new concept with nothing
+//	    to derive. Post-AutoMigrate; columnExists-guarded no-op when
+//	    AutoMigrate already added it from the struct tag.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -249,6 +254,7 @@ var schemaMigrations = []migration{
 	{version: 28, name: "igate_gate_is_to_rf_backfill", phase: postAutoMigrate, run: migrateIGateGateIsToRfBackfill},
 	{version: 29, name: "channels_enabled", phase: postAutoMigrate, run: migrateChannelsEnabled},
 	{version: 30, name: "kiss_ble_device_type", phase: postAutoMigrate, run: migrateKissBLEDeviceType},
+	{version: 31, name: "beacon_qsy_tone_freq", phase: postAutoMigrate, run: migrateBeaconQsyToneFreq},
 }
 
 // runMigrations applies every pending migration in the given phase,

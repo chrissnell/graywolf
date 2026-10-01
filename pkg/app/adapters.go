@@ -179,35 +179,57 @@ func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconC
 		}
 	}
 
+	var qsyFreqMHz, qsyOffsetMHz float64
+	var qsyHasOffset bool
+	if b.Freq != "" {
+		qsyFreqMHz, err = strconv.ParseFloat(b.Freq, 64)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("parse qsy freq %q: %w", b.Freq, err)
+		}
+	}
+	if b.FreqOffset != "" {
+		qsyOffsetMHz, err = strconv.ParseFloat(b.FreqOffset, 64)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("parse qsy freq_offset %q: %w", b.FreqOffset, err)
+		}
+		qsyHasOffset = true
+	}
+
 	cfg := beacon.Config{
-		ID:             b.ID,
-		Type:           beacon.Type(b.Type),
-		Channel:        b.Channel,
-		Source:         src,
-		Dest:           dest,
-		Path:           path,
-		Delay:          time.Duration(b.DelaySeconds) * time.Second,
-		Every:          time.Duration(b.EverySeconds) * time.Second,
-		Slot:           int(b.SlotSeconds),
-		UseGps:         b.UseGps,
-		Lat:            b.Latitude,
-		Lon:            b.Longitude,
-		AltFt:          b.AltFt,
-		SymbolTable:    symTable,
-		SymbolCode:     symCode,
-		Comment:        b.Comment,
-		CommentCmd:     commentCmd,
-		Format:         b.PositionFormat,
-		Ambiguity:      int(b.Ambiguity),
-		Messaging:      b.Messaging,
-		ObjectName:     b.ObjectName,
-		CustomInfo:     b.CustomInfo,
-		PHGPower:       int(b.Power),
-		PHGHeightFt:    int(b.Height),
-		PHGGainDB:      int(b.Gain),
-		PHGDirectivity: int(b.Dir),
-		SendPath:       b.SendPath,
-		Enabled:        b.Enabled,
+		ID:                 b.ID,
+		Type:               beacon.Type(b.Type),
+		Channel:            b.Channel,
+		Source:             src,
+		Dest:               dest,
+		Path:               path,
+		Delay:              time.Duration(b.DelaySeconds) * time.Second,
+		Every:              time.Duration(b.EverySeconds) * time.Second,
+		Slot:               int(b.SlotSeconds),
+		UseGps:             b.UseGps,
+		Lat:                b.Latitude,
+		Lon:                b.Longitude,
+		AltFt:              b.AltFt,
+		SymbolTable:        symTable,
+		SymbolCode:         symCode,
+		Comment:            b.Comment,
+		CommentCmd:         commentCmd,
+		Format:             b.PositionFormat,
+		Ambiguity:          int(b.Ambiguity),
+		Messaging:          b.Messaging,
+		ObjectName:         b.ObjectName,
+		CustomInfo:         b.CustomInfo,
+		PHGPower:           int(b.Power),
+		PHGHeightFt:        int(b.Height),
+		PHGGainDB:          int(b.Gain),
+		PHGDirectivity:     int(b.Dir),
+		SendPath:           b.SendPath,
+		Enabled:            b.Enabled,
+		QSYFreqMHz:         qsyFreqMHz,
+		QSYToneType:        b.Tone,
+		QSYToneFreq:        b.ToneFreq,
+		QSYOffsetMHz:       qsyOffsetMHz,
+		QSYHasOffset:       qsyHasOffset,
+		CallsignOverridden: b.Callsign != "",
 	}
 
 	if b.SmartBeacon && smart != nil && smart.Enabled {

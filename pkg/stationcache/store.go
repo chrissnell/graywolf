@@ -58,6 +58,7 @@ type Station struct {
 	Channel   uint32
 	Comment   string
 	Weather   *Weather // nil if not a weather station
+	QSY       *QSY     // nil if the station's comment carries no frequency spec
 	LastHeard time.Time
 	// LastDirectHeard is the timestamp of the most recent reception heard
 	// directly on RF (RX, zero digi hops). Set only by direct receptions and

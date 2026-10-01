@@ -57,6 +57,14 @@ type StationDTO struct {
 	Comment string `json:"comment"`
 	// Weather is optional weather telemetry; present only when include=weather is requested and the station reports weather.
 	Weather *WeatherDTO `json:"weather,omitempty"`
+	// QsyFrequency is the operating frequency in MHz parsed from an APRS frequency specification in the station's comment; omitted when not reported.
+	QsyFrequency *float64 `json:"qsy_frequency,omitempty"`
+	// QsyTone is the tone type parsed alongside QsyFrequency: "ctcss", "dcs", or omitted when no tone.
+	QsyTone string `json:"qsy_tone,omitempty"`
+	// QsyToneFrequency is the tone value: a decimal Hz string for CTCSS (e.g. "100.0") or a 3-digit code for DCS (e.g. "023").
+	QsyToneFrequency string `json:"qsy_tone_frequency,omitempty"`
+	// QsyOffset is the repeater offset in MHz (signed, 0 is a valid forced-simplex value); omitted when no offset was reported.
+	QsyOffset *float64 `json:"qsy_offset,omitempty"`
 }
 
 // StationPosDTO is a single position fix in the station wire format.
@@ -344,6 +352,17 @@ func stationToDTO(s stationcache.Station, isDelta, includeWeather bool, digiPos 
 
 	if includeWeather && s.Weather != nil {
 		dto.Weather = weatherToDTO(s.Weather)
+	}
+
+	if s.QSY != nil {
+		freq := s.QSY.FrequencyMHz
+		dto.QsyFrequency = &freq
+		dto.QsyTone = s.QSY.ToneType
+		dto.QsyToneFrequency = s.QSY.ToneFreq
+		if s.QSY.HasOffset {
+			offset := s.QSY.OffsetMHz
+			dto.QsyOffset = &offset
+		}
 	}
 
 	return dto

@@ -647,9 +647,10 @@ type Beacon struct {
 	Height         uint32  `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
 	Gain           uint32  `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
 	Dir            uint32  `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
-	Freq           string  `json:"freq"`                             // frequency string for freq info
-	Tone           string  `json:"tone"`                             // CTCSS/DCS tone
-	FreqOffset     string  `json:"freq_offset"`                      // repeater offset
+	Freq           string  `json:"freq"`                             // operating frequency in MHz, decimal string (e.g. "146.520"); QSY (see docs/handbook/beacons.html)
+	Tone           string  `json:"tone"`                             // QSY tone TYPE: "" | "ctcss" | "dcs"
+	ToneFreq       string  `json:"tone_freq"`                        // QSY tone value: CTCSS decimal Hz (e.g. "100.0") or DCS 3-digit code (e.g. "023")
+	FreqOffset     string  `json:"freq_offset"`                      // QSY repeater offset in MHz, signed decimal string (e.g. "-0.600"); "" = no offset/use standard, "0" = forced simplex
 	DelaySeconds   uint32  `gorm:"not null;default:30" json:"delay_seconds"`
 	EverySeconds   uint32  `gorm:"not null;default:1800" json:"interval"`
 	// SlotSeconds: same zero-value-default caveat as Channel/Path — 0

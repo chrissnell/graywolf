@@ -332,6 +332,7 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	s.Gated = e.Gated
 	s.Channel = e.Channel
 	s.Comment = e.Comment
+	s.QSY = e.QSY
 	s.LastHeard = now
 	if isDirectRF(e.Direction, e.Hops) {
 		s.LastDirectHeard = e.Timestamp

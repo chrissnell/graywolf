@@ -44,13 +44,16 @@ definitions:
         type: array
       position:
         $ref: '#/definitions/aprs.Position'
+      qsy:
+        allOf:
+          - $ref: '#/definitions/aprs.QSY'
+        description: frequency/tone/offset parsed from a leading comment freq-spec (AFRS), nil if not present
       quality:
         description: modem-reported quality (0..100) if available
         type: integer
       raw:
         description: original AX.25 frame bytes
         items:
-          format: int32
           type: integer
         type: array
       source:
@@ -229,7 +232,6 @@ definitions:
     properties:
       altitude:
         description: meters (0 if none reported)
-        format: float64
         type: number
       ambiguity:
         description: 0..4, digits of ambiguity introduced by spaces
@@ -241,7 +243,6 @@ definitions:
         type: integer
       daodatum:
         description: DAO datum byte (APRS101 DAO extension), 0 if not present
-        format: int32
         type: integer
       hasAlt:
         type: boolean
@@ -249,14 +250,12 @@ definitions:
         type: boolean
       latitude:
         description: decimal degrees, positive north
-        format: float64
         type: number
       localTime:
         description: true if the timestamp was the '/' local-time form (APRS101 ch 6)
         type: boolean
       longitude:
         description: decimal degrees, positive east
-        format: float64
         type: number
       phg:
         allOf:
@@ -264,7 +263,6 @@ definitions:
         description: decoded Power/Height/Gain/Directivity extension (APRS101 ch 7), nil if not present
       speed:
         description: knots
-        format: float64
         type: number
       symbol:
         $ref: '#/definitions/aprs.Symbol'
@@ -272,20 +270,33 @@ definitions:
         description: nil if positionless or no embedded time
         type: string
     type: object
+  aprs.QSY:
+    properties:
+      frequencyMHz:
+        type: number
+      hasOffset:
+        description: distinguishes an explicit offset (incl. 0 = forced simplex) from "no offset token present"
+        type: boolean
+      offsetMHz:
+        type: number
+      toneFreq:
+        description: 'CTCSS: decimal Hz string (e.g. "100.0"); DCS: 3-digit code (e.g. "023")'
+        type: string
+      toneType:
+        description: '"ctcss" | "dcs" | ""'
+        type: string
+    type: object
   aprs.Symbol:
     properties:
       code:
-        format: int32
         type: integer
       table:
-        format: int32
         type: integer
     type: object
   aprs.Telemetry:
     properties:
       analog:
         items:
-          format: float64
           type: number
         type: array
       analogHas:
@@ -298,7 +309,6 @@ definitions:
         type: string
       digital:
         description: bits 0..7 (only lower 8)
-        format: int32
         type: integer
       hasDigital:
         type: boolean
@@ -310,13 +320,11 @@ definitions:
     properties:
       bits:
         description: BITS. sense-bits bitmap (active-high per bit)
-        format: int32
         type: integer
       eqns:
         description: a, b, c coefficients per analog channel
         items:
           items:
-            format: float64
             type: number
           type: array
         type: array
@@ -369,31 +377,25 @@ definitions:
         type: integer
       pressure:
         description: tenths of millibar (e.g. 10132 = 1013.2)
-        format: float64
         type: number
       rain1Hour:
         description: hundredths of an inch
-        format: float64
         type: number
       rain24Hour:
-        format: float64
         type: number
       rainSinceMid:
-        format: float64
         type: number
       rawRainCounter:
         description: raw rain counter ('#' field)
         type: integer
       snowfall24h:
         description: inches (via 's' after 'g')
-        format: float64
         type: number
       softwareType:
         description: one-letter software code (e.g. 'w', 'x', 'd')
         type: string
       temperature:
         description: degrees F
-        format: float64
         type: number
       weatherUnitTag:
         description: 2..4 ASCII letters identifying the unit/model
@@ -403,11 +405,9 @@ definitions:
         type: integer
       windGust:
         description: mph (5-minute peak)
-        format: float64
         type: number
       windSpeed:
         description: mph (1-minute sustained)
-        format: float64
         type: number
     type: object
   configstore.Referrer:
@@ -862,6 +862,8 @@ definitions:
         type: string
       tone:
         type: string
+      tone_freq:
+        type: string
       type:
         type: string
       use_gps:
@@ -949,6 +951,8 @@ definitions:
       symbol_table:
         type: string
       tone:
+        type: string
+      tone_freq:
         type: string
       type:
         type: string
@@ -2808,11 +2812,20 @@ definitions:
       mark_dbfs:
         description: MarkDBFS is the mark-tone level in dBFS, floored at -60.
         type: number
+      sample_rate:
+        description: SampleRate is the capture device's sample rate, Hz.
+        type: integer
       space:
         description: Space is the legacy space-tone amplitude, scaled linearly to ~0-100.
         type: integer
       space_dbfs:
         description: SpaceDBFS is the space-tone level in dBFS, floored at -60.
+        type: number
+      speed_error_pct:
+        description: SpeedErrorPct is the decoder's measured baud-rate error, percent.
+        type: number
+      twist_db:
+        description: TwistDB is the absolute difference between MarkDBFS and SpaceDBFS.
         type: number
     type: object
   packetlog.Direction:
@@ -2825,10 +2838,6 @@ definitions:
       DirIS: APRS-IS upload/download (iGate)
       DirRX: heard on the air
       DirTX: transmitted by us
-    x-enum-descriptions:
-      - heard on the air
-      - transmitted by us
-      - APRS-IS upload/download (iGate)
     x-enum-varnames:
       - DirRX
       - DirTX
@@ -3050,7 +3059,6 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
-            format: float64
             type: number
           type: array
         type: array
@@ -3059,6 +3067,18 @@ definitions:
         items:
           $ref: '#/definitions/webapi.StationPosDTO'
         type: array
+      qsy_frequency:
+        description: QsyFrequency is the operating frequency in MHz parsed from an APRS frequency specification in the station's comment; omitted when not reported.
+        type: number
+      qsy_offset:
+        description: QsyOffset is the repeater offset in MHz (signed, 0 is a valid forced-simplex value); omitted when no offset was reported.
+        type: number
+      qsy_tone:
+        description: 'QsyTone is the tone type parsed alongside QsyFrequency: "ctcss", "dcs", or omitted when no tone.'
+        type: string
+      qsy_tone_frequency:
+        description: 'QsyToneFrequency is the tone value: a decimal Hz string for CTCSS (e.g. "100.0") or a 3-digit code for DCS (e.g. "023").'
+        type: string
       source:
         description: Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.
         type: string
@@ -3117,7 +3137,6 @@ definitions:
         description: PathPositions lists [lat, lon] pairs resolved for H-bit digipeaters in Path; zero pair when position is unknown.
         items:
           items:
-            format: float64
             type: number
           type: array
         type: array
@@ -4291,7 +4310,6 @@ paths:
       operationId: deleteAX25Profile
       parameters:
         - description: Profile ID
-          format: int32
           in: path
           name: id
           required: true
@@ -4312,7 +4330,6 @@ paths:
       operationId: getAX25Profile
       parameters:
         - description: Profile ID
-          format: int32
           in: path
           name: id
           required: true
@@ -4343,7 +4360,6 @@ paths:
       operationId: updateAX25Profile
       parameters:
         - description: Profile ID
-          format: int32
           in: path
           name: id
           required: true
@@ -4385,7 +4401,6 @@ paths:
       operationId: pinAX25Profile
       parameters:
         - description: Profile ID
-          format: int32
           in: path
           name: id
           required: true
@@ -4506,7 +4521,6 @@ paths:
       operationId: deleteAX25Transcript
       parameters:
         - description: Transcript session ID
-          format: int32
           in: path
           name: id
           required: true
@@ -4527,7 +4541,6 @@ paths:
       operationId: getAX25Transcript
       parameters:
         - description: Transcript session ID
-          format: int32
           in: path
           name: id
           required: true
