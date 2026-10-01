@@ -7,7 +7,7 @@
 
   import Modal from './Modal.svelte';
   import { decodeRaw, hexDump, analyzeFrame } from '../lib/packetInspect.js';
-  import { parseDisplay, formatTime, audioLevel } from '../lib/packetColumns.js';
+  import { parseDisplay, formatTime } from '../lib/packetColumns.js';
 
   let { open = $bindable(false), packet = null } = $props();
 
@@ -15,7 +15,6 @@
   const rows = $derived(hexDump(bytes));
   const frame = $derived(bytes.length ? analyzeFrame(bytes) : null);
   const calls = $derived(packet ? parseDisplay(packet) : { src: '', dst: '' });
-  const audio = $derived(packet ? audioLevel(packet) : null);
 
   function addrLabel(a) {
     if (!a) return '—';
@@ -64,16 +63,6 @@
             <dt>Control / PID</dt>
             <dd>{fmtByte(frame.control)} / {fmtByte(frame.pid)}{frame.isMicE ? ' · Mic-E' : ''}</dd>
             <dt>Length</dt><dd>{bytes.length} bytes</dd>
-          </dl>
-        {/if}
-
-        {#if audio}
-          <dl class="frame">
-            <dt>Audio Level</dt><dd>{audio.level} dBFS</dd>
-            <dt>Mark / Space</dt><dd>{audio.mark} / {audio.space} dBFS</dd>
-            <dt>Twist</dt><dd>{audio.twist.toFixed(1)} dB</dd>
-            {#if audio.speedError != null}<dt>Speed Error</dt><dd>{audio.speedError.toFixed(2)}%</dd>{/if}
-            {#if audio.sampleRate}<dt>Sample Rate</dt><dd>{audio.sampleRate} Hz</dd>{/if}
           </dl>
         {/if}
 

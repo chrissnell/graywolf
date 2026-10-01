@@ -340,43 +340,4 @@ mod tests {
             "take_bad_fcs must drain to zero on the second call"
         );
     }
-
-    #[test]
-    fn bad_fcs_sample_captures_audio_level_at_failure() {
-        // Companion to bad_fcs_counter_fires_when_frame_body_is_corrupted:
-        // the same corrupted-frame event must also retain the mark/space
-        // audio levels active at the moment FCS failed, so the rx-quality
-        // diagnostic (pkg/app/rxquality.go) has real data to classify
-        // instead of a bare counter.
-        let frame = vec![
-            0x82, 0xa0, 0xa4, 0xa6, 0x40, 0x40, 0x60, // dest
-            0x96, 0x84, 0x62, 0xa4, 0x84, 0x62, 0x61, // src
-            0x03, 0xf0, // control + PID
-            b'h', b'i', // info
-        ];
-        let preamble_flags = 8;
-        let mut bits = encode(&frame, preamble_flags, 4);
-        let flip_idx = preamble_flags * 8 + 80;
-        bits[flip_idx] ^= 1;
-
-        let mut decoder = HdlcDecoder::new(0, 0, 0, false);
-        decoder.set_audio_level(0.42, 0.17);
-        let mut nudge: i64 = 0;
-        let mut symbols: i32 = 0;
-        for &b in &bits {
-            decoder.process_bit(b != 0, &mut nudge, &mut symbols);
-        }
-
-        assert!(decoder.take_bad_fcs() >= 1, "test premise: bad-FCS must fire");
-        let sample = decoder
-            .take_last_bad_fcs_sample()
-            .expect("bad-FCS event must retain a diagnostic sample");
-        assert_eq!(sample.level_mark, 0.42);
-        assert_eq!(sample.level_space, 0.17);
-        assert!(
-            decoder.take_last_bad_fcs_sample().is_none(),
-            "take_last_bad_fcs_sample must drain to None on the second call"
-        );
-    }
 }
-

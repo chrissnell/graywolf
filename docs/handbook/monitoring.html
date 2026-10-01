@@ -318,34 +318,6 @@
       the audio is clean. Use the steps below to decide.
     </p>
 
-    <div class="callout tip">
-      <span class="callout-icon">&#10003;</span>
-      <div class="callout-body">
-        <p>
-          <strong>You don't have to capture a clip to see these numbers.</strong>
-          Graywolf surfaces the same per-packet diagnostics
-          <code>graywolf-modem --decode</code> reports offline &mdash; audio
-          level, mark/space twist, speed error &mdash; live, with no manual
-          capture step:
-        </p>
-        <ul>
-          <li>Every packet heard on a modem-backed channel logs these values
-            to <strong>System Logs</strong> at the <code>DEBUG</code> level.</li>
-          <li>Every frame that fails its FCS check logs the same values at
-            the <code>WARN</code> level, the moment it happens &mdash; one
-            line per failure, not a periodic summary.</li>
-          <li>Opening a packet's raw detail view (the magnifying-glass icon
-            on the APRS Logs page) shows an <strong>Audio</strong> section
-            with the same numbers for that specific packet.</li>
-        </ul>
-        <p>
-          This is raw data, not a verdict &mdash; use the ratio/trend
-          guidance below to judge whether what you're seeing is a real
-          problem or ordinary channel noise.
-        </p>
-      </div>
-    </div>
-
     <h3>Diagnosing poor FCS performance</h3>
 
     <ol>

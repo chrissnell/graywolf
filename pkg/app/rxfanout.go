@@ -92,17 +92,12 @@ func audioLevelFromFrame(rf *pb.ReceivedFrame) *packetlog.AudioLevel {
 		return float64(v)
 	}
 	level := (clamp(mark) + clamp(space)) / 2
-	markDBFS := toDBFS(clamp(mark))
-	spaceDBFS := toDBFS(clamp(space))
 	return &packetlog.AudioLevel{
-		Mark:          scale(mark),
-		Space:         scale(space),
-		MarkDBFS:      markDBFS,
-		SpaceDBFS:     spaceDBFS,
-		LevelDBFS:     toDBFS(level),
-		TwistDB:       math.Abs(markDBFS - spaceDBFS),
-		SpeedErrorPct: float64(rf.SpeedError),
-		SampleRate:    rf.SampleRate,
+		Mark:      scale(mark),
+		Space:     scale(space),
+		MarkDBFS:  toDBFS(clamp(mark)),
+		SpaceDBFS: toDBFS(clamp(space)),
+		LevelDBFS: toDBFS(level),
 	}
 }
 
@@ -165,21 +160,6 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 	var alevel *packetlog.AudioLevel
 	if src.Kind == ingress.KindModem {
 		alevel = audioLevelFromFrame(rf)
-		// Every packet heard through an audio channel, logged at DEBUG --
-		// the same raw numbers graywolf-modem --decode reports offline,
-		// surfaced live per-packet instead of requiring an operator to
-		// capture a clip and run it back through the decoder.
-		if alevel != nil && a.logger != nil {
-			a.logger.Debug("audio channel packet",
-				"channel", rf.Channel,
-				"level_dbfs", alevel.LevelDBFS,
-				"mark_dbfs", alevel.MarkDBFS,
-				"space_dbfs", alevel.SpaceDBFS,
-				"twist_db", alevel.TwistDB,
-				"speed_error_pct", alevel.SpeedErrorPct,
-				"sample_rate", alevel.SampleRate,
-			)
-		}
 	}
 
 	// Raw KISS clients (e.g. Xastir) do their own decoding and want every
