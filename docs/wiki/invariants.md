@@ -2100,3 +2100,79 @@ Source: [`../../pkg/kiss/server.go`](../../pkg/kiss/server.go)
 [`../../pkg/kiss/server_test.go`](../../pkg/kiss/server_test.go)
 (`TestServerBroadcast_StalledClientDoesNotBlockOthers`).
 
+### 70. Bad-FCS diagnostics are pushed raw, per-event -- no classifier, no polling
+
+Graywolf surfaces *why* a channel's frames are failing FCS by logging
+the same raw demodulator-measured numbers `graywolf-modem --decode`
+reports offline (level, mark/space twist, speed error), live, per
+event -- deliberately **not** via a periodic heuristic that guesses a
+"likely cause". An earlier version of this feature tried the
+classifier approach (thresholds, a ~10s ticker, suppression rules) and
+was discarded as over-complicated; this is the replacement.
+
+1. **Rust** (`graywolf-modem/src/hdlc.rs`): `HdlcDecoder` computes
+   per-candidate-frame mark/space audio level and baud-rate
+   `speed_error` on every frame-shaped candidate (`RawBitBuffer`).
+   `try_decode` stashes a `BadFcsSample` into `HdlcDecoder.last_bad_fcs`
+   the moment FCS fails, drained via `take_last_bad_fcs_sample()`
+   (same drain-and-reset shape as `take_bad_fcs()`), propagated through
+   the same "primary slicer / primary sub-demod only" wrappers
+   `take_bad_fcs()` already uses (`demod_afsk.rs`, `demod_afsk_multi.rs`,
+   `modem/mod.rs`'s `take_demod_bad_fcs_sample`). PSK and 9600-baseband
+   decoders report no sample (AFSK/Digirig is the instrumented case).
+2. **Push, not poll.** `modem/mod.rs`'s audio pump loop sends a
+   `BadFcsEvent` IPC message (channel, mark/space level, speed_error,
+   sample_rate, cumulative rx_bad_fcs) **immediately** whenever a
+   sample is produced -- one message per failure, not cached for the
+   next periodic `StatusUpdate` tick. `StatusUpdate` itself carries no
+   bad-FCS diagnostic fields; it's unchanged from before this feature.
+3. **`modembridge`** (`pkg/modembridge/session.go`): `dispatchIPC`
+   handles `BadFcsEvent` the same way it already handles `DcdChange` --
+   logs it straight through (`logBadFcsEvent`) as a `WARN` with the
+   channel ID and the raw numbers (level_dbfs, mark_dbfs, space_dbfs,
+   twist_db, speed_error_pct, sample_rate, rx_bad_fcs). No cache, no
+   cooldown, no reason string. Channel *name* is deliberately not
+   looked up here (would require a configstore call on the IPC hot
+   path) -- channel ID is sufficient and matches the `dcd change` debug
+   log's existing convention.
+4. **Every decoded packet, not just failures.** `pkg/app/rxfanout.go`'s
+   `dispatchRxFrame` logs the same style of line at `DEBUG` for every
+   good frame heard on a modem-backed channel (`ReceivedFrame` already
+   carries per-frame mark/space/speed_error; `sample_rate` was added to
+   the proto alongside `BadFcsEvent` so this log line is self-contained
+   too). This is the "every single packet" requirement -- continuous
+   visibility, not just failure visibility.
+5. **Packet-detail view.** `packetlog.AudioLevel` (already attached to
+   every modem-RX `packetlog.Entry`) carries `TwistDB`, `SpeedErrorPct`,
+   and `SampleRate` alongside the existing dBFS fields, so the same
+   data rides along in the `/api/packets` response. `PacketInspector.svelte`
+   (the magnifying-glass raw-detail dialog on the APRS Logs page) renders
+   an "Audio" section from `packet.audio_level` -- no log-digging required
+   to see a specific packet's numbers.
+
+**No classification, no thresholds, no suppression.** The operator
+sees the numbers and judges for themselves using the ratio/trend
+guidance already in
+[monitoring.html](../handbook/monitoring.html) -- the app does not
+guess "clipping" vs "weak" vs "interference". Channels with KISS-TNC
+backing (`InputDeviceID == nil`) never produce bad-FCS events at all --
+a hardware TNC validates its own FCS (invariant #30) -- so there is
+nothing to gate per-channel.
+
+Source: [`../../graywolf-modem/src/hdlc.rs`](../../graywolf-modem/src/hdlc.rs)
+(`BadFcsSample`, `take_last_bad_fcs_sample`),
+[`../../graywolf-modem/src/demod_afsk.rs`](../../graywolf-modem/src/demod_afsk.rs),
+[`../../graywolf-modem/src/demod_afsk_multi.rs`](../../graywolf-modem/src/demod_afsk_multi.rs)
+(`take_bad_fcs_sample`),
+[`../../graywolf-modem/src/modem/mod.rs`](../../graywolf-modem/src/modem/mod.rs)
+(`take_demod_bad_fcs_sample`, `build_received`),
+[`../../proto/graywolf.proto`](../../proto/graywolf.proto) (`BadFcsEvent`,
+`ReceivedFrame.sample_rate`),
+[`../../pkg/modembridge/session.go`](../../pkg/modembridge/session.go)
+(`logBadFcsEvent`, `toDBFS`),
+[`../../pkg/app/rxfanout.go`](../../pkg/app/rxfanout.go)
+(`audioLevelFromFrame`, `dispatchRxFrame`),
+[`../../pkg/packetlog/packetlog.go`](../../pkg/packetlog/packetlog.go)
+(`AudioLevel`),
+[`../../web/src/components/PacketInspector.svelte`](../../web/src/components/PacketInspector.svelte).
+
