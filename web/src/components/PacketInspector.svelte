@@ -96,7 +96,7 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    min-width: min(620px, 80vw);
+    min-width: 0;
   }
 
   .summary {
