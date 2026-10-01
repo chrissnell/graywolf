@@ -55,12 +55,9 @@ type Entry struct {
 // signal that reads ≈ −25 dBFS on the live meter also reads ≈ −25 in the
 // packet log. LevelDBFS is the overall reading (dBFS of the mean tone
 // amplitude); MarkDBFS/SpaceDBFS expose the per-tone split, whose spread is
-// audio "twist" (also exposed directly as TwistDB). SpeedErrorPct and
-// SampleRate are the same per-frame baud-rate-error and capture-rate values
-// graywolf-modem --decode reports offline, carried per-packet here instead.
-// The dBFS values are floored at −60 (silence), matching the device meter's
-// clamp. Mark/Space are the legacy linear ×100 amplitudes (~1.0 full-scale
-// tone → 100) retained for backward compatibility. Mirrors
+// audio "twist". The dBFS values are floored at −60 (silence), matching the
+// device meter's clamp. Mark/Space are the legacy linear ×100 amplitudes
+// (~1.0 full-scale tone → 100) retained for backward compatibility. Mirrors
 // graywolf.ReceivedFrame.audio_level_{mark,space}.
 type AudioLevel struct {
 	// Mark is the legacy mark-tone amplitude, scaled linearly to ~0-100.
@@ -73,12 +70,6 @@ type AudioLevel struct {
 	SpaceDBFS float64 `json:"space_dbfs"`
 	// LevelDBFS is the overall level in dBFS (mean tone amplitude), floored at -60.
 	LevelDBFS float64 `json:"level_dbfs"`
-	// TwistDB is the absolute difference between MarkDBFS and SpaceDBFS.
-	TwistDB float64 `json:"twist_db"`
-	// SpeedErrorPct is the decoder's measured baud-rate error, percent.
-	SpeedErrorPct float64 `json:"speed_error_pct"`
-	// SampleRate is the capture device's sample rate, Hz.
-	SampleRate uint32 `json:"sample_rate"`
 }
 
 // Hook lets other packages record packets into the log without taking

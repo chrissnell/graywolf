@@ -262,13 +262,6 @@ impl MultiAfskDemodulator {
         primary
     }
 
-    /// Diagnostic sample for the most recent bad-FCS event, taken from the
-    /// primary sub-demod only -- mirrors
-    /// [`take_bad_fcs`](Self::take_bad_fcs)'s primary-sub-demod selection.
-    pub fn take_bad_fcs_sample(&mut self) -> Option<crate::hdlc::BadFcsSample> {
-        self.demods.first_mut().and_then(|d| d.take_bad_fcs_sample())
-    }
-
     /// Total deduped frames currently buffered (not yet drained).
     pub fn frame_count(&self) -> usize {
         self.out.len()

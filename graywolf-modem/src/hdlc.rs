@@ -228,20 +228,6 @@ pub struct DecodedFrame {
     pub sample_offset: u64,
 }
 
-// --- Bad-FCS diagnostic sample ---
-
-/// Demodulator/decoder context captured for the most recent frame-shaped
-/// candidate that failed FCS validation. Retained so the modem status path
-/// can report *why* frames are failing, not just how many -- these values
-/// already existed on `RawBitBuffer` for every candidate but were discarded
-/// once FCS failed.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct BadFcsSample {
-    pub level_mark: f32,
-    pub level_space: f32,
-    pub speed_error: f32,
-}
-
 // --- EAS state ---
 
 /// EAS (Emergency Alert System) decoder state, per HDLC decoder instance.
@@ -320,12 +306,6 @@ pub struct HdlcDecoder {
     /// reporting. Not incremented for short-buffer or abort cases —
     /// only for plausible-looking frames that did not CRC.
     bad_fcs: u64,
-
-    /// Diagnostic context from the most recent bad-FCS event, drained via
-    /// `take_last_bad_fcs_sample`. Only the latest event is kept — a
-    /// representative sample, matching `bad_fcs`'s trend-not-exact-count
-    /// philosophy.
-    last_bad_fcs: Option<BadFcsSample>,
 }
 
 impl Default for HdlcDecoder {
@@ -355,7 +335,6 @@ impl HdlcDecoder {
             eas: EasState::default(),
             fix_bits: RetryType::None,
             bad_fcs: 0,
-            last_bad_fcs: None,
         }
     }
 
@@ -364,12 +343,6 @@ impl HdlcDecoder {
     /// failure counts.
     pub fn take_bad_fcs(&mut self) -> u64 {
         std::mem::take(&mut self.bad_fcs)
-    }
-
-    /// Drain the diagnostic sample from the most recent bad-FCS event, if
-    /// any occurred since the last call.
-    pub fn take_last_bad_fcs_sample(&mut self) -> Option<BadFcsSample> {
-        self.last_bad_fcs.take()
     }
 
     /// Set the maximum retry/fix-bits level for CRC error recovery.
@@ -449,11 +422,6 @@ impl HdlcDecoder {
                     // Frame-shaped candidate that survived neither the
                     // direct FCS check nor any configured retry strategy.
                     self.bad_fcs = self.bad_fcs.saturating_add(1);
-                    self.last_bad_fcs = Some(BadFcsSample {
-                        level_mark: self.rrbb.audio_level_mark,
-                        level_space: self.rrbb.audio_level_space,
-                        speed_error: self.rrbb.speed_error,
-                    });
                 }
                 decoded
             } else {

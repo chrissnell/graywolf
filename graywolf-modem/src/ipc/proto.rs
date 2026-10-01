@@ -32,9 +32,6 @@ impl IpcMessage {
     pub fn test_signal_result(r: TestSignalResult) -> Self {
         Self { payload: Some(ipc_message::Payload::TestSignalResult(r)) }
     }
-    pub fn bad_fcs_event(e: BadFcsEvent) -> Self {
-        Self { payload: Some(ipc_message::Payload::BadFcsEvent(e)) }
-    }
 }
 
 #[cfg(test)]
@@ -55,7 +52,6 @@ mod tests {
             speed_error: 0.1,
             retry: "none".into(),
             timestamp_ns: 1_700_000_000_000_000_000,
-            sample_rate: 44100,
         });
         let mut buf = Vec::new();
         original.encode(&mut buf).unwrap();

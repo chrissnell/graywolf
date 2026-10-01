@@ -57,31 +57,6 @@ func TestAudioLevelFromFrame(t *testing.T) {
 	}
 }
 
-// TestAudioLevelFromFrameTwistAndPassthrough covers the fields added for
-// per-packet bad-FCS diagnostics: TwistDB (derived from mark/space dBFS)
-// and SpeedErrorPct/SampleRate (passed through from the frame unchanged).
-func TestAudioLevelFromFrameTwistAndPassthrough(t *testing.T) {
-	got := audioLevelFromFrame(&pb.ReceivedFrame{
-		AudioLevelMark:  0.5,
-		AudioLevelSpace: 0.1,
-		SpeedError:      1.25,
-		SampleRate:      44100,
-	})
-	if got == nil {
-		t.Fatal("expected non-nil AudioLevel")
-	}
-	// mark -6.0 dBFS, space -20.0 dBFS -> twist 14.0 dB.
-	if got.TwistDB != 14.0 {
-		t.Errorf("TwistDB = %.1f, want 14.0", got.TwistDB)
-	}
-	if got.SpeedErrorPct != 1.25 {
-		t.Errorf("SpeedErrorPct = %.2f, want 1.25", got.SpeedErrorPct)
-	}
-	if got.SampleRate != 44100 {
-		t.Errorf("SampleRate = %d, want 44100", got.SampleRate)
-	}
-}
-
 // TestDispatchRxFrameAudioLevelGating proves the source gating end-to-end:
 // a modem-RX frame lands in the packet log with its mark/space level
 // attached, while a hardware KISS-TNC frame (already demodulated, no

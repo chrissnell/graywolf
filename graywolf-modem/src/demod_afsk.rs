@@ -789,15 +789,6 @@ impl AfskDemodulator {
         primary
     }
 
-    /// Diagnostic sample for the most recent bad-FCS event, taken from
-    /// slicer 0 only -- mirrors [`take_bad_fcs`](Self::take_bad_fcs)'s
-    /// primary-slicer selection so the sample matches the event the
-    /// counter reflects.
-    #[must_use]
-    pub fn take_bad_fcs_sample(&mut self) -> Option<crate::hdlc::BadFcsSample> {
-        self.hdlc.first_mut().and_then(|d| d.take_last_bad_fcs_sample())
-    }
-
     /// Number of decoded frames accumulated so far.
     #[must_use]
     pub fn frame_count(&self) -> usize {
