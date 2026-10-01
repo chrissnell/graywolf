@@ -261,13 +261,7 @@
           many slicers at once, so the modem deliberately reports the bad-FCS
           tally from one representative slicer instead of summing all of them.
           Treat the number as a signal-quality indicator that you watch over
-          time, not as an exact tally of lost packets. The live
-          <strong>Bad FCS</strong> log line is stricter than the counter: it
-          is only emitted when <em>none</em> of the parallel slicers decoded
-          that transmission, so seeing it means the packet was genuinely not
-          recovered &mdash; if a different slicer listening to the same audio
-          got it right, that one wins and the packet shows up as a normal
-          decoded entry instead, with no warning logged.</p>
+          time, not as an exact tally of lost packets.
         </p>
       </div>
     </div>

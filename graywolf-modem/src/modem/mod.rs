@@ -630,18 +630,6 @@ impl Modem {
                             for extra in &mut chan_pipe.extra_demods {
                                 all_frames.extend(take_demod_frames(extra));
                             }
-                            // Every demod/slicer this channel owns is fed the
-                            // identical audio chunk above before any frames
-                            // are drained, so a real transmission's closing
-                            // flag lands in this same tick for every decoder
-                            // racing to decode it (cross-demod dedup's
-                            // DEFAULT_WINDOW_SAMPLES of ~2.5ms confirms they
-                            // land within a few samples of each other -- far
-                            // inside one tick). A bad-FCS candidate this tick
-                            // is therefore only "the transmission truly didn't
-                            // decode" when no slicer in the ensemble produced
-                            // a good frame this same tick.
-                            let decoded_this_tick = !all_frames.is_empty();
 
                             // Drain bad-FCS counts from every decoder this
                             // channel owns (primary + any extra demods) and
@@ -662,12 +650,7 @@ impl Modem {
                             // this tick. Pushed to Go immediately as a
                             // BadFcsEvent rather than cached for a later
                             // status tick, so every failure is observable,
-                            // not just a trend sampled on a timer. Suppressed
-                            // when `decoded_this_tick` is true -- see the
-                            // comment on that binding above: a different
-                            // slicer already decoded this transmission
-                            // successfully, so this candidate is the expected
-                            // diversity-decode byproduct, not a lost packet.
+                            // not just a trend sampled on a timer.
                             let mut sample = take_demod_bad_fcs_sample(&mut chan_pipe.demod);
                             for extra in &mut chan_pipe.extra_demods {
                                 if let Some(s) = take_demod_bad_fcs_sample(extra) {
@@ -675,18 +658,16 @@ impl Modem {
                                 }
                             }
                             if let Some(s) = sample {
-                                if !decoded_this_tick {
-                                    let evt = BadFcsEvent {
-                                        channel: chan_pipe.channel_id,
-                                        audio_level_mark: s.level_mark,
-                                        audio_level_space: s.level_space,
-                                        speed_error: s.speed_error,
-                                        sample_rate,
-                                        rx_bad_fcs: self.rx_bad_fcs.get(&chan_pipe.channel_id).copied().unwrap_or(0),
-                                        timestamp_ns: now_ns(),
-                                    };
-                                    let _ = self.handle.send(&IpcMessage::bad_fcs_event(evt));
-                                }
+                                let evt = BadFcsEvent {
+                                    channel: chan_pipe.channel_id,
+                                    audio_level_mark: s.level_mark,
+                                    audio_level_space: s.level_space,
+                                    speed_error: s.speed_error,
+                                    sample_rate,
+                                    rx_bad_fcs: self.rx_bad_fcs.get(&chan_pipe.channel_id).copied().unwrap_or(0),
+                                    timestamp_ns: now_ns(),
+                                };
+                                let _ = self.handle.send(&IpcMessage::bad_fcs_event(evt));
                             }
 
                             for f in all_frames {

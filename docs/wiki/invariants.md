@@ -2120,14 +2120,12 @@ was discarded as over-complicated; this is the replacement.
    `take_bad_fcs()` already uses (`demod_afsk.rs`, `demod_afsk_multi.rs`,
    `modem/mod.rs`'s `take_demod_bad_fcs_sample`). PSK and 9600-baseband
    decoders report no sample (AFSK/Digirig is the instrumented case).
-2. **Push, not poll (gated).** `modem/mod.rs`'s audio pump loop sends a
+2. **Push, not poll.** `modem/mod.rs`'s audio pump loop sends a
    `BadFcsEvent` IPC message (channel, mark/space level, speed_error,
    sample_rate, cumulative rx_bad_fcs) **immediately** whenever a
-   sample is produced *and* no slicer on that channel decoded a good
-   frame in the same tick (see the gating rule below) -- not cached
-   for the next periodic `StatusUpdate` tick. `StatusUpdate` itself
-   carries no bad-FCS diagnostic fields; it's unchanged from before
-   this feature.
+   sample is produced -- one message per failure, not cached for the
+   next periodic `StatusUpdate` tick. `StatusUpdate` itself carries no
+   bad-FCS diagnostic fields; it's unchanged from before this feature.
 3. **`modembridge`** (`pkg/modembridge/session.go`): `dispatchIPC`
    handles `BadFcsEvent` the same way it already handles `DcdChange` --
    logs it straight through (`logBadFcsEvent`) as a `WARN` with the
@@ -2152,53 +2150,14 @@ was discarded as over-complicated; this is the replacement.
    an "Audio" section from `packet.audio_level` -- no log-digging required
    to see a specific packet's numbers.
 
-**No classification, no thresholds -- one narrow suppression rule.**
-The operator sees the raw numbers and judges for themselves using the
-ratio/trend guidance already in
+**No classification, no thresholds, no suppression.** The operator
+sees the numbers and judges for themselves using the ratio/trend
+guidance already in
 [monitoring.html](../handbook/monitoring.html) -- the app does not
-guess "clipping" vs "weak" vs "interference". The one exception is the
-same-tick suppression described below, which exists to keep the WARN
-meaning "this transmission was not recovered by anything," not "one
-slicer out of dozens stumbled." Channels with KISS-TNC backing
-(`InputDeviceID == nil`) never produce bad-FCS events at all -- a
-hardware TNC validates its own FCS (invariant #30) -- so there is
+guess "clipping" vs "weak" vs "interference". Channels with KISS-TNC
+backing (`InputDeviceID == nil`) never produce bad-FCS events at all --
+a hardware TNC validates its own FCS (invariant #30) -- so there is
 nothing to gate per-channel.
-
-**A bad-FCS candidate is only pushed as a WARN when no slicer decoded
-anything that same tick.** Every demod/slicer a channel owns (primary
-ensemble + any extra demods) is fed the identical audio chunk before
-`modem/mod.rs`'s pump loop drains any output, so a real transmission's
-closing flag lands in the same processing tick for every decoder
-racing to decode it -- `demod_afsk_multi.rs`'s cross-demod dedup window
-(`DEFAULT_WINDOW_SAMPLES`, ~2.5ms) is the evidence that independent
-slicers settle on the same frame within a few samples of each other,
-far inside one tick. So: if `all_frames` (the tick's good decodes
-across every demod/slicer) is non-empty, any bad-FCS sample collected
-the same tick is treated as the expected diversity-decode byproduct of
-a transmission that *did* get through elsewhere, and the `BadFcsEvent`
-push (and therefore the WARN) is skipped. Only when the tick produced
-*zero* good frames does the sample go out as a `BadFcsEvent`/WARN --
-this is what "only WARN if the packet is truly undecodable" means in
-practice. The cumulative `rx_bad_fcs` counter (dashboard "Bad FCS",
-`graywolf_rx_bad_fcs_total`) is **not** affected by this gate -- it
-still sums every slicer's failed candidate every tick, unconditionally,
-same as before; only the per-event diagnostic push is gated. Each
-`HdlcDecoder` instance (one per slicer) still tracks its own
-`bad_fcs`/`last_bad_fcs` independently -- there is no cross-slicer
-correlation of *content*, only the same-tick presence/absence of any
-good frame.
-
-Note: an earlier iteration of this feature also threaded `subchan`/
-`slice` identifiers through `BadFcsEvent` and the good-decode DEBUG
-log, on the theory that operators could use them to tell which slicer
-failed vs. which succeeded. That was reverted -- `take_bad_fcs_sample()`
-(both layers, see point 1 above) always samples the same fixed
-`(subchan=0, slice=0)` decoder, never whichever slicer actually failed,
-so the field was constant in the common single-ensemble case and added
-logging surface without adding diagnostic value. The same-tick
-suppression above needs no per-slicer identity to work -- it only
-needs "did *any* slicer decode a frame this tick," which `all_frames`
-already answers.
 
 Source: [`../../graywolf-modem/src/hdlc.rs`](../../graywolf-modem/src/hdlc.rs)
 (`BadFcsSample`, `take_last_bad_fcs_sample`),
