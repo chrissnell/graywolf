@@ -325,6 +325,7 @@ fn run_demod(
                                 speed_error: 0.0,
                                 retry: String::new(),
                                 timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
+                                sample_rate: 0,
                             };
                             config_state::increment_rx_frames();
                             // Drop on full — IPC thread will catch up when the

@@ -62,6 +62,10 @@ export function deviceLabel(pkt) {
  *   good (≤ −20 dBFS)  nominal received level — green
  *   warm (−20…−6)      hotter than nominal — amber
  *   hot  (> −6)        clipping risk — red
+ *
+ * Also passes through `twist` (dB spread between mark/space, derived if the
+ * backend didn't send twist_db), `speedError` (baud-rate error, percent), and
+ * `sampleRate` (capture device Hz) for the Packet Inspector's Audio section.
  */
 export function audioLevel(pkt) {
   const a = pkt.audio_level;
@@ -74,7 +78,12 @@ export function audioLevel(pkt) {
   let zone = 'good';
   if (a.level_dbfs > -6) zone = 'hot';
   else if (a.level_dbfs > -20) zone = 'warm';
-  return { level, mark, space, lit, zone };
+  return {
+    level, mark, space, lit, zone,
+    twist: a.twist_db ?? Math.abs(mark - space),
+    speedError: a.speed_error_pct ?? null,
+    sampleRate: a.sample_rate ?? null,
+  };
 }
 
 /** Format a timestamp as "M/D HH:MM:SS" in local time. */
