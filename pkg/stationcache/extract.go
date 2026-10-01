@@ -8,10 +8,10 @@ import (
 
 // CacheEntry is the output of ExtractEntry, ready for MemCache.Update().
 type CacheEntry struct {
-	Key       string
-	IsObject  bool
-	Killed    bool // object/item with Live==false → delete from cache
-	Callsign  string
+	Key      string
+	IsObject bool
+	Killed   bool // object/item with Live==false → delete from cache
+	Callsign string
 	// Source is the AX.25 source callsign that transmitted the packet —
 	// the originating station of an object/item. Empty for ordinary
 	// station packets, where Callsign already is the source.
