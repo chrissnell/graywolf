@@ -595,3 +595,44 @@ func TestStationToDTO_LastDirectHeard(t *testing.T) {
 		t.Fatalf("LastDirectHeard not mapped: got %v want %v", dto.LastDirectHeard, direct)
 	}
 }
+
+func TestStationToDTO_QSY(t *testing.T) {
+	s := stationcache.Station{
+		Callsign:  "W1ABC",
+		LastHeard: time.Now(),
+		Positions: []stationcache.Position{
+			{Lat: 40, Lon: -105, Direction: "RX", Timestamp: time.Now()},
+		},
+		QSY: &stationcache.QSY{
+			FrequencyMHz: 146.520,
+			ToneType:     "ctcss",
+			ToneFreq:     "100.0",
+			HasOffset:    true,
+			OffsetMHz:    0.6,
+		},
+	}
+	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
+	if dto.QsyFrequency == nil || *dto.QsyFrequency != 146.520 {
+		t.Fatalf("QsyFrequency = %v, want 146.520", dto.QsyFrequency)
+	}
+	if dto.QsyTone != "ctcss" || dto.QsyToneFrequency != "100.0" {
+		t.Errorf("QsyTone/QsyToneFrequency = %q/%q", dto.QsyTone, dto.QsyToneFrequency)
+	}
+	if dto.QsyOffset == nil || *dto.QsyOffset != 0.6 {
+		t.Fatalf("QsyOffset = %v, want 0.6", dto.QsyOffset)
+	}
+}
+
+func TestStationToDTO_QSY_Absent(t *testing.T) {
+	s := stationcache.Station{
+		Callsign:  "W1ABC",
+		LastHeard: time.Now(),
+		Positions: []stationcache.Position{
+			{Lat: 40, Lon: -105, Direction: "RX", Timestamp: time.Now()},
+		},
+	}
+	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
+	if dto.QsyFrequency != nil || dto.QsyOffset != nil || dto.QsyTone != "" || dto.QsyToneFrequency != "" {
+		t.Errorf("expected all QSY fields empty, got %+v", dto)
+	}
+}

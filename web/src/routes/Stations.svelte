@@ -64,6 +64,7 @@
   let filterCallsign = $state('');
   let filterAlias    = $state('');
   let hasAliasOnly   = $state(false);
+  let hasQsyOnly     = $state(false);
   let todayOnly      = $state(false);
   let filterComment  = $state('');
   let selectedIcons  = $state(new Set());
@@ -128,6 +129,24 @@
     if (unitsState.isMetric) return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
     const mi = km * 0.621371;
     return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
+  }
+
+  /** Format a station's QSY frequency as "146.520 MHz", or '—' when absent. */
+  function formatQsyFreq(s) {
+    return s.qsy_frequency != null ? `${s.qsy_frequency.toFixed(3)} MHz` : '—';
+  }
+
+  /** Format a station's QSY tone/offset as a short secondary line, e.g.
+   * "T100.0 · +0.600" -- empty string when neither is present. */
+  function formatQsyDetail(s) {
+    const parts = [];
+    if (s.qsy_tone) {
+      parts.push(s.qsy_tone === 'dcs' ? `D${s.qsy_tone_frequency}` : `T${s.qsy_tone_frequency}`);
+    }
+    if (s.qsy_offset != null) {
+      parts.push(`${s.qsy_offset >= 0 ? '+' : ''}${s.qsy_offset.toFixed(3)}`);
+    }
+    return parts.join(' · ');
   }
 
   /** CSS background-position string for an APRS symbol sprite at ICON_PX. */
@@ -220,7 +239,7 @@
   // Reset page to 1 whenever a filter changes so the user is never stranded.
   $effect(() => {
     // Access all filter state so this effect tracks them.
-    filterCallsign; filterAlias; hasAliasOnly; todayOnly;
+    filterCallsign; filterAlias; hasAliasOnly; hasQsyOnly; todayOnly;
     filterComment; selectedIcons; filterDirections; filterRxPath; sortCol; sortDir; pageSize;
     currentPage = 1;
   });
@@ -243,6 +262,12 @@
     // "Has alias" toggle
     if (posLogEnabled && hasAliasOnly) {
       list = list.filter(s => s.alias !== '');
+    }
+
+    // "Has QSY" toggle -- not gated behind posLogEnabled; QSY is parsed
+    // from live beacon comments, not a persisted operator note.
+    if (hasQsyOnly) {
+      list = list.filter(s => s.qsy_frequency != null);
     }
 
     // "Today" toggle
@@ -281,6 +306,7 @@
       switch (sortCol) {
         case 'callsign':   va = a.callsign;  vb = b.callsign;  break;
         case 'alias':      va = a.alias;     vb = b.alias;     break;
+        case 'qsy':        va = a.qsy_frequency ?? Infinity; vb = b.qsy_frequency ?? Infinity; break;
         case 'last_heard': va = new Date(a.last_heard).getTime(); vb = new Date(b.last_heard).getTime(); break;
         case 'icon':       va = iconLabel(a.symbol_table, a.symbol_code); vb = iconLabel(b.symbol_table, b.symbol_code); break;
         case 'rxpath':     va = rxPathLabel(a) || ''; vb = rxPathLabel(b) || ''; break;
@@ -514,6 +540,10 @@
         Show stations with aliases
       </label>
     {/if}
+    <label class="toggle-label">
+      <input type="checkbox" bind:checked={hasQsyOnly} />
+      Show stations with QSY
+    </label>
   </div>
 </Box>
 
@@ -534,6 +564,7 @@
             {#if posLogEnabled}
               <th class="th-sortable" onclick={() => setSort('alias')}>Alias{sortIndicator('alias')}</th>
             {/if}
+            <th class="th-sortable" onclick={() => setSort('qsy')}>QSY{sortIndicator('qsy')}</th>
             <th class="th-sortable" onclick={() => setSort('last_heard')}>Last Heard{sortIndicator('last_heard')}</th>
             <th class="th-sortable" onclick={() => setSort('rxpath')}>RX Path{sortIndicator('rxpath')}</th>
             <th class="th-sortable" onclick={() => setSort('icon')}>Icon{sortIndicator('icon')}</th>
@@ -553,6 +584,7 @@
                 <Input bind:value={filterAlias} placeholder="Search…" />
               </td>
             {/if}
+            <td><!-- QSY: no filter, see the "Show stations with QSY" checkbox --></td>
             <td class="filter-heard-cell">
               <div class="icon-drop-wrap" bind:this={dirDropEl}>
                 <button
@@ -681,7 +713,7 @@
         <tbody>
           {#if pagedRows.length === 0}
             <tr>
-              <td colspan={posLogEnabled ? 10 : 9} class="empty">No stations match the current filters.</td>
+              <td colspan={(posLogEnabled ? 10 : 9) + 1} class="empty">No stations match the current filters.</td>
             </tr>
           {:else}
             {#each pagedRows as s (s.callsign)}
@@ -740,6 +772,16 @@
                     {/if}
                   </td>
                 {/if}
+
+                <!-- QSY (frequency/tone/offset parsed from the station's comment) -->
+                <td class="td-qsy">
+                  <div class="cell-flex-col">
+                    <span>{formatQsyFreq(s)}</span>
+                    {#if formatQsyDetail(s)}
+                      <span class="qsy-detail">{formatQsyDetail(s)}</span>
+                    {/if}
+                  </div>
+                </td>
 
                 <!-- Last Heard + direction badge -->
                 <td class="td-heard">
@@ -979,6 +1021,10 @@
   /* Inner flex wrapper — keeps display:flex off the <td> itself to avoid
      overriding display:table-cell (breaks layout in Firefox). */
   .cell-flex { display: flex; align-items: center; gap: 6px; }
+  .cell-flex-col { display: flex; flex-direction: column; gap: 2px; }
+
+  .td-qsy { white-space: nowrap; }
+  .qsy-detail { font-size: var(--text-xs); color: var(--color-text-dim); }
 
   .td-icon { white-space: nowrap; }
   .aprs-icon {

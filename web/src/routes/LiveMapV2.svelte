@@ -2262,6 +2262,7 @@
   :global(.stn-src a.stn-src-call:hover) { text-decoration: underline; }
   :global(.stn-sep) { border-top: 1px solid var(--color-border-subtle); margin: 6px 0; }
   :global(.stn-coords) { font-size: 12px; }
+  :global(.stn-qsy) { font-size: 12px; color: var(--color-text-dim); margin-top: 2px; }
   :global(.stn-meta) { color: var(--color-text-muted); font-size: 12px; }
   :global(.stn-via) { font-size: 12px; margin-top: 2px; }
   :global(.via-rf) { color: var(--color-success); }

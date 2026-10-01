@@ -47,6 +47,22 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		}
 	}
 
+	// Pre-encode the QSY frequency/tone/offset spec once. Defense-in-depth
+	// guard mirroring the ambiguity clamp above: the webapi DTO is the
+	// primary gate restricting QSY to type=="position" with no callsign
+	// override, but a hand-edited DB row could violate that, so re-check
+	// here before ever emitting it on the air.
+	qsy := ""
+	if b.Type == TypePosition && !b.CallsignOverridden && b.QSYFreqMHz > 0 {
+		qsy = aprs.EncodeQSY(&aprs.QSY{
+			FrequencyMHz: b.QSYFreqMHz,
+			ToneType:     b.QSYToneType,
+			ToneFreq:     b.QSYToneFreq,
+			OffsetMHz:    b.QSYOffsetMHz,
+			HasOffset:    b.QSYHasOffset,
+		})
+	}
+
 	switch b.Type {
 	case TypePosition, TypeIGate:
 		lat, lon, altM := b.Lat, b.Lon, b.AltFt/3.28084
@@ -70,14 +86,25 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		}
 		switch b.Format {
 		case "compressed", "":
-			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment), nil
+			return CompressedPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, qsy, comment), nil
 		case "uncompressed":
-			return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, comment, b.Ambiguity), nil
+			return PositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, phg, qsy, comment, b.Ambiguity), nil
 		case "mic_e":
 			if phg != "" {
 				s.logger.Debug("PHG dropped from Mic-E beacon (no slot in wire format)", "id", b.ID, "type", b.Type)
 			}
-			return MicEPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
+			// Mic-E has no data-extension slot (same PHG-drop precedent
+			// above), so QSY rides as a prefix on the free-text comment
+			// instead of a dedicated encoder parameter.
+			micComment := comment
+			if qsy != "" {
+				if micComment != "" {
+					micComment = qsy + " " + micComment
+				} else {
+					micComment = qsy
+				}
+			}
+			return MicEPositionInfo(lat, lon, 0, 0, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, micComment), nil
 		default:
 			return "", fmt.Errorf("%s beacon: unknown position_format %q", b.Type, b.Format)
 		}
@@ -101,12 +128,14 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		if fix.HasAlt {
 			altM = fix.Altitude
 		}
-		// Trackers never emit PHG — CSE/SPD occupies the same slot.
+		// Trackers never emit PHG — CSE/SPD occupies the same slot. QSY
+		// is also not emitted for trackers (manual QSY entry is
+		// restricted to type=="position" beacons), so freq is always "".
 		switch b.Format {
 		case "compressed", "":
-			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment), nil
+			return CompressedPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", "", comment), nil
 		case "uncompressed":
-			return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", comment, b.Ambiguity), nil
+			return PositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, "", "", comment, b.Ambiguity), nil
 		case "mic_e":
 			return MicEPositionInfo(fix.Latitude, fix.Longitude, course, fix.Speed, altM, b.SymbolTable, b.SymbolCode, b.Messaging, b.Ambiguity, comment), nil
 		default:

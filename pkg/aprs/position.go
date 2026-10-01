@@ -112,6 +112,7 @@ func parseUncompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 	rest = parsePositionExtension(pos, rest)
 	comment := strings.TrimRight(string(rest), " ")
 	comment = extractDAO(pos, comment)
+	pkt.QSY, comment = ParseQSY(comment)
 	pkt.Comment = comment
 	// DF appendix "/BRG/NRQ" (APRS101 ch 7) may be attached to the
 	// comment; attach as pkt.DF without overriding the position type.
@@ -183,6 +184,7 @@ func parseCompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 	rest = parsePositionExtension(pos, rest)
 	comment := strings.TrimSpace(string(rest))
 	comment = extractDAO(pos, comment)
+	pkt.QSY, comment = ParseQSY(comment)
 	pkt.Comment = strings.TrimSpace(comment)
 	parseDirectionFinding(pkt)
 	return nil

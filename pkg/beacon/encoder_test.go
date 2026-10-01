@@ -21,7 +21,7 @@ func TestCompressedPositionInfoRoundTrip(t *testing.T) {
 		altM    = 1234.5 // metres
 	)
 
-	info := CompressedPositionInfo(lat, lon, course, speedKt, altM, '/', '>', false, "", "Graywolf")
+	info := CompressedPositionInfo(lat, lon, course, speedKt, altM, '/', '>', false, "", "", "Graywolf")
 
 	// Shape check: prefix + 13-byte compressed block + "/A=NNNNNN" + comment.
 	if info[0] != '!' {
@@ -79,7 +79,7 @@ func TestPositionInfoWithPHG(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EncodePHG: %v", err)
 	}
-	info := PositionInfo(36.175, -115.136, 0, 0, 2566, '/', '#', false, phg, "WA6TLW Las Vegas", 0)
+	info := PositionInfo(36.175, -115.136, 0, 0, 2566, '/', '#', false, phg, "", "WA6TLW Las Vegas", 0)
 	if !strings.Contains(info, "PHG7700") {
 		t.Fatalf("missing PHG7700 in %q", info)
 	}
@@ -101,7 +101,7 @@ func TestPositionInfoWithPHG(t *testing.T) {
 // TestPositionInfoPHGSuppressedByCourse verifies PHG is omitted when
 // the station is moving (CSE/SPD wins the shared 7-byte slot).
 func TestPositionInfoPHGSuppressedByCourse(t *testing.T) {
-	info := PositionInfo(36.175, -115.136, 90, 30, 0, '/', '>', false, "PHG7700", "mobile", 0)
+	info := PositionInfo(36.175, -115.136, 90, 30, 0, '/', '>', false, "PHG7700", "", "mobile", 0)
 	if strings.Contains(info, "PHG7700") {
 		t.Errorf("PHG should be suppressed when moving: %q", info)
 	}
@@ -113,7 +113,7 @@ func TestPositionInfoPHGSuppressedByCourse(t *testing.T) {
 // TestCompressedPositionInfoWithPHG verifies the compressed encoder
 // appends PHGphgd after the 13-byte compressed block.
 func TestCompressedPositionInfoWithPHG(t *testing.T) {
-	info := CompressedPositionInfo(45.0, -122.0, 0, 0, 0, '/', '#', false, "PHG5132", "")
+	info := CompressedPositionInfo(45.0, -122.0, 0, 0, 0, '/', '#', false, "PHG5132", "", "")
 	if !strings.Contains(info, "PHG5132") {
 		t.Fatalf("missing PHG5132 in %q", info)
 	}
@@ -179,7 +179,7 @@ func TestObjectInfoWithAltitude(t *testing.T) {
 // TestCompressedPositionInfoNoCSNoAlt verifies the no-course/no-speed
 // path emits two spaces in the cs field and omits the /A= extension.
 func TestCompressedPositionInfoNoCSNoAlt(t *testing.T) {
-	info := CompressedPositionInfo(37.5, -122.0, 0, 0, 0, '/', '-', true, "", "")
+	info := CompressedPositionInfo(37.5, -122.0, 0, 0, 0, '/', '-', true, "", "", "")
 	if info[0] != '=' {
 		t.Fatalf("messaging prefix: got %q want '='", info[0])
 	}
@@ -223,7 +223,7 @@ func TestPositionInfo_Ambiguity(t *testing.T) {
 		{4, "37  .  N", "122  .  W"},
 	}
 	for _, tc := range cases {
-		got := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", tc.level)
+		got := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", "", tc.level)
 		// "!" + 8-byte lat + symbol_table + 9-byte lon + symbol_code = 20 bytes.
 		if len(got) < 20 {
 			t.Fatalf("level %d: info too short: %q", tc.level, got)
@@ -241,7 +241,7 @@ func TestPositionInfo_Ambiguity(t *testing.T) {
 // survive aprs.ParseInfo and produce the expected Position.Ambiguity.
 func TestPositionInfo_Ambiguity_RoundTrip(t *testing.T) {
 	for level := 0; level <= 4; level++ {
-		info := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", level)
+		info := PositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, "", "", "", level)
 		p, err := aprs.ParseInfo([]byte(info))
 		if err != nil {
 			t.Fatalf("level %d: aprs.ParseInfo(%q): %v", level, info, err)
