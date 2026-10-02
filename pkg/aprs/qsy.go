@@ -13,7 +13,7 @@ import (
 // bytes of a packet's comment field, e.g. "146.520MHz T100 +060".
 //
 // v1 scope covers only this leading-comment form. FREQ-as-object-name,
-// D-STAR, and Mic-E/NMEA status-beacon freq forms are not parsed. The
+// D-STAR, and NMEA status-beacon freq forms are not parsed. The
 // "oXXX" alternate offset spelling and range tokens (Rxxm/Rxxk) are
 // tolerated in the trailing text but not decoded/stored.
 type QSY struct {

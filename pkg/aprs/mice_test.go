@@ -542,3 +542,20 @@ func TestParseMicECommentSurfaced(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMicEQSY(t *testing.T) {
+	destAddr, _ := ax25.ParseAddress("T0TR3Y")
+	srcAddr, _ := ax25.ParseAddress("KD3DKY-7")
+	info := []byte("`l`<l [/>\"7^}146.520MHzJosh TH-D75A&")
+	f, _ := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+	pkt, err := Parse(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pkt.QSY == nil || pkt.QSY.FrequencyMHz != 146.520 {
+		t.Fatalf("QSY = %+v, want 146.520 MHz", pkt.QSY)
+	}
+	if pkt.Comment != "Josh TH-D75A&" || pkt.MicE.Status != pkt.Comment {
+		t.Errorf("comment %q status %q", pkt.Comment, pkt.MicE.Status)
+	}
+}
