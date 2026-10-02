@@ -353,8 +353,8 @@ func TestCountOrphanChannelRefs(t *testing.T) {
 
 	// Direct INSERT so the cross-table validator is bypassed — we
 	// want to seed a genuine orphan.
-	if err := s.DB().Exec(`INSERT INTO beacons (type, channel, callsign, destination, path, enabled) VALUES (?, ?, ?, ?, ?, ?)`,
-		"position", 9999, "N0CALL", "APGRWO", "WIDE1-1", true).Error; err != nil {
+	if err := s.DB().Exec(`INSERT INTO beacons (type, channel, callsign, destination, path, slot_seconds, enabled) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"position", 9999, "N0CALL", "APGRWO", "WIDE1-1", -1, true).Error; err != nil {
 		t.Fatalf("seed orphan beacon: %v", err)
 	}
 

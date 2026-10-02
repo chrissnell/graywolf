@@ -352,12 +352,14 @@
   function handleEnableToggleClick(e) {
     if (stationCallsignMissing && !config.enabled) {
       e.preventDefault();
+      toasts.error('Station callsign not set — visit the Station Callsign page before enabling the Digipeater.');
     }
   }
   function handleEnableToggleKeydown(e) {
     if (!stationCallsignMissing || config.enabled) return;
     if (e.key === ' ' || e.key === 'Enter') {
       e.preventDefault();
+      toasts.error('Station callsign not set — visit the Station Callsign page before enabling the Digipeater.');
     }
   }
 

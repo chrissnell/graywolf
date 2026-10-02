@@ -168,6 +168,33 @@ func (d *DB) RecordRxEvent(ev stationcache.RxEvent) error {
 	).Error
 }
 
+// RecordRxEvents persists a batch of rx_events rows in a single
+// transaction. Used by PersistentCache's async writer to coalesce a burst
+// of receptions (RF and/or IS, arriving from two independent goroutines)
+// into one commit instead of one transaction per event.
+func (d *DB) RecordRxEvents(evs []stationcache.RxEvent) error {
+	if len(evs) == 0 {
+		return nil
+	}
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		for i := range evs {
+			ev := &evs[i]
+			hasPos := 0
+			if ev.HasPos {
+				hasPos = 1
+			}
+			if err := tx.Exec(
+				`INSERT INTO rx_events (timestamp, attr_key, hops, lat, lon, has_pos)
+				 VALUES (?, ?, ?, ?, ?, ?)`,
+				ev.Timestamp, ev.AttrKey, ev.Hops, ev.Lat, ev.Lon, hasPos,
+			).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 // insertPositionIfMoved appends a position row only when the station
 // has moved beyond posEpsilon from its most recent stored position.
 func insertPositionIfMoved(tx *gorm.DB, e *stationcache.CacheEntry) error {
@@ -417,6 +444,42 @@ func heatBucketKey(lat, lon float64) string {
 	return fmt.Sprintf("%.4f,%.4f", roundHeat(lat), roundHeat(lon))
 }
 
+// GetAliases returns all saved station aliases as a callsign→alias map.
+func (d *DB) GetAliases() (map[string]string, error) {
+	type row struct {
+		Callsign string
+		Alias    string
+	}
+	var rows []row
+	if err := d.db.Raw("SELECT callsign, alias FROM station_aliases").Scan(&rows).Error; err != nil {
+		return nil, fmt.Errorf("get aliases: %w", err)
+	}
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		out[r.Callsign] = r.Alias
+	}
+	return out, nil
+}
+
+// SetAlias creates or replaces the alias for callsign.
+func (d *DB) SetAlias(callsign, alias string) error {
+	if err := d.db.Exec(
+		"INSERT OR REPLACE INTO station_aliases (callsign, alias, updated_at) VALUES (?, ?, strftime('%Y-%m-%dT%H:%M:%SZ','now'))",
+		callsign, alias,
+	).Error; err != nil {
+		return fmt.Errorf("set alias: %w", err)
+	}
+	return nil
+}
+
+// DeleteAlias removes the alias for callsign. No-op when callsign has no alias.
+func (d *DB) DeleteAlias(callsign string) error {
+	if err := d.db.Exec("DELETE FROM station_aliases WHERE callsign = ?", callsign).Error; err != nil {
+		return fmt.Errorf("delete alias: %w", err)
+	}
+	return nil
+}
+
 // QueryHeatmap aggregates directly-received packets over the given window into
 // counted coordinate buckets within bbox. Events whose attributed transmitter
 // has no known position are tallied in Unlocatable rather than dropped.
@@ -549,6 +612,11 @@ func bootstrap(db *gorm.DB) error {
 			has_pos   INTEGER NOT NULL DEFAULT 0
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_rx_events_time ON rx_events(timestamp)`,
+		`CREATE TABLE IF NOT EXISTS station_aliases (
+			callsign   TEXT PRIMARY KEY,
+			alias      TEXT NOT NULL,
+			updated_at DATETIME DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+		)`,
 	}
 	for _, stmt := range stmts {
 		if err := db.Exec(stmt).Error; err != nil {

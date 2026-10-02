@@ -56,8 +56,40 @@ func TestExtractEntry_PositionPacket(t *testing.T) {
 	assertEqual(t, "Comment", e.Comment, "on the road")
 }
 
+func TestExtractEntry_QSY(t *testing.T) {
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "W1ABC-9",
+		Position: &aprs.Position{
+			Latitude:  40.1234,
+			Longitude: -105.5678,
+			Symbol:    aprs.Symbol{Table: '/', Code: '>'},
+		},
+		Comment: "Repeater",
+		QSY: &aprs.QSY{
+			FrequencyMHz: 146.520,
+			ToneType:     "ctcss",
+			ToneFreq:     "100.0",
+			HasOffset:    true,
+			OffsetMHz:    0.6,
+		},
+	}
+	entries := ExtractEntry(pkt, "modem", "RX", 1)
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	e := entries[0]
+	if e.QSY == nil {
+		t.Fatal("expected QSY to be populated")
+	}
+	assertFloat(t, "QSY.FrequencyMHz", e.QSY.FrequencyMHz, 146.520)
+	assertEqual(t, "QSY.ToneType", e.QSY.ToneType, "ctcss")
+	assertEqual(t, "QSY.ToneFreq", e.QSY.ToneFreq, "100.0")
+	assertBool(t, "QSY.HasOffset", e.QSY.HasOffset, true)
+	assertFloat(t, "QSY.OffsetMHz", e.QSY.OffsetMHz, 0.6)
+}
+
+// Course=0 (due north) with HasCourse=true must not be dropped
 func TestExtractEntry_CourseZero(t *testing.T) {
-	// Course=0 (due north) with HasCourse=true must not be dropped
 	pkt := &aprs.DecodedAPRSPacket{
 		Source: "W1XYZ",
 		Position: &aprs.Position{

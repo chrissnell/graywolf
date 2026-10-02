@@ -22,11 +22,12 @@ use crate::demod_afsk::AfskDemodulator;
 use crate::demod_afsk_multi::{
     MultiAfskDemodulator, MultiConfig, RECOMMENDED_2DEMOD, RECOMMENDED_3DEMOD,
 };
-use crate::hdlc::DecodedFrame;
+use crate::hdlc::{BadFcsSample, DecodedFrame};
 use crate::ipc::proto::{
-    ipc_message::Payload, AudioDeviceInfo, AudioDeviceKind, AudioDeviceList, ConfigureChannel,
-    ConfigurePtt, DcdChange, DeviceLevelUpdate, EnumerateAudioDevices, InputDeviceLevel,
-    InputLevelScanResult, IpcMessage, ReceivedFrame, ScanInputLevels, StatusUpdate, TransmitFrame,
+    ipc_message::Payload, AudioDeviceInfo, AudioDeviceKind, AudioDeviceList, BadFcsEvent,
+    ConfigureChannel, ConfigurePtt, DcdChange, DeviceLevelUpdate, EnumerateAudioDevices,
+    InputDeviceLevel, InputLevelScanResult, IpcMessage, ReceivedFrame, ScanInputLevels,
+    StatusUpdate, TransmitFrame,
 };
 use crate::ipc::server::{IpcHandle, IpcInbound};
 use crate::modem_9600::Demod9600;
@@ -356,7 +357,8 @@ impl Modem {
             | Some(Payload::AudioDeviceList(_))
             | Some(Payload::DeviceLevelUpdate(_))
             | Some(Payload::InputLevelScanResult(_))
-            | Some(Payload::TestSignalResult(_)) => {
+            | Some(Payload::TestSignalResult(_))
+            | Some(Payload::BadFcsEvent(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
             None => {}
@@ -548,6 +550,7 @@ impl Modem {
                 match pipe.sample_rx.recv_timeout(Duration::from_millis(1)) {
                     Ok(mut chunk) => {
                         got_any = true;
+                        let sample_rate = self.audio_configs.get(&device_id).map(|c| c.sample_rate).unwrap_or(0);
 
                         // Apply software gain
                         let gain_db = f32::from_bits(pipe.gain.load(Ordering::Relaxed));
@@ -627,6 +630,18 @@ impl Modem {
                             for extra in &mut chan_pipe.extra_demods {
                                 all_frames.extend(take_demod_frames(extra));
                             }
+                            // Every demod/slicer this channel owns is fed the
+                            // identical audio chunk above before any frames
+                            // are drained, so a real transmission's closing
+                            // flag lands in this same tick for every decoder
+                            // racing to decode it (cross-demod dedup's
+                            // DEFAULT_WINDOW_SAMPLES of ~2.5ms confirms they
+                            // land within a few samples of each other -- far
+                            // inside one tick). A bad-FCS candidate this tick
+                            // is therefore only "the transmission truly didn't
+                            // decode" when no slicer in the ensemble produced
+                            // a good frame this same tick.
+                            let decoded_this_tick = !all_frames.is_empty();
 
                             // Drain bad-FCS counts from every decoder this
                             // channel owns (primary + any extra demods) and
@@ -641,9 +656,42 @@ impl Modem {
                                 *self.rx_bad_fcs.entry(chan_pipe.channel_id).or_default() += bad;
                             }
 
+                            // Diagnostic sample for the event(s) just counted
+                            // above -- last-one-wins across primary + extra
+                            // demods when more than one produced a sample
+                            // this tick. Pushed to Go immediately as a
+                            // BadFcsEvent rather than cached for a later
+                            // status tick, so every failure is observable,
+                            // not just a trend sampled on a timer. Suppressed
+                            // when `decoded_this_tick` is true -- see the
+                            // comment on that binding above: a different
+                            // slicer already decoded this transmission
+                            // successfully, so this candidate is the expected
+                            // diversity-decode byproduct, not a lost packet.
+                            let mut sample = take_demod_bad_fcs_sample(&mut chan_pipe.demod);
+                            for extra in &mut chan_pipe.extra_demods {
+                                if let Some(s) = take_demod_bad_fcs_sample(extra) {
+                                    sample = Some(s);
+                                }
+                            }
+                            if let Some(s) = sample {
+                                if !decoded_this_tick {
+                                    let evt = BadFcsEvent {
+                                        channel: chan_pipe.channel_id,
+                                        audio_level_mark: s.level_mark,
+                                        audio_level_space: s.level_space,
+                                        speed_error: s.speed_error,
+                                        sample_rate,
+                                        rx_bad_fcs: self.rx_bad_fcs.get(&chan_pipe.channel_id).copied().unwrap_or(0),
+                                        timestamp_ns: now_ns(),
+                                    };
+                                    let _ = self.handle.send(&IpcMessage::bad_fcs_event(evt));
+                                }
+                            }
+
                             for f in all_frames {
                                 *self.rx_frames.entry(chan_pipe.channel_id).or_default() += 1;
-                                let msg = IpcMessage::received_frame(build_received(&f));
+                                let msg = IpcMessage::received_frame(build_received(&f, sample_rate));
                                 if let Err(e) = self.handle.send(&msg) {
                                     eprintln!("graywolf-modem: ipc send failed: {}", e);
                                 }
@@ -1406,6 +1454,19 @@ fn take_demod_bad_fcs(demod: &mut ChannelDemod) -> u64 {
         ChannelDemod::AfskMulti(d) => d.take_bad_fcs(),
         ChannelDemod::Psk(d) => d.take_bad_fcs(),
         ChannelDemod::Baseband9600(d) => d.take_bad_fcs(),
+    }
+}
+
+/// Diagnostic sample dispatch mirroring `take_demod_bad_fcs`. PSK and
+/// 9600-baseband decoders don't carry the AFSK-specific mark/space/twist
+/// context, so they report no sample -- AFSK (the reported Digirig case)
+/// is the only variant instrumented today.
+fn take_demod_bad_fcs_sample(demod: &mut ChannelDemod) -> Option<BadFcsSample> {
+    match demod {
+        ChannelDemod::Afsk(d) => d.take_bad_fcs_sample(),
+        ChannelDemod::AfskMulti(d) => d.take_bad_fcs_sample(),
+        ChannelDemod::Psk(_) => None,
+        ChannelDemod::Baseband9600(_) => None,
     }
 }
 
@@ -2480,7 +2541,7 @@ fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {
     }
 }
 
-fn build_received(f: &DecodedFrame) -> ReceivedFrame {
+fn build_received(f: &DecodedFrame, sample_rate: u32) -> ReceivedFrame {
     ReceivedFrame {
         channel: f.chan as u32,
         subchan: f.subchan as u32,
@@ -2498,6 +2559,7 @@ fn build_received(f: &DecodedFrame) -> ReceivedFrame {
             RetryType::InvertTwoSep => "two_sep".into(),
         },
         timestamp_ns: now_ns(),
+        sample_rate,
     }
 }
 

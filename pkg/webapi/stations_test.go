@@ -193,16 +193,16 @@ func TestStations_BasicDTO(t *testing.T) {
 	cache := &mockStationCache{
 		stations: []stationcache.Station{
 			{
-				Key:      "stn:W1ABC-9",
-				Callsign: "W1ABC-9",
-				IsObject: false,
-				Symbol:   [2]byte{'/', '>'},
-				Via:      "rf",
-				Path:     []string{"WIDE1-1", "N0CALL*", "WIDE2-1"},
-				Hops:     1,
+				Key:       "stn:W1ABC-9",
+				Callsign:  "W1ABC-9",
+				IsObject:  false,
+				Symbol:    [2]byte{'/', '>'},
+				Via:       "rf",
+				Path:      []string{"WIDE1-1", "N0CALL*", "WIDE2-1"},
+				Hops:      1,
 				Direction: "RX",
-				Channel:  0,
-				Comment:  "Hello",
+				Channel:   0,
+				Comment:   "Hello",
 				Positions: []stationcache.Position{
 					{Lat: 35.0, Lon: -95.0, Alt: 100, HasAlt: true, Speed: 25.5, Course: 0, HasCourse: true, Timestamp: now},
 				},
@@ -548,7 +548,7 @@ func TestStations_TrailPositionsTrimmedByTimerange(t *testing.T) {
 		Symbol:   [2]byte{'/', '>'},
 		Via:      "rf",
 		Positions: []stationcache.Position{
-			{Lat: 35, Lon: -95, Timestamp: now.Add(-1 * time.Minute)},     // head -- fresh
+			{Lat: 35, Lon: -95, Timestamp: now.Add(-1 * time.Minute)},        // head -- fresh
 			{Lat: 35.01, Lon: -95.01, Timestamp: now.Add(-10 * time.Minute)}, // inside 15min
 			{Lat: 35.02, Lon: -95.02, Timestamp: now.Add(-30 * time.Minute)}, // outside 15min
 			{Lat: 35.03, Lon: -95.03, Timestamp: now.Add(-24 * time.Hour)},   // way outside
@@ -594,5 +594,46 @@ func TestStationToDTO_LastDirectHeard(t *testing.T) {
 	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
 	if !dto.LastDirectHeard.Equal(direct) {
 		t.Fatalf("LastDirectHeard not mapped: got %v want %v", dto.LastDirectHeard, direct)
+	}
+}
+
+func TestStationToDTO_QSY(t *testing.T) {
+	s := stationcache.Station{
+		Callsign:  "W1ABC",
+		LastHeard: time.Now(),
+		Positions: []stationcache.Position{
+			{Lat: 40, Lon: -105, Direction: "RX", Timestamp: time.Now()},
+		},
+		QSY: &stationcache.QSY{
+			FrequencyMHz: 146.520,
+			ToneType:     "ctcss",
+			ToneFreq:     "100.0",
+			HasOffset:    true,
+			OffsetMHz:    0.6,
+		},
+	}
+	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
+	if dto.QsyFrequency == nil || *dto.QsyFrequency != 146.520 {
+		t.Fatalf("QsyFrequency = %v, want 146.520", dto.QsyFrequency)
+	}
+	if dto.QsyTone != "ctcss" || dto.QsyToneFrequency != "100.0" {
+		t.Errorf("QsyTone/QsyToneFrequency = %q/%q", dto.QsyTone, dto.QsyToneFrequency)
+	}
+	if dto.QsyOffset == nil || *dto.QsyOffset != 0.6 {
+		t.Fatalf("QsyOffset = %v, want 0.6", dto.QsyOffset)
+	}
+}
+
+func TestStationToDTO_QSY_Absent(t *testing.T) {
+	s := stationcache.Station{
+		Callsign:  "W1ABC",
+		LastHeard: time.Now(),
+		Positions: []stationcache.Position{
+			{Lat: 40, Lon: -105, Direction: "RX", Timestamp: time.Now()},
+		},
+	}
+	dto := stationToDTO(s, false, false, nil, time.Now().Add(-time.Hour))
+	if dto.QsyFrequency != nil || dto.QsyOffset != nil || dto.QsyTone != "" || dto.QsyToneFrequency != "" {
+		t.Errorf("expected all QSY fields empty, got %+v", dto)
 	}
 }

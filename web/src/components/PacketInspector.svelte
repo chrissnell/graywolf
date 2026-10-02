@@ -7,7 +7,7 @@
 
   import Modal from './Modal.svelte';
   import { decodeRaw, hexDump, analyzeFrame } from '../lib/packetInspect.js';
-  import { parseDisplay, formatTime } from '../lib/packetColumns.js';
+  import { parseDisplay, formatTime, audioLevel } from '../lib/packetColumns.js';
 
   let { open = $bindable(false), packet = null } = $props();
 
@@ -15,6 +15,7 @@
   const rows = $derived(hexDump(bytes));
   const frame = $derived(bytes.length ? analyzeFrame(bytes) : null);
   const calls = $derived(packet ? parseDisplay(packet) : { src: '', dst: '' });
+  const audio = $derived(packet ? audioLevel(packet) : null);
 
   function addrLabel(a) {
     if (!a) return '—';
@@ -66,6 +67,16 @@
           </dl>
         {/if}
 
+        {#if audio}
+          <dl class="frame">
+            <dt>Audio Level</dt><dd>{audio.level} dBFS</dd>
+            <dt>Mark / Space</dt><dd>{audio.mark} / {audio.space} dBFS</dd>
+            <dt>Twist</dt><dd>{audio.twist.toFixed(1)} dB</dd>
+            {#if audio.speedError != null}<dt>Speed Error</dt><dd>{audio.speedError.toFixed(2)}%</dd>{/if}
+            {#if audio.sampleRate}<dt>Sample Rate</dt><dd>{audio.sampleRate} Hz</dd>{/if}
+          </dl>
+        {/if}
+
         <div class="dump" role="img" aria-label="Hex and ASCII dump of the raw packet">
           {#each rows as row}
             <div class="dump-row">
@@ -85,7 +96,7 @@
     display: flex;
     flex-direction: column;
     gap: 14px;
-    min-width: min(620px, 80vw);
+    min-width: 0;
   }
 
   .summary {

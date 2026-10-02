@@ -30,10 +30,15 @@ import (
 // meaningless for moving stations, so it is only emitted when both
 // course and speed are zero.
 //
+// freq is the already-encoded AFRS frequency-spec prefix (e.g.
+// "146.520MHz T100 +060", or "" for none), emitted after the PHG/
+// CSE-SPD slot and before /A= altitude, per the spec's own
+// "$PHGphgd/FFF.FFFMHz" combination example.
+//
 // ambiguity is 0..4 per APRS101 ch 6 table 8; non-zero replaces
 // trailing position digits in the lat/lon bytes with ASCII space.
 // Values outside the range are clamped (see aprs.ApplyLatLonAmbiguity).
-func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, comment string, ambiguity int) string {
+func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, freq string, comment string, ambiguity int) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
@@ -65,6 +70,9 @@ func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, s
 		// PHGphgd radio-capability extension — 7 chars, fixed-station only.
 		sb.WriteString(phg)
 	}
+	if freq != "" {
+		sb.WriteString(freq)
+	}
 	if altM != 0 {
 		ft := altM * 3.28084
 		fmt.Fprintf(&sb, "/A=%06d", int(math.Round(ft)))
@@ -94,7 +102,11 @@ func PositionInfo(lat, lon float64, course int, speedKt float64, altM float64, s
 // after the compressed block and before any /A= altitude. It is only
 // emitted when both course and speed are zero (PHG is for fixed
 // stations; CSE/SPD is already encoded in cs for moving ones).
-func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, comment string) string {
+//
+// freq is the already-encoded AFRS frequency-spec prefix (e.g.
+// "146.520MHz T100 +060", or "" for none), emitted after phg and
+// before /A= altitude, same ordering as PositionInfo.
+func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM float64, symbolTable, symbolCode byte, messaging bool, phg string, freq string, comment string) string {
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
@@ -160,6 +172,9 @@ func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM 
 	// PHG only makes sense for stationary transmitters (no course/speed).
 	if phg != "" && course == 0 && speedKt == 0 {
 		sb.WriteString(phg)
+	}
+	if freq != "" {
+		sb.WriteString(freq)
 	}
 	if altM != 0 {
 		ft := altM * 3.28084

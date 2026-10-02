@@ -61,6 +61,9 @@ func configFromEnv() (app.Config, error) {
 		HTTPAddr:        listen,
 		BearerToken:     token,
 		ShutdownTimeout: 10 * time.Second,
+		StorageLocation: os.Getenv("GRAYWOLF_STORAGE_LOCATION"),
+		SdCardPath:      os.Getenv("GRAYWOLF_SD_CARD_PATH"),
+		InternalPath:    os.Getenv("GRAYWOLF_INTERNAL_PATH"),
 	}
 	return cfg, nil
 }

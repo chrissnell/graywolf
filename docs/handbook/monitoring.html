@@ -33,6 +33,7 @@
       <a href="ptt.html">Push-to-Talk</a>
       <div class="sidebar-section">APRS</div>
       <a href="beacons.html">Beacons</a>
+      <a href="cursor-on-target.html">Cursor-on-Target</a>
       <a href="digipeater.html">Digipeater</a>
       <a href="igate.html">iGate</a>
       <a href="messaging.html">Messaging</a>
@@ -43,6 +44,7 @@
       <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
       <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
       <a href="livemap.html">Live Map</a>
+      <a href="stations.html">Stations</a>
       <div class="sidebar-section">Packet</div>
       <a href="ax25-terminal.html">AX.25 Terminal</a>
       <div class="sidebar-section">Interfaces</div>
@@ -259,7 +261,13 @@
           many slicers at once, so the modem deliberately reports the bad-FCS
           tally from one representative slicer instead of summing all of them.
           Treat the number as a signal-quality indicator that you watch over
-          time, not as an exact tally of lost packets.
+          time, not as an exact tally of lost packets. The live
+          <strong>Bad FCS</strong> log line is stricter than the counter: it
+          is only emitted when <em>none</em> of the parallel slicers decoded
+          that transmission, so seeing it means the packet was genuinely not
+          recovered &mdash; if a different slicer listening to the same audio
+          got it right, that one wins and the packet shows up as a normal
+          decoded entry instead, with no warning logged.</p>
         </p>
       </div>
     </div>
@@ -315,6 +323,34 @@
       whether the <em>good</em> count is healthy for your location and whether
       the audio is clean. Use the steps below to decide.
     </p>
+
+    <div class="callout tip">
+      <span class="callout-icon">&#10003;</span>
+      <div class="callout-body">
+        <p>
+          <strong>You don't have to capture a clip to see these numbers.</strong>
+          Graywolf surfaces the same per-packet diagnostics
+          <code>graywolf-modem --decode</code> reports offline &mdash; audio
+          level, mark/space twist, speed error &mdash; live, with no manual
+          capture step:
+        </p>
+        <ul>
+          <li>Every packet heard on a modem-backed channel logs these values
+            to <strong>System Logs</strong> at the <code>DEBUG</code> level.</li>
+          <li>Every frame that fails its FCS check logs the same values at
+            the <code>WARN</code> level, the moment it happens &mdash; one
+            line per failure, not a periodic summary.</li>
+          <li>Opening a packet's raw detail view (the magnifying-glass icon
+            on the APRS Logs page) shows an <strong>Audio</strong> section
+            with the same numbers for that specific packet.</li>
+        </ul>
+        <p>
+          This is raw data, not a verdict &mdash; use the ratio/trend
+          guidance below to judge whether what you're seeing is a real
+          problem or ordinary channel noise.
+        </p>
+      </div>
+    </div>
 
     <h3>Diagnosing poor FCS performance</h3>
 

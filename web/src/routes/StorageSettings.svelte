@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { Box } from '@chrissnell/chonky-ui';
   import { storageUsageState, colorForKey } from '../lib/settings/storage-usage-store.svelte.js';
-  import { formatBytes } from '../lib/maps/format-bytes.js';
+  import { formatBytes } from '../lib/format-bytes.js';
   import PageHeader from '../components/PageHeader.svelte';
 
   onMount(() => {

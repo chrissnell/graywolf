@@ -16,33 +16,46 @@ import (
 
 // --- Beacon observer for metrics -----------------------------------------
 
-// beaconISSink wraps the iGate line sender used by the beacon scheduler
-// so every successful APRS-IS beacon upload is recorded in the packet log
-// as a DirIS entry. Without this, APRS-IS-only beacons never produce a
-// visible log entry: they skip the RF TX hook (no RF leg) and the iGate's
-// SendLine does not log. Mirrors the RF->IS gate's RfToIsHook recording.
-type beaconISSink struct {
-	inner beacon.ISSink
-	plog  *packetlog.Log
+// packetlogISSink wraps an inner APRS-IS line sender so every successful
+// upload is recorded in the packet log as a DirIS entry, tagged with the
+// caller-supplied source ("beacon" or "cot"). Without this, an
+// APRS-IS-only send never produces a visible log entry: it skips the RF
+// TX hook (no RF leg) and the iGate's SendLine does not log on its own.
+// Mirrors the RF->IS gate's RfToIsHook recording.
+type packetlogISSink struct {
+	inner  beacon.ISSink
+	plog   *packetlog.Log
+	source string
 }
 
 // newBeaconISSink wraps inner so beacon APRS-IS sends are logged. Returns
 // nil when inner is nil so the scheduler's "no IS sink" path is preserved.
 func newBeaconISSink(inner beacon.ISSink, plog *packetlog.Log) beacon.ISSink {
+	return newPacketlogISSink(inner, plog, "beacon")
+}
+
+// newCotISSink wraps inner so CoT APRS-IS sends are logged distinctly
+// from beacon ones. Returns nil when inner is nil, mirroring
+// newBeaconISSink.
+func newCotISSink(inner beacon.ISSink, plog *packetlog.Log) beacon.ISSink {
+	return newPacketlogISSink(inner, plog, "cot")
+}
+
+func newPacketlogISSink(inner beacon.ISSink, plog *packetlog.Log, source string) beacon.ISSink {
 	if inner == nil {
 		return nil
 	}
-	return &beaconISSink{inner: inner, plog: plog}
+	return &packetlogISSink{inner: inner, plog: plog, source: source}
 }
 
-func (w *beaconISSink) SendLine(line string) error {
+func (w *packetlogISSink) SendLine(line string) error {
 	if err := w.inner.SendLine(line); err != nil {
 		return err
 	}
 	if w.plog != nil {
 		w.plog.Record(packetlog.Entry{
 			Direction: packetlog.DirIS,
-			Source:    "beacon",
+			Source:    w.source,
 			Display:   line,
 			Notes:     "aprs-is",
 		})
@@ -166,35 +179,57 @@ func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconC
 		}
 	}
 
+	var qsyFreqMHz, qsyOffsetMHz float64
+	var qsyHasOffset bool
+	if b.Freq != "" {
+		qsyFreqMHz, err = strconv.ParseFloat(b.Freq, 64)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("parse qsy freq %q: %w", b.Freq, err)
+		}
+	}
+	if b.FreqOffset != "" {
+		qsyOffsetMHz, err = strconv.ParseFloat(b.FreqOffset, 64)
+		if err != nil {
+			return beacon.Config{}, fmt.Errorf("parse qsy freq_offset %q: %w", b.FreqOffset, err)
+		}
+		qsyHasOffset = true
+	}
+
 	cfg := beacon.Config{
-		ID:             b.ID,
-		Type:           beacon.Type(b.Type),
-		Channel:        b.Channel,
-		Source:         src,
-		Dest:           dest,
-		Path:           path,
-		Delay:          time.Duration(b.DelaySeconds) * time.Second,
-		Every:          time.Duration(b.EverySeconds) * time.Second,
-		Slot:           int(b.SlotSeconds),
-		UseGps:         b.UseGps,
-		Lat:            b.Latitude,
-		Lon:            b.Longitude,
-		AltFt:          b.AltFt,
-		SymbolTable:    symTable,
-		SymbolCode:     symCode,
-		Comment:        b.Comment,
-		CommentCmd:     commentCmd,
-		Format:         b.PositionFormat,
-		Ambiguity:      int(b.Ambiguity),
-		Messaging:      b.Messaging,
-		ObjectName:     b.ObjectName,
-		CustomInfo:     b.CustomInfo,
-		PHGPower:       int(b.Power),
-		PHGHeightFt:    int(b.Height),
-		PHGGainDB:      int(b.Gain),
-		PHGDirectivity: int(b.Dir),
-		SendPath:       b.SendPath,
-		Enabled:        b.Enabled,
+		ID:                 b.ID,
+		Type:               beacon.Type(b.Type),
+		Channel:            b.Channel,
+		Source:             src,
+		Dest:               dest,
+		Path:               path,
+		Delay:              time.Duration(b.DelaySeconds) * time.Second,
+		Every:              time.Duration(b.EverySeconds) * time.Second,
+		Slot:               int(b.SlotSeconds),
+		UseGps:             b.UseGps,
+		Lat:                b.Latitude,
+		Lon:                b.Longitude,
+		AltFt:              b.AltFt,
+		SymbolTable:        symTable,
+		SymbolCode:         symCode,
+		Comment:            b.Comment,
+		CommentCmd:         commentCmd,
+		Format:             b.PositionFormat,
+		Ambiguity:          int(b.Ambiguity),
+		Messaging:          b.Messaging,
+		ObjectName:         b.ObjectName,
+		CustomInfo:         b.CustomInfo,
+		PHGPower:           int(b.Power),
+		PHGHeightFt:        int(b.Height),
+		PHGGainDB:          int(b.Gain),
+		PHGDirectivity:     int(b.Dir),
+		SendPath:           b.SendPath,
+		Enabled:            b.Enabled,
+		QSYFreqMHz:         qsyFreqMHz,
+		QSYToneType:        b.Tone,
+		QSYToneFreq:        b.ToneFreq,
+		QSYOffsetMHz:       qsyOffsetMHz,
+		QSYHasOffset:       qsyHasOffset,
+		CallsignOverridden: b.Callsign != "",
 	}
 
 	if b.SmartBeacon && smart != nil && smart.Enabled {

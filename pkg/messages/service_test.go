@@ -544,6 +544,129 @@ func TestService_SoftDeleteThread_BulkEmitsEvents(t *testing.T) {
 	}
 }
 
+// TestService_Abort_ClearsRetryAndMarksAborted proves the happy path:
+// a pending DM (still AckStateNone) gets its retry schedule cleared and
+// is stamped with the exact AbortedFailureReason string dto.
+// DeriveMessageStatus keys off of.
+func TestService_Abort_ClearsRetryAndMarksAborted(t *testing.T) {
+	svc, rig, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall: "N0CALL",
+		To:      "W1ABC",
+		Text:    "abort me",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	drainQuickly(rig.eventC, 100*time.Millisecond)
+
+	if err := svc.Abort(ctx, row.ID); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+
+	cur, err := rig.store.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if cur.NextRetryAt != nil {
+		t.Errorf("NextRetryAt = %v, want nil (retry cancelled)", cur.NextRetryAt)
+	}
+	if cur.AckState != AckStateRejected {
+		t.Errorf("AckState = %q, want %q", cur.AckState, AckStateRejected)
+	}
+	if cur.FailureReason != AbortedFailureReason {
+		t.Errorf("FailureReason = %q, want %q", cur.FailureReason, AbortedFailureReason)
+	}
+
+	got := drainQuickly(rig.eventC, 200*time.Millisecond)
+	var seen bool
+	for _, e := range got {
+		if e.Type == EventMessageAborted && e.MessageID == row.ID {
+			seen = true
+			break
+		}
+	}
+	if !seen {
+		t.Errorf("no message.aborted event; got %+v", got)
+	}
+}
+
+// TestService_Abort_RejectsAlreadyTerminalRow covers acked, rejected,
+// broadcast, and inbound rows — all of which have nothing left for
+// Abort to cancel.
+func TestService_Abort_RejectsAlreadyTerminalRow(t *testing.T) {
+	svc, rig, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall: "N0CALL",
+		To:      "W1ABC",
+		Text:    "already acked",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	row.AckState = AckStateAcked
+	if err := rig.store.Update(ctx, row); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	if err := svc.Abort(ctx, row.ID); !errors.Is(err, ErrCannotAbort) {
+		t.Errorf("Abort on acked row = %v, want ErrCannotAbort", err)
+	}
+}
+
+// TestService_Abort_ThenResendSucceeds proves the deliberate
+// AckState-reuse interaction: Abort leaves the row in the same
+// AckStateRejected shape Resend's existing precondition already
+// accepts, so an aborted send can be retried without any Resend
+// changes.
+func TestService_Abort_ThenResendSucceeds(t *testing.T) {
+	svc, rig, _, cleanup := buildService(t)
+	defer cleanup()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer svc.Stop()
+
+	row, err := svc.SendMessage(ctx, SendMessageRequest{
+		OurCall: "N0CALL",
+		To:      "W1ABC",
+		Text:    "abort then resend",
+	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if err := svc.Abort(ctx, row.ID); err != nil {
+		t.Fatalf("Abort: %v", err)
+	}
+	if _, err := svc.Resend(ctx, row.ID); err != nil {
+		t.Fatalf("Resend after Abort: %v", err)
+	}
+	cur, err := rig.store.GetByID(ctx, row.ID)
+	if err != nil {
+		t.Fatalf("GetByID: %v", err)
+	}
+	if cur.FailureReason != "" {
+		t.Errorf("FailureReason = %q, want cleared by Resend", cur.FailureReason)
+	}
+}
+
 func TestService_TxHookIntegration_FlipsSentAt(t *testing.T) {
 	svc, rig, hookReg, cleanup := buildService(t)
 	defer cleanup()

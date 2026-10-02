@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
@@ -130,9 +131,47 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		b.dispatchScanResponse(p.InputLevelScanResult)
 	case *pb.IpcMessage_TestSignalResult:
 		b.dispatchTestSignalResponse(p.TestSignalResult)
+	case *pb.IpcMessage_BadFcsEvent:
+		b.logBadFcsEvent(p.BadFcsEvent)
 	default:
 		b.logger.Debug("unhandled ipc message", "type", fmt.Sprintf("%T", p))
 	}
+}
+
+// logBadFcsEvent logs one bad-FCS occurrence as it happens -- a push per
+// failure, not a polled/aggregated trend. Raw demodulator-measured data
+// only: no classification, just the numbers the operator needs to judge
+// for themselves (same fields graywolf-modem --decode reports offline).
+func (b *Bridge) logBadFcsEvent(e *pb.BadFcsEvent) {
+	markDBFS := toDBFS(float64(e.AudioLevelMark))
+	spaceDBFS := toDBFS(float64(e.AudioLevelSpace))
+	levelDBFS := (markDBFS + spaceDBFS) / 2
+	b.logger.Warn("bad fcs",
+		"channel", e.Channel,
+		"rx_bad_fcs", e.RxBadFcs,
+		"level_dbfs", levelDBFS,
+		"mark_dbfs", markDBFS,
+		"space_dbfs", spaceDBFS,
+		"twist_db", math.Abs(markDBFS-spaceDBFS),
+		"speed_error_pct", e.SpeedError,
+		"sample_rate", e.SampleRate,
+	)
+}
+
+// toDBFS converts a linear amplitude (1.0 = full scale) to dBFS, floored at
+// -60 to match the device meter's clamp. Mirrors pkg/app/rxfanout.go's
+// helper of the same name; duplicated here rather than imported to avoid
+// a cross-package dependency for one small pure function.
+func toDBFS(amp float64) float64 {
+	const floor = -60.0
+	if amp <= 0 {
+		return floor
+	}
+	db := 20 * math.Log10(amp)
+	if db < floor {
+		db = floor
+	}
+	return math.Round(db*10) / 10
 }
 
 // pushConfiguration reads the configstore and emits ConfigureAudio,

@@ -11,10 +11,13 @@ import (
 )
 
 // Uncompressed position field is exactly 19 bytes:
-//   DDMM.mmN[/|\]DDDMM.mmW[/|\]S
+//
+//	DDMM.mmN[/|\]DDDMM.mmW[/|\]S
+//
 // Where the first symbol byte is the symbol table (/ or \) and the last
 // is the symbol code. Compressed position field is 13 bytes:
-//   sYYYYXXXXcsTT  where s is the symbol table and T is the comp type.
+//
+//	sYYYYXXXXcsTT  where s is the symbol table and T is the comp type.
 const (
 	uncompressedPosLen = 19
 	compressedPosLen   = 13
@@ -112,6 +115,7 @@ func parseUncompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 	rest = parsePositionExtension(pos, rest)
 	comment := strings.TrimRight(string(rest), " ")
 	comment = extractDAO(pos, comment)
+	pkt.QSY, comment = ParseQSY(comment)
 	pkt.Comment = comment
 	// DF appendix "/BRG/NRQ" (APRS101 ch 7) may be attached to the
 	// comment; attach as pkt.DF without overriding the position type.
@@ -122,12 +126,12 @@ func parseUncompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 // parseCompressedPosition implements APRS Protocol Reference section
 // "Compressed Lat/Long Position Report Format". The 13-byte form is:
 //
-//   byte 0  : symbol table (/ or \ or overlay alphanumeric)
-//   bytes 1..4: YYYY base-91 latitude
-//   bytes 5..8: XXXX base-91 longitude
-//   byte 9  : symbol code
-//   bytes 10..11: cs (course/speed or altitude or range)
-//   byte 12 : compression type byte
+//	byte 0  : symbol table (/ or \ or overlay alphanumeric)
+//	bytes 1..4: YYYY base-91 latitude
+//	bytes 5..8: XXXX base-91 longitude
+//	byte 9  : symbol code
+//	bytes 10..11: cs (course/speed or altitude or range)
+//	byte 12 : compression type byte
 func parseCompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 	if len(body) < compressedPosLen {
 		return errors.New("aprs: compressed position too short")
@@ -183,6 +187,7 @@ func parseCompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 	rest = parsePositionExtension(pos, rest)
 	comment := strings.TrimSpace(string(rest))
 	comment = extractDAO(pos, comment)
+	pkt.QSY, comment = ParseQSY(comment)
 	pkt.Comment = strings.TrimSpace(comment)
 	parseDirectionFinding(pkt)
 	return nil
@@ -333,9 +338,9 @@ func parseLongitude(s string) (float64, error) {
 
 // parseAPRSTimestamp parses a 7-byte APRS timestamp. Supported forms:
 //
-//   DDHHMMz — day of month, hours, minutes UTC
-//   DDHHMM/ — day of month, hours, minutes local
-//   HHMMSSh — hours, minutes, seconds UTC ("hms" form)
+//	DDHHMMz — day of month, hours, minutes UTC
+//	DDHHMM/ — day of month, hours, minutes local
+//	HHMMSSh — hours, minutes, seconds UTC ("hms" form)
 func parseAPRSTimestamp(b []byte) (*time.Time, error) {
 	if len(b) != 7 {
 		return nil, errors.New("aprs: timestamp length")
@@ -499,4 +504,3 @@ func allDigitsOrSign(b []byte) bool {
 	}
 	return true
 }
-

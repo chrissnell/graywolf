@@ -67,15 +67,15 @@ type Symbol struct {
 
 // Message is a directed-addressee message (addressee, text, id/ack/rej).
 type Message struct {
-	Addressee  string // 1..9 chars, space-padded in packet
-	Text       string
-	MessageID  string // optional identifier used for ACK/REJ correlation
-	ReplyAck   string // piggybacked reply-ack id (aprs11/replyacks), empty if absent
-	HasReplyAck bool  // true if a reply-ack trailer was present (ack may still be "")
-	IsAck      bool
-	IsRej      bool
-	IsBulletin bool // addressee starts with BLN
-	IsNWS      bool // NWS-originated
+	Addressee   string // 1..9 chars, space-padded in packet
+	Text        string
+	MessageID   string // optional identifier used for ACK/REJ correlation
+	ReplyAck    string // piggybacked reply-ack id (aprs11/replyacks), empty if absent
+	HasReplyAck bool   // true if a reply-ack trailer was present (ack may still be "")
+	IsAck       bool
+	IsRej       bool
+	IsBulletin  bool // addressee starts with BLN
+	IsNWS       bool // NWS-originated
 }
 
 // TelemetryMeta carries PARM/UNIT/EQNS/BITS metadata messages (APRS101
@@ -197,6 +197,7 @@ type DecodedAPRSPacket struct {
 	ThirdParty    *DecodedAPRSPacket // recursively-decoded inner packet for '}' traffic (APRS101 ch 20)
 	Status        string             // for '>' status reports
 	Comment       string             // residual free-form text after structured fields
+	QSY           *QSY               // frequency/tone/offset parsed from a leading comment freq-spec (AFRS), nil if not present
 	Timestamp     time.Time
 	Channel       int
 	Quality       int // modem-reported quality (0..100) if available
@@ -205,7 +206,7 @@ type DecodedAPRSPacket struct {
 	// received from APRS-IS by the iGate. Unset (DirectionUnknown) when
 	// the packet is synthesized (e.g. inner third-party decode, tests) or
 	// constructed before ingress provenance is known.
-	Direction     Direction
+	Direction Direction
 }
 
 // FromAX25 populates the Source/Dest/Path fields of a DecodedAPRSPacket

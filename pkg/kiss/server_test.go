@@ -171,6 +171,75 @@ type ioCloserFn func() error
 
 func (f ioCloserFn) Close() error { return f() }
 
+// TestServerBroadcast_StalledClientDoesNotBlockOthers proves the
+// hung-peer guard added to Broadcast/BroadcastFromChannel: a client that
+// never reads its socket must not block Broadcast beyond
+// broadcastDeadline, and a second, healthy client must still receive its
+// frame promptly. Before this guard existed, a single stalled KISS
+// client (e.g. a monitoring app that stopped draining its buffer) could
+// block Broadcast — and therefore the single RX-fanout consumer
+// goroutine that calls it once per RF frame — indefinitely (graywolf
+// packet-loss report, 2026-09).
+func TestServerBroadcast_StalledClientDoesNotBlockOthers(t *testing.T) {
+	srv := NewServer(ServerConfig{
+		Name:       "bcast-stalled",
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ChannelMap: map[uint8]uint32{0: 1},
+	})
+	// Short deadline so the test doesn't wait out the real 10s default.
+	srv.broadcastDeadline = 100 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Stalled client: a net.Pipe conn whose other end nobody ever reads
+	// from. net.Pipe conns (unlike io.Pipe) implement SetWriteDeadline,
+	// which is what makes this test exercise the real deadline path.
+	stalledServerSide, stalledClientSide := net.Pipe()
+	defer stalledClientSide.Close()
+	go func() { _ = srv.ServeTransport(ctx, stalledServerSide) }()
+
+	// Healthy client: reads whatever it's sent.
+	healthyServerSide, healthyClientSide := net.Pipe()
+	defer healthyClientSide.Close()
+	go func() { _ = srv.ServeTransport(ctx, healthyServerSide) }()
+
+	testsync.WaitFor(t, func() bool { return srv.ActiveClients() == 2 },
+		time.Second, "both transport clients to register")
+
+	healthyRecv := make(chan []byte, 1)
+	go func() {
+		buf := make([]byte, 32)
+		n, _ := healthyClientSide.Read(buf)
+		healthyRecv <- buf[:n]
+	}()
+
+	start := time.Now()
+	srv.Broadcast(0, []byte{0x01, 0x02, 0x03})
+	elapsed := time.Since(start)
+
+	// Broadcast must return promptly -- bounded by roughly one
+	// broadcastDeadline (the stalled client), not indefinitely.
+	if elapsed > time.Second {
+		t.Fatalf("Broadcast took %s, want well under 1s (stalled client should not block it)", elapsed)
+	}
+
+	select {
+	case b := <-healthyRecv:
+		if len(b) < 5 || b[0] != FEND {
+			t.Errorf("unexpected broadcast payload to healthy client: %x", b)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("healthy client never received its broadcast")
+	}
+
+	// The stalled client's connection must have been closed so its
+	// read side (ServeTransport's decoder) unblocks and it's dropped
+	// from the active-client set.
+	testsync.WaitFor(t, func() bool { return srv.ActiveClients() == 1 },
+		time.Second, "stalled client to be dropped after write timeout")
+}
+
 // capturingIngress records every RxIngress invocation for assertions.
 type capturingIngress struct {
 	mu    sync.Mutex

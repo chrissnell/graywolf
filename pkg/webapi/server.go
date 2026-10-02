@@ -87,6 +87,14 @@ type Server struct {
 	// non-blocking send coalesces bursts.
 	txBackendReload chan struct{}
 	beaconSendNow   func(ctx context.Context, id uint32) error // triggers an immediate beacon send
+	// cotSendNow triggers a manual "Beacon Now" CoT resend (never touches
+	// TxCount); cotSendScheduled fires a target's immediate first send at
+	// creation time and is what advances TxCount/NextSendAt; cotSendKill
+	// fires a one-shot APRS object-kill report on delete. All three are
+	// installed by pkg/app once the cot.Scheduler exists.
+	cotSendNow       func(ctx context.Context, id uint32) error
+	cotSendScheduled func(ctx context.Context, id uint32) error
+	cotSendKill      func(ctx context.Context, id uint32) error
 
 	// messages-service is late-bound: it exists only after the Phase 5
 	// app wiring has constructed the configstore + txgovernor + igate,
@@ -140,7 +148,21 @@ type Server struct {
 	// pkg/webapi/ptt.go for the interface definition.
 	pttDeviceSource PttDeviceSource
 
+	// bleScanner scans for BLE peripherals for GET /api/kiss/ble-device-scan.
+	// Wired post-construction via SetBLEScanner on non-Android builds; nil on
+	// Android so the handler returns 501.
+	bleScanner BLEScanner
+	// bleRepairer removes the Android bond for a BLE TNC so the next connect
+	// triggers fresh pairing. Wired on Android only; nil elsewhere → 501.
+	bleRepairer BLERepairer
+
 	demo bool // true when running in screenshot/demo mode; set from Config.Demo
+
+	// storageLocation/sdCardPath/internalPath are Android storage info, empty on
+	// desktop. Forwarded from app.Config and served by GET /api/android/storage.
+	storageLocation string
+	sdCardPath      string
+	internalPath    string
 }
 
 // ActionsService is the narrow surface the webapi handlers consume
@@ -158,6 +180,7 @@ type ActionsService interface {
 type MessagesService interface {
 	SendMessage(ctx context.Context, req messages.SendMessageRequest) (*configstore.Message, error)
 	Resend(ctx context.Context, id uint64) (messages.SendResult, error)
+	Abort(ctx context.Context, id uint64) error
 	SoftDelete(ctx context.Context, id uint64) error
 	SoftDeleteThread(ctx context.Context, kind, key string) (int, error)
 	MarkRead(ctx context.Context, id uint64) error
@@ -223,6 +246,16 @@ type Config struct {
 	// Demo serves canned dashboard counters from /api/status. Set by the
 	// wiring layer from app.Config.Demo. Screenshots/demos only.
 	Demo bool
+
+	// StorageLocation is "internal" or "sdcard" on Android, empty on desktop.
+	// Forwarded from app.Config and returned by GET /api/android/storage.
+	StorageLocation string
+	// SdCardPath is the removable-SD external files dir path on Android, empty on
+	// desktop or when no SD card is present.
+	SdCardPath string
+	// InternalPath is the app's internal files dir on Android (filesDir), empty
+	// on desktop. Always set even when storage is currently on the SD card.
+	InternalPath string
 }
 
 // NewServer constructs a Server. Store is required; Logger defaults to
@@ -262,6 +295,9 @@ func NewServer(cfg Config) (*Server, error) {
 		catalog:            cfg.Catalog,
 		style:              cfg.Style,
 		demo:               cfg.Demo,
+		storageLocation:    cfg.StorageLocation,
+		sdCardPath:         cfg.SdCardPath,
+		internalPath:       cfg.InternalPath,
 	}, nil
 }
 
@@ -294,6 +330,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerChannels(mux)
 	s.registerAudioDevices(mux)
 	s.registerBeacons(mux)
+	s.registerCot(mux)
 	s.registerFixedPoints(mux)
 	s.registerPtt(mux)
 	s.registerTxTiming(mux)
@@ -330,6 +367,8 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerRemoteActionsMacros(mux)
 	s.registerRemoteActionsOTP(mux)
 	s.registerStorageUsage(mux)
+
+	s.registerAndroidStorage(mux)
 
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.HandleFunc("GET /api/status", s.handleStatus)
@@ -379,6 +418,27 @@ func (s *Server) SetAgwReload(ch chan struct{}) { s.agwReload = ch }
 // curve parameters take effect without a graywolf restart. Buffer size
 // 1 + coalesced non-blocking sends keep rapid edits from stacking.
 func (s *Server) SetSmartBeaconReload(ch chan struct{}) { s.smartBeaconReload = ch }
+
+// SetCotSendNow installs the callback used by POST
+// /api/cot-targets/{id}/send (manual "Beacon Now"; never touches TxCount).
+func (s *Server) SetCotSendNow(fn func(ctx context.Context, id uint32) error) {
+	s.cotSendNow = fn
+}
+
+// SetCotSendScheduled installs the callback POST /api/cot-targets calls
+// right after creating a row, to fire its immediate first send and
+// advance TxCount/NextSendAt.
+func (s *Server) SetCotSendScheduled(fn func(ctx context.Context, id uint32) error) {
+	s.cotSendScheduled = fn
+}
+
+// SetCotSendKill installs the callback the delete handlers call before
+// removing a CoT row, to transmit a one-shot APRS object-kill report
+// (status '_') so compliant stations drop the object from their own
+// display.
+func (s *Server) SetCotSendKill(fn func(ctx context.Context, id uint32) error) {
+	s.cotSendKill = fn
+}
 
 // SetTxBackendReload installs the channel the Phase 3 dispatcher's
 // watcher drains. Nudged by handlers (and by notifyBridgeReload) on
@@ -518,12 +578,33 @@ func (s *Server) notifyBridgeForChannel(ctx context.Context, _ uint32) {
 // with any channel / device changes that preceded this reload.
 func (s *Server) notifyBridgeReload(ctx context.Context) {
 	s.notifyTxBackendReload()
+	s.signalTxRoutingReload()
 	if s.bridge == nil {
 		return
 	}
 	if err := s.bridge.ReconfigureAudioDevice(ctx, 0); err != nil {
 		s.logger.Warn("bridge reconfigure", "err", err)
 	}
+}
+
+// signalTxRoutingReload signals iGate and messages to re-resolve any
+// "Auto" (TxChannel=0) or now-invalid explicit TX channel selection
+// against current config. Call after a mutation that could change
+// resolveTxChannel's answer: a channel's Enabled flag, its audio-device
+// backing, or a KISS interface's Enabled/Mode/AllowTxFromGovernor/
+// Channel fields. Do NOT call this from a purely live/runtime state
+// change (e.g. a KISS TCP-client reconnect's OnReload callback) --
+// resolveTxChannel only reads persisted config, so a live-state signal
+// would just be noise. Service.ReloadConfig and App.reloadIgate are
+// idempotent no-ops when the resolved channel is unchanged, so calling
+// this liberally (it is folded into notifyBridgeReload) is safe.
+//
+// Fixes: an operator-disabled/re-enabled channel left messages/iGate's
+// cached "Auto" TX channel stale until an unrelated config save (e.g.
+// messages preferences) happened to trigger Service.ReloadConfig.
+func (s *Server) signalTxRoutingReload() {
+	s.signalIgateReload()
+	s.signalMessagesReload()
 }
 
 // parseID parses a uint32 id from a clean path segment. Callers are

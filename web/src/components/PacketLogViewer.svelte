@@ -77,7 +77,7 @@
   // (b) snap the scroll to the top when the operator first flips the toggle on,
   // bringing the newest packet into view rather than leaving them on the oldest.
   let viewerWrap = $state();
-  let wasNewestFirst = newestFirst;
+  let wasNewestFirst = $state(false);
   $effect(() => {
     const nf = newestFirst;
     if (nf && !wasNewestFirst) {

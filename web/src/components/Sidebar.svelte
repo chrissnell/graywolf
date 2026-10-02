@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte';
+  import { slide } from 'svelte/transition';
   import { link } from 'svelte-spa-router';
   import { location } from 'svelte-spa-router';
   import { Icon, NotificationBadge, Drawer } from '@chrissnell/chonky-ui';
@@ -27,31 +28,74 @@
   const mainItems = [
     { path: '/', label: 'Dashboard', svgIcon: 'dashboard' },
     { path: '/map', label: 'Live Map', svgIcon: 'globe' },
+    { path: '/stations', label: 'Stations', svgIcon: 'stations' },
     { path: '/messages', label: 'Messages', icon: 'message-square', badge: 'messages' },
+    { path: '/beacons', label: 'Beacons', svgIcon: 'beacon' },
     { path: '/terminal', label: 'Terminal', svgIcon: 'terminal', badge: 'terminal' },
     { path: '/actions', label: 'Actions', svgIcon: 'zap' },
-    { path: '/logs', label: 'APRS Logs', svgIcon: 'logs' },
-    { path: '/system-logs', label: 'System Logs', svgIcon: 'system-logs' },
   ];
 
-  const allSettingsItems = [
-    { path: '/agw', label: 'AGW' },
-    { path: '/audio-devices', label: 'Audio Devices' },
-    { path: '/beacons', label: 'Beacons' },
-    { path: '/channels', label: 'Channels' },
-    { path: '/digipeater', label: 'Digipeater' },
-    { path: '/preferences', label: 'General' },
-    { path: '/gps', label: 'GPS' },
-    { path: '/igate', label: 'iGate' },
-    { path: '/kiss', label: 'KISS' },
-    { path: '/preferences/maps', label: 'Maps' },
-    { path: '/preferences/messages', label: 'Messaging' },
-    { path: '/position-log', label: 'Position Log' },
-    { path: '/ptt', label: 'PTT' },
-    { path: '/simulation', label: 'Simulation' },
-    { path: '/callsign', label: 'Station Callsign' },
-    { path: '/preferences/storage', label: 'Storage' },
+  // Settings items grouped into named categories, rendered as a
+  // single-open accordion (see expandedCategory below) instead of one
+  // flat list.
+  const settingsCategories = [
+    {
+      key: 'general',
+      label: 'General Settings',
+      items: [
+        { path: '/callsign', label: 'Station Callsign' },
+        { path: '/preferences', label: 'General' },
+        { path: '/preferences/storage', label: 'Storage' },
+      ],
+    },
+    {
+      key: 'io',
+      label: 'Input / Output Settings',
+      items: [
+        { path: '/channels', label: 'Channels' },
+        { path: '/audio-devices', label: 'Audio Devices' },
+        { path: '/ptt', label: 'PTT' },
+        { path: '/kiss', label: 'KISS' },
+      ],
+    },
+    {
+      key: 'operations',
+      label: 'Station Operations',
+      items: [
+        { path: '/igate', label: 'iGate' },
+        { path: '/digipeater', label: 'Digipeater' },
+        { path: '/preferences/messages', label: 'Messaging' },
+        { path: '/preferences/beacons', label: 'Cursor on Target' },
+      ],
+    },
+    {
+      key: 'maps',
+      label: 'Maps and Location',
+      items: [
+        { path: '/gps', label: 'GPS' },
+        { path: '/preferences/maps', label: 'Maps' },
+        { path: '/preferences/navigation', label: 'Navigation' },
+        { path: '/position-log', label: 'Position Log' },
+      ],
+    },
+    {
+      key: 'advanced',
+      label: 'Advanced',
+      items: [
+        { path: '/agw', label: 'AGW' },
+        { path: '/simulation', label: 'Simulation' },
+      ],
+    },
+    {
+      key: 'logs',
+      label: 'Logs',
+      items: [
+        { path: '/logs', label: 'APRS Logs' },
+        { path: '/system-logs', label: 'System Logs' },
+      ],
+    },
   ];
+
   // mainItems carries the icon'd top section; it's filtered by the
   // same HIDDEN_ON_ANDROID set as the settings group so an entry like
   // /actions disappears from both places on Android.
@@ -60,14 +104,19 @@
       ? mainItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
       : mainItems,
   );
-  const navGroups = $derived([
-    {
-      label: 'Settings',
-      items: Platform.kind === 'android'
-        ? allSettingsItems.filter(it => !HIDDEN_ON_ANDROID.has(it.path))
-        : allSettingsItems,
-    },
-  ]);
+
+  // Same Android filtering as visibleMainItems, applied per-category;
+  // a category left with zero items (e.g. Advanced, whose two items are
+  // both Android-hidden) is dropped entirely rather than shown empty.
+  const visibleSettingsCategories = $derived(
+    (Platform.kind === 'android'
+      ? settingsCategories.map((cat) => ({
+          ...cat,
+          items: cat.items.filter((it) => !HIDDEN_ON_ANDROID.has(it.path)),
+        }))
+      : settingsCategories
+    ).filter((cat) => cat.items.length > 0),
+  );
 
   let currentPath = $state('');
   $effect(() => {
@@ -132,23 +181,46 @@
   let isMapActive = $derived(currentPath === '/map' || currentPath.startsWith('/map/'));
   // Messages route match — '/messages' or any '/messages/*' sub-route.
   let isMessagesActive = $derived(currentPath === '/messages' || currentPath.startsWith('/messages/'));
+  let isStationsActive = $derived(currentPath === '/stations' || currentPath.startsWith('/stations/'));
+  let isBeaconsActive = $derived(currentPath === '/beacons' || currentPath.startsWith('/beacons/'));
   let isTerminalActive = $derived(currentPath === '/terminal' || currentPath.startsWith('/terminal/'));
 
-  // Per-group active item: longest-prefix match wins. This prevents e.g.
-  // '/preferences/maps' from highlighting both the Maps entry and a
-  // 'General' (/preferences) entry — only the most specific match lights up.
-  function activePathFor(items, path) {
-    let best = '';
-    for (const it of items) {
-      if (path === it.path || path.startsWith(it.path + '/')) {
-        if (it.path.length > best.length) best = it.path;
+  // Cross-category longest-prefix match: finds which settings item most
+  // specifically matches the current path. Longest match wins so e.g.
+  // '/preferences/maps' resolves to the Maps category rather than
+  // General's '/preferences' (a prefix of several other settings sub-routes).
+  function settingsMatchFor(categories, path) {
+    let bestPath = '';
+    let bestCategoryKey = null;
+    for (const cat of categories) {
+      for (const it of cat.items) {
+        if ((path === it.path || path.startsWith(it.path + '/')) && it.path.length > bestPath.length) {
+          bestPath = it.path;
+          bestCategoryKey = cat.key;
+        }
       }
     }
-    return best;
+    return bestCategoryKey ? { categoryKey: bestCategoryKey, itemPath: bestPath } : null;
   }
-  let activeGroupPaths = $derived(
-    navGroups.map((g) => activePathFor(g.items, currentPath)),
-  );
+  let settingsActiveMatch = $derived(settingsMatchFor(visibleSettingsCategories, currentPath));
+
+  // Which settings category is expanded — accordion, only one at a time.
+  let expandedCategory = $state(null);
+
+  function toggleCategory(key) {
+    expandedCategory = expandedCategory === key ? null : key;
+  }
+
+  // Auto-expand the category containing the current route, and collapse
+  // all categories when navigating elsewhere (main items, About). Only
+  // depends on settingsActiveMatch, so a manual toggle-closed on the
+  // current page isn't immediately reopened.
+  $effect(() => {
+    const match = settingsActiveMatch;
+    untrack(() => {
+      expandedCategory = match ? match.categoryKey : null;
+    });
+  });
 </script>
 
 {#snippet navItems()}
@@ -185,6 +257,23 @@
                 <path d="M12 3a14 14 0 0 1 0 18" />
                 <path d="M12 3a14 14 0 0 0 0 18" />
               </svg>
+            {:else if item.svgIcon === 'stations'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18" />
+                <path d="M3 15h18" />
+                <path d="M9 9v12" />
+              </svg>
             {:else if item.svgIcon === 'dashboard'}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -201,6 +290,23 @@
                 <rect x="14" y="3" width="7" height="5" />
                 <rect x="14" y="12" width="7" height="9" />
                 <rect x="3" y="16" width="7" height="5" />
+              </svg>
+            {:else if item.svgIcon === 'beacon'}
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.75"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <circle cx="12" cy="18" r="1.5" />
+                <path d="M12 15.5v-3" />
+                <path d="M8.5 9a5 5 0 0 1 7 0" />
+                <path d="M5.5 6a9 9 0 0 1 13 0" />
               </svg>
             {:else if item.svgIcon === 'terminal'}
               <svg
@@ -231,39 +337,6 @@
               >
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
               </svg>
-            {:else if item.svgIcon === 'logs'}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-                <path d="M14 3v5h5" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="15" y2="17" />
-              </svg>
-            {:else if item.svgIcon === 'system-logs'}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.75"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <rect x="2" y="4" width="20" height="16" rx="2" />
-                <polyline points="6 9 9 12 6 15" />
-                <line x1="12" y1="15" x2="17" y2="15" />
-              </svg>
             {/if}
             {#if unread > 0}
               <span class="nav-icon-dot" aria-hidden="true"></span>
@@ -274,38 +347,56 @@
       </li>
     {/each}
   </ul>
-  {#each navGroups as group, groupIdx}
-    <div class="nav-group">
-      <h2 class="nav-group-label">{group.label}</h2>
-      <ul class="nav-list">
-        {#each group.items as item}
-          {@const unread = item.badge ? badgeCount(item.badge) : 0}
-          <li>
-            <a
-              href={item.path}
-              use:link
-              class="nav-link"
-              class:has-icon={item.icon}
-              class:active={item.path === activeGroupPaths[groupIdx]}
-              aria-current={currentPath === item.path ? 'page' : undefined}
-              aria-label={unread > 0 ? `${item.label}, ${unread} unread` : undefined}
-              onclick={onNavClick}
+  <div class="nav-group settings-group">
+    <h2 class="nav-group-label">Settings</h2>
+    {#each visibleSettingsCategories as cat}
+      {@const isOpen = expandedCategory === cat.key}
+      <div class="settings-category">
+        <button
+          type="button"
+          class="settings-category-header"
+          aria-expanded={isOpen}
+          aria-controls={`settings-panel-${cat.key}`}
+          onclick={() => toggleCategory(cat.key)}
+        >
+          <span class="settings-category-chevron" class:open={isOpen} aria-hidden="true">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
-              {#if item.icon}
-                <span class="nav-icon" aria-hidden="true">
-                  <Icon name={item.icon} size="sm" />
-                  {#if unread > 0}
-                    <span class="nav-icon-dot" aria-hidden="true"></span>
-                  {/if}
-                </span>
-              {/if}
-              <span class="nav-label">{item.label}</span>
-            </a>
-          </li>
-        {/each}
-      </ul>
-    </div>
-  {/each}
+              <polyline points="9 6 15 12 9 18" />
+            </svg>
+          </span>
+          <span class="settings-category-label">{cat.label}</span>
+        </button>
+        {#if isOpen}
+          <ul id={`settings-panel-${cat.key}`} class="nav-list settings-category-items" transition:slide={{ duration: 150 }}>
+            {#each cat.items as item}
+              <li>
+                <a
+                  href={item.path}
+                  use:link
+                  class="nav-link"
+                  class:active={settingsActiveMatch?.itemPath === item.path}
+                  aria-current={currentPath === item.path ? 'page' : undefined}
+                  onclick={onNavClick}
+                >
+                  <span class="nav-label">{item.label}</span>
+                </a>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/each}
+  </div>
   <div class="nav-trailing">
     <a
       href="/about"
@@ -403,6 +494,34 @@
   </a>
 
   <a
+    href="/stations"
+    use:link
+    class="top-bar-action"
+    class:active={isStationsActive}
+    aria-label="Stations"
+    aria-current={isStationsActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <rect x="3" y="3" width="18" height="18" rx="2" />
+        <path d="M3 9h18" />
+        <path d="M3 15h18" />
+        <path d="M9 9v12" />
+      </svg>
+    </span>
+  </a>
+
+  <a
     href="/messages"
     use:link
     class="top-bar-action"
@@ -415,6 +534,35 @@
       {#if unreadTotal > 0}
         <span class="top-bar-dot" aria-hidden="true"></span>
       {/if}
+    </span>
+  </a>
+
+  <a
+    href="/beacons"
+    use:link
+    class="top-bar-action"
+    class:active={isBeaconsActive}
+    aria-label="Beacons"
+    aria-current={isBeaconsActive ? 'page' : undefined}
+  >
+    <span class="top-bar-icon" aria-hidden="true">
+      <!-- Inline beacon glyph: matches the sidebar's Beacons icon. -->
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        width="24"
+        height="24"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+      >
+        <circle cx="12" cy="18" r="1.5" />
+        <path d="M12 15.5v-3" />
+        <path d="M8.5 9a5 5 0 0 1 7 0" />
+        <path d="M5.5 6a9 9 0 0 1 13 0" />
+      </svg>
     </span>
   </a>
 
@@ -590,7 +738,49 @@
     opacity: 0.5;
     padding: 10px 16px 6px;
     margin: 0;
-    border-top: 1px solid var(--border-color);
+    /* border-top: 1px solid var(--border-color); */
+  }
+
+  .settings-category-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: none;
+    border: none;
+    font: inherit;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-secondary);
+    opacity: 0.7;
+    padding: 10px 16px 6px;
+    cursor: pointer;
+    transition: color 0.15s, opacity 0.15s;
+  }
+
+  .settings-category-header:hover {
+    opacity: 1;
+    color: var(--text-primary);
+  }
+
+  .settings-category-chevron {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+
+  .settings-category-chevron.open {
+    transform: rotate(90deg);
+  }
+
+  .settings-category-items {
+    padding-bottom: 4px;
   }
 
   .nav-link {
@@ -822,6 +1012,19 @@
     }
   }
 
+  /* Narrow phones in portrait (e.g. iPhone 16 Pro, 393px): the wordmark
+     next to the logo leaves too little room for all six action icons plus
+     the hamburger, pushing Terminal and the hamburger off-screen. Drop the
+     text and keep just the logo to free up that space. */
+  @media (max-width: 575px) {
+    .top-bar-brand {
+      padding: 0 0 0 8px;
+    }
+    .top-bar-wordmark {
+      display: none;
+    }
+  }
+
   /* Landscape phone: vertical icon rail down the left edge. Wins back the
      full viewport height for the map, which a horizontal bar would eat
      into (GH #419) -- this matters most on the *smallest* landscape phones
@@ -872,5 +1075,49 @@
       width: 28px;
       height: 28px;
     }
+  }
+
+  /* Force compact layout when the user preference is active.
+     Higher specificity than the media queries above so these win
+     regardless of viewport size or orientation. */
+  :global(html.force-compact-menu) .sidebar {
+    display: none;
+  }
+
+  :global(html.force-compact-menu) .top-bar {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: auto;
+    width: auto;
+    height: calc(56px + var(--safe-area-top));
+    padding: var(--safe-area-top) 8px 0
+      max(8px, env(safe-area-inset-right));
+    padding-left: max(8px, env(safe-area-inset-left));
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    border-right: none;
+    z-index: 100;
+    box-sizing: border-box;
+    overflow-y: visible;
+  }
+
+  /* Restore wordmark visibility in forced portrait layout on landscape phones. */
+  :global(html.force-compact-menu) .top-bar-brand {
+    height: 44px;
+    padding: 0 8px;
+    margin-bottom: 0;
+  }
+  :global(html.force-compact-menu) .top-bar-wordmark {
+    display: inline;
+  }
+  :global(html.force-compact-menu) .top-bar-logo {
+    width: 32px;
+    height: 32px;
   }
 </style>

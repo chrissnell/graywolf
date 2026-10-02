@@ -13,7 +13,7 @@ import { RADAR_REGION_US, RADAR_REGION_WORLD } from './sources/radar-source.js';
 const WORLD_CENTER = [20, 0];
 const WORLD_ZOOM = 2;
 // Zoom used when LiveMapV2 recenters on the station's "My Position".
-export const MY_POSITION_ZOOM = 10;
+export const MY_POSITION_ZOOM = 14;
 
 function loadFloat(key, fallback) {
   const v = localStorage.getItem(key);

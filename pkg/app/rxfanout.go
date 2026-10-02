@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/aprs"
@@ -11,6 +12,10 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
 )
+
+// rxFanoutDropLogInterval rate-limits the "rx fanout backlogged" warning
+// so a sustained overflow cannot flood the log.
+const rxFanoutDropLogInterval = 10 * time.Second
 
 // kissTncProduce is the RxIngress callback wired into kiss.Manager. It
 // performs a non-blocking send of (rf, src) onto the shared rxFanout
@@ -34,7 +39,30 @@ func (a *App) kissTncProduce(rf *pb.ReceivedFrame, src ingress.Source) {
 		if a.metrics != nil {
 			a.metrics.RxFanoutDropped.WithLabelValues("kiss_tnc").Inc()
 		}
+		a.logRxFanoutDropRateLimited()
 	}
+}
+
+// logRxFanoutDropRateLimited emits a rate-limited warning when the shared
+// RX fanout channel is full, so an operator can see "the RF dispatch
+// consumer is backlogged" in graywolf's own log (dashboard packet counts
+// silently dropping otherwise gave no on-box signal -- see the 2026-09
+// packet-loss report where a busy APRS-IS feed contended with the RF path
+// on shared station-cache/history-db locks).
+func (a *App) logRxFanoutDropRateLimited() {
+	if a.logger == nil {
+		return
+	}
+	now := time.Now().UnixNano()
+	last := a.lastRxFanoutDropLogNano.Load()
+	if now-last < int64(rxFanoutDropLogInterval) {
+		return
+	}
+	if !a.lastRxFanoutDropLogNano.CompareAndSwap(last, now) {
+		return
+	}
+	a.logger.Warn("rx fanout consumer backlogged; dropping KISS-TNC RF frames",
+		"dropped_total", a.rxFanoutDropped.Load())
 }
 
 // audioLevelFromFrame projects a modem ReceivedFrame's mark/space tone
@@ -64,12 +92,17 @@ func audioLevelFromFrame(rf *pb.ReceivedFrame) *packetlog.AudioLevel {
 		return float64(v)
 	}
 	level := (clamp(mark) + clamp(space)) / 2
+	markDBFS := toDBFS(clamp(mark))
+	spaceDBFS := toDBFS(clamp(space))
 	return &packetlog.AudioLevel{
-		Mark:      scale(mark),
-		Space:     scale(space),
-		MarkDBFS:  toDBFS(clamp(mark)),
-		SpaceDBFS: toDBFS(clamp(space)),
-		LevelDBFS: toDBFS(level),
+		Mark:          scale(mark),
+		Space:         scale(space),
+		MarkDBFS:      markDBFS,
+		SpaceDBFS:     spaceDBFS,
+		LevelDBFS:     toDBFS(level),
+		TwistDB:       math.Abs(markDBFS - spaceDBFS),
+		SpeedErrorPct: float64(rf.SpeedError),
+		SampleRate:    rf.SampleRate,
 	}
 }
 
@@ -132,6 +165,21 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 	var alevel *packetlog.AudioLevel
 	if src.Kind == ingress.KindModem {
 		alevel = audioLevelFromFrame(rf)
+		// Every packet heard through an audio channel, logged at DEBUG --
+		// the same raw numbers graywolf-modem --decode reports offline,
+		// surfaced live per-packet instead of requiring an operator to
+		// capture a clip and run it back through the decoder.
+		if alevel != nil && a.logger != nil {
+			a.logger.Debug("audio channel packet",
+				"channel", rf.Channel,
+				"level_dbfs", alevel.LevelDBFS,
+				"mark_dbfs", alevel.MarkDBFS,
+				"space_dbfs", alevel.SpaceDBFS,
+				"twist_db", alevel.TwistDB,
+				"speed_error_pct", alevel.SpeedErrorPct,
+				"sample_rate", alevel.SampleRate,
+			)
+		}
 	}
 
 	// Raw KISS clients (e.g. Xastir) do their own decoding and want every
@@ -209,6 +257,18 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			if ev, ok := stationcache.BuildRxEvent(pkt); ok {
 				a.stationCache.RecordRxEvent(ev)
 			}
+		} else if err != nil && a.logger != nil {
+			// A UI frame that AX.25-decoded but failed APRS parsing never
+			// reaches the station cache/map/digipeater's APRS output, with
+			// no prior log line — the operator only sees the AX.25 decode
+			// succeed (RX counter ticks) and nothing else happen. KISS-TNC
+			// frames carry no FCS check in software (the hardware TNC is
+			// trusted to have validated it), so a transport that silently
+			// corrupts bytes (e.g. a lossy BLE link) can still produce a
+			// structurally valid AX.25 frame with garbled APRS content.
+			a.logger.Debug("kiss/modem rx: aprs parse failed",
+				"kind", src.Kind, "channel", rf.Channel,
+				"source_callsign", f.Source.String(), "err", err)
 		}
 	} else if a.ax25Mgr != nil {
 		// Connected-mode dispatch: any non-UI frame goes to the LAPB

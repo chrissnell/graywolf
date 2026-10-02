@@ -136,3 +136,103 @@ func TestBeaconRequest_Validate_BadPath(t *testing.T) {
 		t.Fatal("expected error for invalid path element")
 	}
 }
+
+func TestBeaconRequest_Validate_QSY(t *testing.T) {
+	mkPos := func() BeaconRequest {
+		return BeaconRequest{
+			Type:       "position",
+			UseGps:     true,
+			SendPath:   "rf",
+			Freq:       "146.520",
+			Tone:       "ctcss",
+			ToneFreq:   "100.0",
+			FreqOffset: "-0.600",
+		}
+	}
+
+	cases := []struct {
+		name    string
+		mutate  func(*BeaconRequest)
+		wantErr string // substring; "" means expect nil
+	}{
+		{"position_no_override_ok", func(r *BeaconRequest) {}, ""},
+		{"object_rejected", func(r *BeaconRequest) {
+			r.Type = "object"
+			r.ObjectName = "REPEATER"
+		}, "QSY fields require type=position"},
+		{"tracker_rejected", func(r *BeaconRequest) {
+			r.Type = "tracker"
+		}, "QSY fields require type=position"},
+		{"igate_rejected", func(r *BeaconRequest) {
+			r.Type = "igate"
+		}, "QSY fields require type=position"},
+		{"custom_rejected", func(r *BeaconRequest) {
+			r.Type = "custom"
+			r.CustomInfo = "!"
+		}, "QSY fields require type=position"},
+		{"position_with_override_rejected", func(r *BeaconRequest) {
+			r.Callsign = strPtr("N0CALL-5")
+		}, "QSY fields require type=position"},
+		{"empty_override_still_ok", func(r *BeaconRequest) {
+			r.Callsign = strPtr("")
+		}, ""},
+		{"no_qsy_fields_any_type_ok", func(r *BeaconRequest) {
+			r.Type = "object"
+			r.ObjectName = "REPEATER"
+			r.Freq, r.Tone, r.ToneFreq, r.FreqOffset = "", "", "", ""
+		}, ""},
+		{"bad_freq", func(r *BeaconRequest) {
+			r.Freq = "not-a-number"
+		}, "freq must be a positive number"},
+		{"zero_freq_rejected", func(r *BeaconRequest) {
+			r.Freq = "0"
+		}, "freq must be a positive number"},
+		{"bad_tone_type", func(r *BeaconRequest) {
+			r.Tone = "bogus"
+		}, "tone must be one of"},
+		{"tone_without_tone_freq", func(r *BeaconRequest) {
+			r.ToneFreq = ""
+		}, "tone_freq is required"},
+		{"dcs_ok", func(r *BeaconRequest) {
+			r.Tone = "dcs"
+			r.ToneFreq = "023"
+		}, ""},
+		{"bad_offset", func(r *BeaconRequest) {
+			r.FreqOffset = "not-a-number"
+		}, "freq_offset must be a number"},
+		{"no_offset_ok", func(r *BeaconRequest) {
+			r.FreqOffset = ""
+		}, ""},
+		{"no_tone_ok", func(r *BeaconRequest) {
+			r.Tone, r.ToneFreq = "", ""
+		}, ""},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := mkPos()
+			tc.mutate(&r)
+			err := r.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate() = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestBeaconRequest_ToModel_QSYFields(t *testing.T) {
+	r := BeaconRequest{
+		Type: "position", UseGps: true, SendPath: "rf",
+		Freq: "146.520", Tone: "ctcss", ToneFreq: "100.0", FreqOffset: "-0.600",
+	}
+	m := r.ToModel()
+	if m.Freq != "146.520" || m.Tone != "ctcss" || m.ToneFreq != "100.0" || m.FreqOffset != "-0.600" {
+		t.Fatalf("QSY fields not mapped: %+v", m)
+	}
+}

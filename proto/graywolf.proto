@@ -27,6 +27,7 @@ message IpcMessage {
     DeviceLevelUpdate device_level_update = 7;
     InputLevelScanResult input_level_scan_result = 8;
     TestSignalResult test_signal_result = 9;
+    BadFcsEvent bad_fcs_event = 23;      // one frame-shaped candidate failed FCS
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -60,6 +61,7 @@ message ReceivedFrame {
   float speed_error = 8;        // baud-rate error, percent
   string retry = 9;             // "none" | "single" | "double"
   uint64 timestamp_ns = 10;     // monotonic capture time
+  uint32 sample_rate = 11;      // capture device sample rate, Hz
 }
 
 // Data Carrier Detect state transition.
@@ -84,6 +86,20 @@ message StatusUpdate {
   bool dcd_state = 9;
   bool shutdown_complete = 10;   // final status before process exit
   uint64 timestamp_ns = 11;
+}
+
+// Emitted once per frame-shaped candidate that failed its FCS check -- a
+// push, not a periodic/aggregated counter. Carries the same demodulator-
+// measured diagnostics as ReceivedFrame so consumers can log or display
+// why a channel is seeing bad frames.
+message BadFcsEvent {
+  uint32 channel = 1;
+  float audio_level_mark = 2;   // mark level at time of capture
+  float audio_level_space = 3;  // space level at time of capture
+  float speed_error = 4;        // baud-rate error, percent
+  uint32 sample_rate = 5;       // capture device sample rate, Hz
+  uint64 rx_bad_fcs = 6;        // cumulative bad-FCS count for this channel
+  uint64 timestamp_ns = 7;      // monotonic capture time
 }
 
 // Sent once after the modem has bound its IPC socket, accepted a connection,

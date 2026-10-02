@@ -25,6 +25,11 @@
     gap: 16px;
     flex-wrap: wrap;
   }
+
+  .header-text {
+    width: 100%;
+  }
+
   .page-title {
     font-family: var(--font-mono);
     font-size: 22px;

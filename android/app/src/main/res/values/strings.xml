@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name">Graywolf APRS</string>
     <string name="notification_channel_id">graywolf-fgs</string>
-    <string name="notification_title">graywolf running</string>
-    <string name="notification_text">RX-only POC-B</string>
+    <string name="notification_title">Graywolf Running</string>
+    <string name="notification_text">Graywolf background process is running</string>
     <string name="notification_stop_label">Stop</string>
 </resources>

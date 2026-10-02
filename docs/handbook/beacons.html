@@ -33,6 +33,7 @@
       <a href="ptt.html">Push-to-Talk</a>
       <div class="sidebar-section">APRS</div>
       <a href="beacons.html">Beacons</a>
+      <a href="cursor-on-target.html">Cursor-on-Target</a>
       <a href="digipeater.html">Digipeater</a>
       <a href="igate.html">iGate</a>
       <a href="messaging.html">Messaging</a>
@@ -43,6 +44,7 @@
       <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
       <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
       <a href="livemap.html">Live Map</a>
+      <a href="stations.html">Stations</a>
       <div class="sidebar-section">Packet</div>
       <a href="ax25-terminal.html">AX.25 Terminal</a>
       <div class="sidebar-section">Interfaces</div>
@@ -86,6 +88,21 @@
     <div class="screenshot">
       <img src="img/beacons.png" alt="Beacons page showing a position beacon with GPS, SmartBeacon settings, and turn-based beaconing" />
       <div class="caption">A position beacon with live GPS, SmartBeacon rate adaptation, and turn-based corner pegging</div>
+    </div>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          Need to mark something once, right now, rather than configure a
+          recurring beacon? See
+          <a href="cursor-on-target.html">Cursor-on-Target</a> &mdash; drop
+          a named object straight from the Live Map's right-click menu and
+          it transmits immediately, then retransmits a few more times on a
+          decaying schedule. Its global settings live under
+          Preferences &rarr; <strong>Cursor on Target</strong>.
+        </p>
+      </div>
     </div>
 
     <h2>Beacon Types</h2>
@@ -134,7 +151,10 @@
             <tr>
               <td><code>channel</code></td>
               <td>&mdash;</td>
-              <td>Radio channel to transmit on. Not required when <em>Send to</em> is <em>APRS-IS only</em>.</td>
+              <td>Radio channel to transmit on. Choose <em>Auto</em> to always use
+              the first APRS-eligible channel &mdash; handy if you change radios
+              or channel numbers later. Not required when <em>Send to</em> is
+              <em>APRS-IS only</em>.</td>
             </tr>
             <tr>
               <td><code>callsign</code></td>
@@ -475,12 +495,71 @@
           <tr><td><code>height</code></td><td>Antenna height above average terrain (feet)</td></tr>
           <tr><td><code>gain</code></td><td>Antenna gain in dB</td></tr>
           <tr><td><code>dir</code></td><td>Antenna directivity (0 = omni)</td></tr>
-          <tr><td><code>freq</code></td><td>Operating frequency (MHz)</td></tr>
-          <tr><td><code>tone</code></td><td>CTCSS tone (Hz)</td></tr>
-          <tr><td><code>freq_offset</code></td><td>Repeater offset (MHz)</td></tr>
         </table>
       </div>
     </div>
+
+    <h2 id="qsy">QSY (Operating Frequency)</h2>
+
+    <p>
+      A beacon can publish the voice frequency, tone, and repeater offset
+      where you can be reached &mdash; the APRS community calls this
+      <strong>QSY</strong> information. Graywolf follows the AFRS
+      (Automatic Frequency Reporting System) convention
+      (<a href="https://aprs.org/info/freqspec.txt" rel="noopener">aprs.org/info/freqspec.txt</a>):
+      the frequency, tone, and offset are encoded as a short prefix at the
+      start of the beacon&rsquo;s comment, e.g. <code>146.520MHz T100 +060</code>.
+    </p>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p>
+          QSY can only be set on a <strong>position</strong> beacon that is
+          <em>not</em> using a callsign override &mdash; it publishes where
+          to reach <em>you</em>, the operator, so it isn&rsquo;t available
+          on object, tracker, or iGate status beacons, or on a position
+          beacon transmitting under someone else&rsquo;s callsign.
+        </p>
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>freq</code></td>
+              <td>Operating frequency in MHz (e.g. <code>146.520</code>). Leave blank for no QSY.</td>
+            </tr>
+            <tr>
+              <td><code>tone</code></td>
+              <td>Tone type: <code>ctcss</code>, <code>dcs</code>, or blank for none.</td>
+            </tr>
+            <tr>
+              <td><code>tone_freq</code></td>
+              <td>Tone value &mdash; a CTCSS frequency in Hz (e.g. <code>100.0</code>) or a DCS code (e.g. <code>023</code>). Required when <code>tone</code> is set.</td>
+            </tr>
+            <tr>
+              <td><code>freq_offset</code></td>
+              <td>Repeater offset in MHz, signed (e.g. <code>-0.600</code>). Leave blank to omit, or use <code>0</code> for forced simplex.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <p>
+      Incoming beacons from other stations are parsed the same way: when a
+      received position or object comment starts with a recognizable
+      frequency spec, graywolf extracts it and surfaces it on the
+      <a href="stations.html">Stations page</a> and the
+      <a href="livemap.html">Live Map</a> popup, so you can quickly see
+      where to reach someone without hunting through their comment text.
+    </p>
 
     <h2>SmartBeacon</h2>
 
@@ -567,9 +646,9 @@
         <span class="label">Previous</span>
         Push-to-Talk
       </a>
-      <a href="digipeater.html" class="next">
+      <a href="cursor-on-target.html" class="next">
         <span class="label">Next</span>
-        Digipeater
+        Cursor-on-Target
       </a>
     </nav>
   </main>
