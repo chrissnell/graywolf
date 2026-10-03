@@ -20,6 +20,7 @@ func TestLookupTocall(t *testing.T) {
 		{"APY300", "FTM-300D"}, // exact Yaesu
 		{"XXXYYY", ""},         // no match
 		{"APRS", "Unknown"},    // the bare APRS tocall
+		{"APRTAC", "APRStac"},  // exact ModernHam tocall
 	}
 
 	for _, tt := range tests {
@@ -44,6 +45,16 @@ func TestLookupTocallStripSSID(t *testing.T) {
 	info := LookupTocall("APMI06-5")
 	if info == nil || info.Model != "WX3in1 Plus 2.0" {
 		t.Errorf("LookupTocall with SSID failed: got %v", info)
+	}
+}
+
+func TestLookupMicEDeviceFTM350(t *testing.T) {
+	// Regression: the FTM-350 suffix is underscore+doublequote (`_"`), but a
+	// prior hand-transcription of the vendored table stored it as
+	// underscore+backslash (`_\`), so it never matched.
+	info := LookupMicEDevice(`hello_"`)
+	if info == nil || info.Model != "FTM-350" {
+		t.Errorf(`LookupMicEDevice with "_\"" suffix failed: got %v`, info)
 	}
 }
 

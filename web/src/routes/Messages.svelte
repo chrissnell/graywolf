@@ -73,6 +73,15 @@
     refreshNow();
   });
 
+  // Clear the shared activeThreadId when this route unmounts (navigating
+  // to /map, /bulletins, etc). Without this, activeThreadId stays stale
+  // at whatever thread was last open, which would permanently suppress
+  // new-message popup notifications for that thread (see
+  // notification-rules-core.js's shouldNotifyMessage).
+  onMount(() => {
+    return () => store.setActiveThread(null);
+  });
+
   // ---------- APRS-IS connectivity banner ----------
   // ANSRVR + internet-only peers reach us only via APRS-IS. If the iGate
   // is off or the session is down, surface that up front so operators

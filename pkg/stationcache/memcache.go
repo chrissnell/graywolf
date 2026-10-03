@@ -80,9 +80,10 @@ func (c *MemCache) Update(entries []CacheEntry) {
 
 		if !exists {
 			s = &Station{
-				Key:      e.Key,
-				Callsign: e.Callsign,
-				IsObject: e.IsObject,
+				Key:        e.Key,
+				Callsign:   e.Callsign,
+				IsObject:   e.IsObject,
+				StatusCode: -1, // overwritten below by updateMetadata if e carries a status
 			}
 			c.stations[e.Key] = s
 		}
@@ -298,6 +299,14 @@ func updateMetadata(s *Station, e *CacheEntry, now time.Time) {
 	s.Gated = e.Gated
 	s.Channel = e.Channel
 	s.Comment = e.Comment
+	s.StatusCode = e.StatusCode
+	s.StatusText = e.StatusText
+	// Only overwrite from a packet that actually resolved a device, so an
+	// unrecognized tocall on a later packet can't blank a previously
+	// identified device (mirrors the Source guard above).
+	if e.Device != nil {
+		s.Device = e.Device
+	}
 	s.LastHeard = now
 	if isDirectRF(e.Direction, e.Hops) {
 		s.LastDirectHeard = e.Timestamp
