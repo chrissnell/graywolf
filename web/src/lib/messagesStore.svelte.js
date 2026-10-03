@@ -8,8 +8,10 @@
 //   searchQuery     string
 //   pendingByClientId  clientId -> optimistic outbound bubble (replaced on 202)
 //
-// The transport layer (messagesTransport.js) is the sole writer; the
-// UI reads reactively. Muted or archived threads are excluded from
+// The transport layer (messagesTransport.js) is the primary writer; the
+// UI reads reactively. The one UI-side write is adjustUnread(), which the
+// chat window uses to update unread counts optimistically on mark-read
+// (the transport's rollup poll reconciles any drift). Muted or archived threads are excluded from
 // `unreadTotal` so the sidebar badge is an actionable, not merely
 // informational, signal.
 //
@@ -23,6 +25,7 @@
 // unread-total getter to recompute when individual threads change.
 
 import { SvelteMap, SvelteSet } from 'svelte/reactivity';
+import { adjustUnread } from './unread-batch-core.js';
 
 /**
  * @typedef {object} Thread
@@ -273,6 +276,21 @@ class MessagesStore {
     const t = this.conversations.get(threadId);
     if (!t) return;
     this.conversations.set(threadId, { ...t, muted: !!muted });
+  }
+
+  /**
+   * Adjust a thread's unreadCount locally (floor 0). The chat window
+   * calls this with a negative delta the moment it marks messages read,
+   * so the sidebar/top-bar dot updates immediately instead of waiting
+   * for the next refreshConversations() rollup (up to 30s), and with a
+   * positive delta to roll back a markRead that failed. Any residual
+   * drift self-heals on the next rollup.
+   */
+  adjustUnread(threadId, delta) {
+    const t = this.conversations.get(threadId);
+    if (!t) return;
+    const next = adjustUnread(t.unreadCount, delta);
+    if (next !== t.unreadCount) this.conversations.set(threadId, { ...t, unreadCount: next });
   }
 
   // --- Selection (inbox bulk-delete) --------------------------------

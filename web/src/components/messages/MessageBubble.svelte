@@ -51,7 +51,7 @@
    *    onReplyPrivate?: (fromCall: string) => void,
    *    onContextMenu?: (x: number, y: number, msg: any) => void,
    *    onResend?: (msg: any) => void,
-   *    registerRef?: (el: HTMLElement | null) => void,
+   *    registerRef?: (el: HTMLElement, mounted: boolean) => void,
    *  }}
    */
   let {
@@ -151,8 +151,12 @@
 
   let bubbleEl = $state(null);
   $effect(() => {
-    registerRef?.(bubbleEl);
-    return () => registerRef?.(null);
+    const el = bubbleEl;
+    if (!el) return;
+    registerRef?.(el, true);
+    // Pass the same element back on unmount so the parent can
+    // unobserve it and drop it from its element->message map.
+    return () => registerRef?.(el, false);
   });
 
   function handleContextMenu(e) {
