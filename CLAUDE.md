@@ -18,6 +18,23 @@ chrissnell.com/software/graywolf/). The wiki points into it; don't
 duplicate its content. For original design intent on a subsystem, plan
 files live in `.context/`.
 
+## Contribution conventions — read CONTRIBUTING.md
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) is the canonical statement of how a
+change reaches `main`: dev-environment setup, what each Makefile target
+does, branch naming (`fix/`, `feature/`, `docs/`, `chore/`, `refactor/`
+off `main`, which is the only long-lived branch), commit and PR title
+style (`area: imperative summary (GH #NNN)`), the tests-and-docs
+requirement, how issue labels are used, and the policy on AI-assisted
+contributions. Read it before preparing a change or drafting a PR. Its
+PR checklist is binding for agents as well as humans, and the
+release-only files it names (`VERSION`, the Cargo version, AUR files,
+`notes.yaml`) are off limits outside the release workflow below.
+
+Keep it current the same way as the wiki: if you add, rename, or remove
+a Makefile target, CI job, toolchain requirement, GitHub label, or
+branch/commit convention, update `CONTRIBUTING.md` in the same change.
+
 ## Wiki maintenance — required, not optional
 
 The wiki only earns its keep if it stays current. Three triggers:
