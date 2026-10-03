@@ -65,6 +65,12 @@
     position: sticky;
     top: 0;
     z-index: 50;
+    /* The sidebar is fixed at the left (z-index 100) and this bar is
+       rendered outside the app layout, so without an offset its left end
+       slides under the sidebar and the start of the message is hidden
+       (GH #623). Start where the content starts: the same offsets
+       .main-content uses in App.svelte. */
+    margin-left: var(--sidebar-width);
     display: flex;
     align-items: center;
     gap: 12px;
@@ -160,6 +166,25 @@
   @media (prefers-reduced-motion: reduce) {
     .banner-reload {
       transition: none !important;
+    }
+  }
+
+  /* Match the sidebar layouts .main-content offsets for in App.svelte:
+     no sidebar at the left on portrait phones (it becomes a top bar), and
+     a slim icon rail on landscape phones. The landscape rule is declared
+     after the max-width rule so it wins for the narrow landscape phones
+     that match both. */
+  @media (max-width: 768px) {
+    .server-updated-banner {
+      margin-left: 0;
+    }
+  }
+
+  @media (orientation: landscape) and (max-height: 500px) {
+    .server-updated-banner {
+      margin-left: calc(
+        var(--landscape-rail-width) + env(safe-area-inset-left)
+      );
     }
   }
 </style>
