@@ -1350,7 +1350,24 @@ func (s *Store) GetBeacon(ctx context.Context, id uint32) (*Beacon, error) {
 }
 
 func (s *Store) CreateBeacon(ctx context.Context, b *Beacon) error {
-	return s.db.WithContext(ctx).Create(b).Error
+	// Same gorm `default:true` footgun as CreateKissInterface: a Go
+	// zero-value Enabled is replaced by the column default on Create, so a
+	// beacon created disabled would be stored enabled and scheduled.
+	// Capture the requested value and re-assert false after the insert, in
+	// one transaction so a failed re-assert leaves no enabled row behind.
+	wantEnabled := b.Enabled
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(b).Error; err != nil {
+			return err
+		}
+		if !wantEnabled {
+			b.Enabled = false
+			if err := tx.Model(b).Update("enabled", false).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 func (s *Store) UpdateBeacon(ctx context.Context, b *Beacon) error {
 	return s.db.WithContext(ctx).Save(b).Error
