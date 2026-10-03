@@ -190,7 +190,7 @@ const mockPackets = [
   { id: 2, timestamp: new Date(Date.now() - 5000).toISOString(), source: 'W5ABC-7', destination: 'APGRWO', path: 'WIDE2-1', type: 'position', raw: 'W5ABC-7>APGRWO,WIDE2-1:@092345z3501.00N/10601.00W_090/005', direction: 'rx', channel: 1, channel_name: 'VHF APRS' },
 ];
 
-const mockPosition = { valid: true, lat: 35.0, lon: -106.0, alt_m: 1500, has_alt: true, speed_kt: 0, heading_deg: 0, has_course: false };
+const mockPosition = { valid: true, source: 'gps', lat: 35.0, lon: -106.0, alt_m: 1500, has_alt: true, speed_kt: 0, heading_deg: 0, has_course: false };
 
 const mockSimulation = { enabled: false, packets: mockPackets };
 
