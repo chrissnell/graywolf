@@ -33,6 +33,7 @@
       <a href="ptt.html">Push-to-Talk</a>
       <div class="sidebar-section">APRS</div>
       <a href="beacons.html">Beacons</a>
+      <a href="cursor-on-target.html">Cursor-on-Target</a>
       <a href="digipeater.html">Digipeater</a>
       <a href="igate.html">iGate</a>
       <a href="messaging.html">Messaging</a>
@@ -43,6 +44,7 @@
       <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
       <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
       <a href="livemap.html">Live Map</a>
+      <a href="stations.html">Stations</a>
       <div class="sidebar-section">Packet</div>
       <a href="ax25-terminal.html">AX.25 Terminal</a>
       <div class="sidebar-section">Interfaces</div>
@@ -523,6 +525,27 @@ sudo packaging/scripts/postinstall.sh</code></pre>
       into a shell prompt on the Linux machine running graywolf and pick the first
       IP address from the list.
     </p>
+
+    <div class="callout warn">
+      <span class="callout-icon">&#9888;</span>
+      <div class="callout-body">
+        <p>
+          <strong>Safari (macOS and iOS) reloads the whole page every time you
+          navigate</strong> when the web UI is reached via a bare LAN IP address
+          like <code>http://192.168.1.50:8080</code> &mdash; Safari does not
+          extend the same trust to numeric private IPs that it gives
+          <code>localhost</code> and named hosts, and it can be seen re-fetching
+          the app on every screen change. Chrome and Firefox are unaffected.
+          The fix is to reach graywolf by its mDNS/Bonjour hostname instead
+          &mdash; e.g. <code>http://your-computer-name.local:8080</code> (find
+          the exact name on macOS via <strong>System Settings &rarr; General
+          &rarr; Sharing</strong>, or on Linux by running <code>hostname -f</code>
+          if avahi/mDNS is installed). No graywolf configuration change is
+          needed &mdash; just bookmark the <code>.local</code> URL instead of
+          the IP address.
+        </p>
+      </div>
+    </div>
 
     <h2>Set a Password</h2>
 

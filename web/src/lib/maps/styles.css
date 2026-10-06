@@ -251,6 +251,46 @@
 .status-error {
   color: var(--color-danger);
 }
+.downloaded-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.downloaded-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  min-height: 56px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-tertiary, var(--bg-secondary));
+  font: inherit;
+  font-weight: 600;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.downloaded-caret {
+  width: 1ch;
+  text-align: center;
+  opacity: 0.7;
+}
+.downloaded-badge {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.downloaded-children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 @media (min-width: 600px) {
   .downloaded-row {
     grid-template-columns: 1fr auto auto auto;

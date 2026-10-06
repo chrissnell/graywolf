@@ -3,6 +3,9 @@
   import { Toggle, Box, Select, Input, Button, Icon } from '@chrissnell/chonky-ui';
   import { messagesPreferencesState } from '../lib/settings/messages-preferences-store.svelte.js';
   import { channelsStore, start as startChannels } from '../lib/stores/channels.svelte.js';
+  import ChannelListbox from '../lib/components/ChannelListbox.svelte';
+  import FormField from '../components/FormField.svelte';
+  import { txPredicate } from '../lib/channelBacking.js';
   import {
     getMessagesConfig, putMessagesConfig,
     listBlocklist, createBlocklistEntry, updateBlocklistEntry, deleteBlocklistEntry,
@@ -35,16 +38,10 @@
     await refreshBlocklist();
   });
 
-  let txChannelOptions = $derived([
-    { value: 0, label: 'Auto (first APRS-eligible channel)' },
-    ...channelsStore.list
-      .filter((c) => c.mode !== 'packet')
-      .map((c) => ({ value: c.id, label: c.name })),
-  ]);
+  let channels = $derived(channelsStore.list);
 
-  async function handleTxChannelChange(v) {
-    const next = Number(v);
-    txChannel = next;
+  async function handleTxChannelChange(channel) {
+    const next = channel?.id ?? 0;
     try {
       await putMessagesConfig({ tx_channel: next });
     } catch {
@@ -128,30 +125,33 @@
     decode longer messages and will truncate or drop them. Leave off
     unless you know your contacts support it.
   </p>
-  <p class="tx-channel-label">Transmit channel</p>
-  <Select
-    value={txChannel}
-    onValueChange={handleTxChannelChange}
-    options={txChannelOptions}
-    aria-label="Messages transmit channel"
-  />
-  <p class="messages-hint">
-    Where graywolf sends outbound APRS messages. Auto picks the first
-    APRS-eligible channel at send time.
-  </p>
-  <p class="tx-channel-label">Send path</p>
-  <Select
-    value={messagesPreferencesState.fallbackPolicy}
-    onValueChange={(v) => messagesPreferencesState.setFallbackPolicy(v)}
-    options={fallbackPolicyOptions}
-    aria-label="Message send path"
-    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
-  />
-  <p class="messages-hint">
-    Choose APRS-IS only if you have no radio channel configured. The
-    default tries RF first and silently falls back to APRS-IS when no
-    modem is available.
-  </p>
+  <FormField label="Transmit Channel" id="msg-txch" hint="Where graywolf sends outbound APRS messages. Auto picks the first APRS-eligible channel at send time.">
+    {#snippet children(describedBy)}
+      <ChannelListbox
+        id="msg-txch"
+        bind:value={txChannel}
+        valueType="number"
+        channels={channels}
+        ariaLabelledBy={describedBy}
+        capabilityFilter={txPredicate}
+        allowNone
+        noneLabel="Auto (first APRS-eligible channel)"
+        onChange={handleTxChannelChange}
+      />
+    {/snippet}
+  </FormField>
+  <FormField label="Send path" id="msg-sendpath" hint="Choose APRS-IS only if you have no radio channel configured. The default tries RF first and silently falls back to APRS-IS when no modem is available.">
+    {#snippet children(describedBy)}
+      <Select
+        id="msg-sendpath"
+        value={messagesPreferencesState.fallbackPolicy}
+        onValueChange={(v) => messagesPreferencesState.setFallbackPolicy(v)}
+        options={fallbackPolicyOptions}
+        aria-describedby={describedBy}
+        disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+      />
+    {/snippet}
+  </FormField>
 </Box>
 
 <Box title="Blocked call signs">
@@ -218,14 +218,7 @@
     font-size: 13px;
     color: var(--text-muted);
   }
-  .tx-channel-label {
-    display: block;
-    margin-top: 16px;
-    margin-bottom: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-default);
-  }
+
   .block-intro { margin-top: 0; margin-bottom: 16px; }
   .block-intro code {
     font-family: var(--font-mono);

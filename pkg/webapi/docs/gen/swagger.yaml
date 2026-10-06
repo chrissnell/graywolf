@@ -44,6 +44,10 @@ definitions:
         type: array
       position:
         $ref: '#/definitions/aprs.Position'
+      qsy:
+        allOf:
+          - $ref: '#/definitions/aprs.QSY'
+        description: frequency/tone/offset parsed from a leading comment freq-spec (AFRS), nil if not present
       quality:
         description: modem-reported quality (0..100) if available
         type: integer
@@ -264,6 +268,22 @@ definitions:
         $ref: '#/definitions/aprs.Symbol'
       timestamp:
         description: nil if positionless or no embedded time
+        type: string
+    type: object
+  aprs.QSY:
+    properties:
+      frequencyMHz:
+        type: number
+      hasOffset:
+        description: distinguishes an explicit offset (incl. 0 = forced simplex) from "no offset token present"
+        type: boolean
+      offsetMHz:
+        type: number
+      toneFreq:
+        description: 'CTCSS: decimal Hz string (e.g. "100.0"); DCS: 3-digit code (e.g. "023")'
+        type: string
+      toneType:
+        description: '"ctcss" | "dcs" | ""'
         type: string
     type: object
   aprs.Symbol:
@@ -842,6 +862,8 @@ definitions:
         type: string
       tone:
         type: string
+      tone_freq:
+        type: string
       type:
         type: string
       use_gps:
@@ -929,6 +951,8 @@ definitions:
       symbol_table:
         type: string
       tone:
+        type: string
+      tone_freq:
         type: string
       type:
         type: string
@@ -1294,6 +1318,139 @@ definitions:
         type: integer
       unread_count:
         type: integer
+    type: object
+  dto.CotDeleteInactiveResponse:
+    properties:
+      deleted:
+        example: 3
+        type: integer
+    type: object
+  dto.CotSendResponse:
+    properties:
+      status:
+        example: sent
+        type: string
+    type: object
+  dto.CotSettingsRequest:
+    properties:
+      channel:
+        type: integer
+      decay_factor:
+        example: 2
+        type: number
+      destination:
+        example: APGRWO
+        type: string
+      num_transmits:
+        example: 4
+        type: integer
+      path:
+        example: WIDE1-1,WIDE2-1
+        type: string
+      second_tx_delay_seconds:
+        example: 300
+        type: integer
+      send_path:
+        enum:
+          - rf
+          - both
+          - is_only
+        example: rf
+        type: string
+      type:
+        description: |-
+          Type is reserved for a future non-object CoT kind; only "object"
+          validates today.
+        enum:
+          - object
+        example: object
+        type: string
+    type: object
+  dto.CotSettingsResponse:
+    properties:
+      channel:
+        type: integer
+      decay_factor:
+        type: number
+      destination:
+        type: string
+      num_transmits:
+        type: integer
+      path:
+        type: string
+      second_tx_delay_seconds:
+        type: integer
+      send_path:
+        type: string
+      type:
+        type: string
+    type: object
+  dto.CotTargetRequest:
+    properties:
+      comment:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      object_name:
+        example: WOOFWOOF
+        type: string
+      overlay:
+        type: string
+      symbol:
+        example: D
+        type: string
+      symbol_table:
+        example: /
+        type: string
+    type: object
+  dto.CotTargetResponse:
+    properties:
+      active:
+        type: boolean
+      channel:
+        type: integer
+      comment:
+        type: string
+      created_at:
+        type: string
+      decay_factor:
+        type: number
+      destination:
+        type: string
+      first_sent_at:
+        type: string
+      id:
+        type: integer
+      last_sent_at:
+        type: string
+      latitude:
+        type: number
+      longitude:
+        type: number
+      next_send_at:
+        type: string
+      num_transmits:
+        type: integer
+      object_name:
+        type: string
+      overlay:
+        type: string
+      path:
+        type: string
+      second_tx_delay_seconds:
+        type: integer
+      send_path:
+        type: string
+      symbol:
+        type: string
+      symbol_table:
+        type: string
+      tx_count:
+        type: integer
+      type:
+        type: string
     type: object
   dto.DigipeaterConfigRequest:
     properties:
@@ -2655,11 +2812,20 @@ definitions:
       mark_dbfs:
         description: MarkDBFS is the mark-tone level in dBFS, floored at -60.
         type: number
+      sample_rate:
+        description: SampleRate is the capture device's sample rate, Hz.
+        type: integer
       space:
         description: Space is the legacy space-tone amplitude, scaled linearly to ~0-100.
         type: integer
       space_dbfs:
         description: SpaceDBFS is the space-tone level in dBFS, floored at -60.
+        type: number
+      speed_error_pct:
+        description: SpeedErrorPct is the decoder's measured baud-rate error, percent.
+        type: number
+      twist_db:
+        description: TwistDB is the absolute difference between MarkDBFS and SpaceDBFS.
         type: number
     type: object
   packetlog.Direction:
@@ -2901,6 +3067,18 @@ definitions:
         items:
           $ref: '#/definitions/webapi.StationPosDTO'
         type: array
+      qsy_frequency:
+        description: QsyFrequency is the operating frequency in MHz parsed from an APRS frequency specification in the station's comment; omitted when not reported.
+        type: number
+      qsy_offset:
+        description: QsyOffset is the repeater offset in MHz (signed, 0 is a valid forced-simplex value); omitted when no offset was reported.
+        type: number
+      qsy_tone:
+        description: 'QsyTone is the tone type parsed alongside QsyFrequency: "ctcss", "dcs", or omitted when no tone.'
+        type: string
+      qsy_tone_frequency:
+        description: 'QsyToneFrequency is the tone value: a decimal Hz string for CTCSS (e.g. "100.0") or a 3-digit code for DCS (e.g. "023").'
+        type: string
       source:
         description: Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source.
         type: string
@@ -3259,6 +3437,8 @@ tags:
     description: Radio channel configuration.
   - name: beacons
     description: Beacon configuration and send-now.
+  - name: cot
+    description: 'Cursor-on-Target: map-dropped APRS objects with a finite decaying retransmit schedule.'
   - name: fixed-points
     description: Operator-placed map landmarks, shared across devices.
   - name: audio-devices
@@ -4924,6 +5104,219 @@ paths:
       summary: Send a TX test signal (CW callsign or tone) on a channel
       tags:
         - channels
+  /cot-settings:
+    get:
+      description: |-
+        Returns the global parameters every new CoT target
+        snapshots at creation time. Returns defaults when no
+        configuration has been saved yet.
+      operationId: getCotSettings
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSettingsResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get Cursor-on-Target settings
+      tags:
+        - cot
+    put:
+      consumes:
+        - application/json
+      description: |-
+        Replaces the global CoT parameters. Does not affect any
+        CoT target already created -- each target snapshots
+        these settings for itself at creation time.
+      operationId: updateCotSettings
+      parameters:
+        - description: CoT settings
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CotSettingsRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSettingsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update Cursor-on-Target settings
+      tags:
+        - cot
+  /cot-targets:
+    get:
+      operationId: listCotTargets
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.CotTargetResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List Cursor-on-Target objects
+      tags:
+        - cot
+    post:
+      consumes:
+        - application/json
+      description: |-
+        Snapshots the current CoT settings onto the new target
+        and transmits it immediately under the station
+        callsign. The immediate send is best-effort: on failure
+        the target is still created and the scheduler retries
+        it on its next poll.
+      operationId: createCotTarget
+      parameters:
+        - description: CoT target definition
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CotTargetRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.CotTargetResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Create a Cursor-on-Target object
+      tags:
+        - cot
+  /cot-targets/{id}:
+    delete:
+      operationId: deleteCotTarget
+      parameters:
+        - description: CoT target id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete a Cursor-on-Target object
+      tags:
+        - cot
+  /cot-targets/{id}/send:
+    post:
+      operationId: sendCotTarget
+      parameters:
+        - description: CoT target id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotSendResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Send a Cursor-on-Target object now
+      tags:
+        - cot
+  /cot-targets/inactive:
+    delete:
+      operationId: deleteInactiveCotTargets
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CotDeleteInactiveResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Delete every inactive (exhausted) Cursor-on-Target object
+      tags:
+        - cot
   /digipeater:
     get:
       operationId: getDigipeaterConfig
@@ -5922,6 +6315,32 @@ paths:
       summary: List attached USB serial devices (Android only)
       tags:
         - kiss
+  /kiss/ble-device-scan:
+    get:
+      operationId: scanBLEMobilinkd
+      parameters:
+        - description: Scan duration in seconds (default 15, max 60)
+          in: query
+          name: timeout
+          type: integer
+      produces:
+        - text/event-stream
+      responses:
+        "200":
+          description: SSE stream of BLEMobilinkdDevice objects
+        "409":
+          description: scan already in progress
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "501":
+          description: not available on this platform
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Scan for Mobilinkd BLE TNC devices (desktop only)
+      tags:
+        - kiss
   /kiss/bonded-bt-devices:
     get:
       operationId: getBondedBtDevices
@@ -6297,6 +6716,47 @@ paths:
       security:
         - CookieAuth: []
       summary: Get message
+      tags:
+        - messages
+  /messages/{id}/abort:
+    post:
+      operationId: abortMessage
+      parameters:
+        - description: Message id
+          in: path
+          name: id
+          required: true
+          type: integer
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.MessageResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Abort message
       tags:
         - messages
   /messages/{id}/read:

@@ -12,7 +12,7 @@ import (
 type PersistentCache struct {
 	mu     sync.RWMutex
 	mem    *MemCache
-	hdb    HistoryStore // nil when disabled
+	hdb    HistoryStore  // nil when disabled
 	done   chan struct{} // signals prune goroutine; nil when disabled
 	logger *slog.Logger
 }

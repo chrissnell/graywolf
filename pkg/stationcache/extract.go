@@ -8,10 +8,10 @@ import (
 
 // CacheEntry is the output of ExtractEntry, ready for MemCache.Update().
 type CacheEntry struct {
-	Key       string
-	IsObject  bool
-	Killed    bool // object/item with Live==false → delete from cache
-	Callsign  string
+	Key      string
+	IsObject bool
+	Killed   bool // object/item with Live==false → delete from cache
+	Callsign string
 	// Source is the AX.25 source callsign that transmitted the packet —
 	// the originating station of an object/item. Empty for ordinary
 	// station packets, where Callsign already is the source.
@@ -32,7 +32,20 @@ type CacheEntry struct {
 	Channel   uint32
 	Comment   string
 	Weather   *Weather
+	QSY       *QSY
 	Timestamp time.Time
+}
+
+// QSY is a station's operating frequency/tone/offset, parsed from a
+// leading APRS frequency specification in its comment (see
+// aprs.QSY / pkg/aprs/qsy.go). Mirrors Comment's semantics: it reflects
+// the latest packet heard, not a history.
+type QSY struct {
+	FrequencyMHz float64
+	ToneType     string // "ctcss" | "dcs" | ""
+	ToneFreq     string
+	OffsetMHz    float64
+	HasOffset    bool
 }
 
 // ExtractEntry converts a decoded APRS packet into cache update(s).
@@ -79,12 +92,13 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
+		e.QSY = convertQSY(pkt.QSY)
 		entries = append(entries, e)
 
 		// Also emit a station entry for the originator if we have
 		// a top-level position (rare but possible in some encodings).
 		if pkt.Position != nil {
-			entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather))
+			entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather, pkt.QSY))
 		}
 		return entries
 	}
@@ -94,6 +108,7 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 		if pkt.Weather != nil {
 			e.Weather = convertWeather(pkt.Weather)
 		}
+		e.QSY = convertQSY(pkt.QSY)
 		entries = append(entries, e)
 		return entries
 	}
@@ -101,14 +116,14 @@ func ExtractEntry(decoded *aprs.DecodedAPRSPacket, source, dir string, ch uint32
 	// Normal station packet — position may come from Position field
 	// (includes Mic-E, which the parser copies to pkt.Position).
 	if pkt.Position != nil || pkt.Weather != nil {
-		entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather))
+		entries = append(entries, buildStationEntry(pkt.Source, pkt.Position, pkt.Comment, via, path, hops, dir, gated, ch, ts, pkt.Weather, pkt.QSY))
 		return entries
 	}
 
 	return nil
 }
 
-func buildStationEntry(callsign string, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time, wx *aprs.Weather) CacheEntry {
+func buildStationEntry(callsign string, pos *aprs.Position, comment, via string, path []string, hops int, dir string, gated bool, ch uint32, ts time.Time, wx *aprs.Weather, qsy *aprs.QSY) CacheEntry {
 	e := CacheEntry{
 		Key:       "stn:" + callsign,
 		Callsign:  callsign,
@@ -135,6 +150,7 @@ func buildStationEntry(callsign string, pos *aprs.Position, comment, via string,
 	if wx != nil {
 		e.Weather = convertWeather(wx)
 	}
+	e.QSY = convertQSY(qsy)
 	return e
 }
 
@@ -214,4 +230,18 @@ func convertWeather(wx *aprs.Weather) *Weather {
 		HasLuminosity: wx.HasLuminosity,
 	}
 	return w
+}
+
+// convertQSY converts aprs.QSY to the cache QSY struct.
+func convertQSY(q *aprs.QSY) *QSY {
+	if q == nil {
+		return nil
+	}
+	return &QSY{
+		FrequencyMHz: q.FrequencyMHz,
+		ToneType:     q.ToneType,
+		ToneFreq:     q.ToneFreq,
+		OffsetMHz:    q.OffsetMHz,
+		HasOffset:    q.HasOffset,
+	}
 }

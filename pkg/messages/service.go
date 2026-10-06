@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
@@ -25,6 +26,17 @@ var tacticalCallsignRe = regexp.MustCompile(`^[A-Z0-9-]{1,9}$`)
 // they can surface a 400 to REST callers.
 var ErrInvalidInvite = errors.New("messages: invite requires a valid invite_tactical")
 
+// ErrCannotAbort indicates Abort was called on a row with nothing left
+// to cancel — inbound, or already in a terminal AckState (acked,
+// rejected, or broadcast).
+var ErrCannotAbort = errors.New("messages: message is not in a cancelable state")
+
+// AbortedFailureReason is stamped into a row's FailureReason column by
+// Abort. dto.DeriveMessageStatus matches on this exact string so an
+// operator-cancelled send renders as "aborted" rather than being
+// conflated with a retry-budget timeout or a generic send failure.
+const AbortedFailureReason = "aborted by operator"
+
 // ServiceConfigReader is the narrow read/write surface the Service
 // needs from *configstore.Store. Kept as an interface so tests can
 // inject a fake.
@@ -36,15 +48,15 @@ type ServiceConfigReader interface {
 
 // ServiceConfig wires the Service constructor.
 type ServiceConfig struct {
-	Store         *Store
-	ConfigStore   ServiceConfigReader
-	TxSink        txgovernor.TxSink
-	TxHookReg     txgovernor.TxHookRegistry
-	IGate         IGateLineSender // may be nil (no iGate configured)
-	Bridge        RFAvailability  // may be nil in tests (alwaysRF)
-	StationCache  stationcache.StationStore // optional — Phase 4 autocomplete
-	Logger        *slog.Logger
-	Clock         SenderClock
+	Store        *Store
+	ConfigStore  ServiceConfigReader
+	TxSink       txgovernor.TxSink
+	TxHookReg    txgovernor.TxHookRegistry
+	IGate        IGateLineSender           // may be nil (no iGate configured)
+	Bridge       RFAvailability            // may be nil in tests (alwaysRF)
+	StationCache stationcache.StationStore // optional — Phase 4 autocomplete
+	Logger       *slog.Logger
+	Clock        SenderClock
 	// TxChannel is the RF channel used for outbound messages.
 	// Defaults to 1 when zero.
 	TxChannel uint32
@@ -582,6 +594,49 @@ func (s *Service) SendMessage(ctx context.Context, req SendMessageRequest) (*con
 // plumbing.
 func (s *Service) Resend(ctx context.Context, id uint64) (SendResult, error) {
 	return s.retry.Resend(ctx, id)
+}
+
+// Abort is the REST /abort entry point. Cancels a pending DM's next
+// scheduled retry and marks the row terminally "aborted" — unlike
+// SoftDelete, the row is NOT deleted; it stays in the thread so the
+// operator can see what happened and, if desired, Resend it later
+// (Resend's existing precondition already accepts AckStateRejected,
+// which this method sets).
+//
+// Abort can only prevent the NEXT scheduled retry attempt — it cannot
+// recall a frame already handed to the TX governor for the attempt in
+// flight when the operator clicks Abort; RF transmission, once
+// queued, cannot be un-sent.
+func (s *Service) Abort(ctx context.Context, id uint64) error {
+	row, err := s.cfg.Store.GetByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if row.Direction != "out" || row.AckState != AckStateNone {
+		return ErrCannotAbort
+	}
+	if err := s.retry.CancelRetry(ctx, id); err != nil {
+		// Log and continue — a lookup miss here shouldn't block the
+		// terminal-state write.
+		s.logger.Debug("messages Abort cancel-retry failed",
+			"error", err, "id", id)
+	}
+	row.NextRetryAt = nil
+	row.AckState = AckStateRejected
+	row.FailureReason = AbortedFailureReason
+	now := time.Now()
+	row.AckedAt = &now
+	if err := s.cfg.Store.Update(ctx, row); err != nil {
+		return err
+	}
+	s.hub.Publish(Event{
+		Type:       EventMessageAborted,
+		MessageID:  id,
+		ThreadKind: row.ThreadKind,
+		ThreadKey:  row.ThreadKey,
+		Timestamp:  now,
+	})
+	return nil
 }
 
 // SoftDelete is the REST DELETE entry point. Cancels any pending

@@ -115,3 +115,18 @@ export function formatWeatherRows(wx, isMetric) {
   }
   return rows;
 }
+
+// formatQsy turns a StationDTO's qsy_* fields into a single display
+// string, e.g. "146.520 MHz · T100.0 · +0.600 MHz", or '' when the
+// station carries no QSY info.
+export function formatQsy(s) {
+  if (s.qsy_frequency == null) return '';
+  const parts = [`${s.qsy_frequency.toFixed(3)} MHz`];
+  if (s.qsy_tone) {
+    parts.push(s.qsy_tone === 'dcs' ? `D${s.qsy_tone_frequency}` : `T${s.qsy_tone_frequency}`);
+  }
+  if (s.qsy_offset != null) {
+    parts.push(`${s.qsy_offset >= 0 ? '+' : ''}${s.qsy_offset.toFixed(3)} MHz`);
+  }
+  return parts.join(' · ');
+}

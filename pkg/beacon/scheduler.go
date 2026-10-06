@@ -43,17 +43,18 @@ const smartPollInterval = 1 * time.Second
 // that dispatches beacon fires. Configure via New, drive with Run;
 // SetBeacons / Reload / SendNow are safe to call from any goroutine.
 type Scheduler struct {
-	sink         txgovernor.TxSink
-	isSink       ISSink // optional APRS-IS destination; guarded by mu
-	cache        gps.PositionCache
-	logger       *slog.Logger
-	observer     Observer
-	clock        Clock
-	version      string
-	maxFires     int
-	workers      chan struct{} // counting semaphore sized to maxFires
-	channelModes configstore.ChannelModeLookup
-	onISSent     func(frame *ax25.Frame, channel uint32)
+	sink                txgovernor.TxSink
+	isSink              ISSink // optional APRS-IS destination; guarded by mu
+	cache               gps.PositionCache
+	logger              *slog.Logger
+	observer            Observer
+	clock               Clock
+	version             string
+	maxFires            int
+	workers             chan struct{} // counting semaphore sized to maxFires
+	channelModes        configstore.ChannelModeLookup
+	onISSent            func(frame *ax25.Frame, channel uint32)
+	autoChannelResolver AutoChannelResolver
 
 	mu       sync.Mutex
 	beacons  []Config
@@ -88,6 +89,9 @@ type Options struct {
 	// station is invisible on the map even though aprs.fi shows it
 	// (graywolf#438). nil = no-op.
 	OnISSent func(frame *ax25.Frame, channel uint32)
+	// AutoChannelResolver resolves Channel == 0 ("Auto") to a live channel
+	// at send time. Nil = legacy behavior, Channel 0 is submitted as-is.
+	AutoChannelResolver AutoChannelResolver
 }
 
 // New constructs a Scheduler.
@@ -108,18 +112,19 @@ func New(opts Options) (*Scheduler, error) {
 		maxFires = DefaultMaxConcurrentFires
 	}
 	return &Scheduler{
-		sink:         opts.Sink,
-		isSink:       opts.ISSink,
-		cache:        opts.Cache,
-		logger:       logger.With("component", "beacon"),
-		observer:     opts.Observer,
-		clock:        clock,
-		version:      opts.Version,
-		maxFires:     maxFires,
-		workers:      make(chan struct{}, maxFires),
-		reloadCh:     make(chan struct{}, 1),
-		channelModes: opts.ChannelModes,
-		onISSent:     opts.OnISSent,
+		sink:                opts.Sink,
+		isSink:              opts.ISSink,
+		cache:               opts.Cache,
+		logger:              logger.With("component", "beacon"),
+		observer:            opts.Observer,
+		clock:               clock,
+		version:             opts.Version,
+		maxFires:            maxFires,
+		workers:             make(chan struct{}, maxFires),
+		reloadCh:            make(chan struct{}, 1),
+		channelModes:        opts.ChannelModes,
+		onISSent:            opts.OnISSent,
+		autoChannelResolver: opts.AutoChannelResolver,
 	}, nil
 }
 
@@ -375,6 +380,20 @@ func (s *Scheduler) sendBeacon(ctx context.Context, b Config) {
 // reason to the operator. nil on success.
 func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool) error {
 	name := beaconName(b)
+	// rf and is are derived from SendPath. Empty SendPath behaves as
+	// SendPathRF (safe default for any unmigrated/zero value).
+	sendRF := b.SendPath != SendPathISOnly
+	sendIS := b.SendPath == SendPathBoth || b.SendPath == SendPathISOnly
+
+	// Auto channel: resolve "0 = auto" to a live channel only for
+	// beacons that actually transmit on RF. is_only beacons store
+	// Channel=0 as a distinct "no RF leg" sentinel and must never be
+	// rerouted. Resolving here (before the channel-mode gate and
+	// sink.Submit below) means both see the real channel that will be
+	// used, not the literal 0.
+	if sendRF && b.Channel == 0 && s.autoChannelResolver != nil {
+		b.Channel = s.autoChannelResolver(ctx)
+	}
 	if s.channelModes != nil {
 		mode, _ := s.channelModes.ModeForChannel(ctx, b.Channel)
 		if mode == configstore.ChannelModePacket {
@@ -439,10 +458,6 @@ func (s *Scheduler) sendBeaconWith(ctx context.Context, b Config, skipDedup bool
 		Priority:  ax25.PriorityBeacon,
 		SkipDedup: skipDedup,
 	}
-	// rf and is are derived from SendPath. Empty SendPath behaves as
-	// SendPathRF (safe default for any unmigrated/zero value).
-	sendRF := b.SendPath != SendPathISOnly
-	sendIS := b.SendPath == SendPathBoth || b.SendPath == SendPathISOnly
 
 	// RF/TNC leg. Skipped for is_only beacons so a radioless station can
 	// still beacon.

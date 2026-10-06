@@ -572,6 +572,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/cot-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Cursor-on-Target settings
+         * @description Returns the global parameters every new CoT target
+         *     snapshots at creation time. Returns defaults when no
+         *     configuration has been saved yet.
+         */
+        get: operations["getCotSettings"];
+        /**
+         * Update Cursor-on-Target settings
+         * @description Replaces the global CoT parameters. Does not affect any
+         *     CoT target already created -- each target snapshots
+         *     these settings for itself at creation time.
+         */
+        put: operations["updateCotSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cot-targets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Cursor-on-Target objects */
+        get: operations["listCotTargets"];
+        put?: never;
+        /**
+         * Create a Cursor-on-Target object
+         * @description Snapshots the current CoT settings onto the new target
+         *     and transmits it immediately under the station
+         *     callsign. The immediate send is best-effort: on failure
+         *     the target is still created and the scheduler retries
+         *     it on its next poll.
+         */
+        post: operations["createCotTarget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cot-targets/inactive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete every inactive (exhausted) Cursor-on-Target object */
+        delete: operations["deleteInactiveCotTargets"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cot-targets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a Cursor-on-Target object */
+        delete: operations["deleteCotTarget"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/cot-targets/{id}/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Send a Cursor-on-Target object now */
+        post: operations["sendCotTarget"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/digipeater": {
         parameters: {
             query?: never;
@@ -906,6 +1010,23 @@ export interface paths {
         };
         /** List attached USB serial devices (Android only) */
         get: operations["getAvailableUsbSerialDevices"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kiss/ble-device-scan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Scan for Mobilinkd BLE TNC devices (desktop only) */
+        get: operations["scanBLEMobilinkd"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1296,6 +1417,23 @@ export interface paths {
         post?: never;
         /** Delete message */
         delete: operations["deleteMessage"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/messages/{id}/abort": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Abort message */
+        post: operations["abortMessage"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -2063,6 +2201,8 @@ export interface components {
             object?: components["schemas"]["aprs.Object"];
             path?: string[];
             position?: components["schemas"]["aprs.Position"];
+            /** @description frequency/tone/offset parsed from a leading comment freq-spec (AFRS), nil if not present */
+            qsy?: components["schemas"]["aprs.QSY"];
             /** @description modem-reported quality (0..100) if available */
             quality?: number;
             /** @description original AX.25 frame bytes */
@@ -2176,6 +2316,16 @@ export interface components {
             symbol?: components["schemas"]["aprs.Symbol"];
             /** @description nil if positionless or no embedded time */
             timestamp?: string;
+        };
+        "aprs.QSY": {
+            frequencyMHz?: number;
+            /** @description distinguishes an explicit offset (incl. 0 = forced simplex) from "no offset token present" */
+            hasOffset?: boolean;
+            offsetMHz?: number;
+            /** @description CTCSS: decimal Hz string (e.g. "100.0"); DCS: 3-digit code (e.g. "023") */
+            toneFreq?: string;
+            /** @description "ctcss" | "dcs" | "" */
+            toneType?: string;
         };
         "aprs.Symbol": {
             code?: number;
@@ -2492,6 +2642,7 @@ export interface components {
             symbol?: string;
             symbol_table?: string;
             tone?: string;
+            tone_freq?: string;
             type?: string;
             use_gps?: boolean;
         };
@@ -2538,6 +2689,7 @@ export interface components {
             symbol?: string;
             symbol_table?: string;
             tone?: string;
+            tone_freq?: string;
             type?: string;
             use_gps?: boolean;
         };
@@ -2743,6 +2895,85 @@ export interface components {
             thread_kind?: string;
             total_count?: number;
             unread_count?: number;
+        };
+        "dto.CotDeleteInactiveResponse": {
+            /** @example 3 */
+            deleted?: number;
+        };
+        "dto.CotSendResponse": {
+            /** @example sent */
+            status?: string;
+        };
+        "dto.CotSettingsRequest": {
+            channel?: number;
+            /** @example 2 */
+            decay_factor?: number;
+            /** @example APGRWO */
+            destination?: string;
+            /** @example 4 */
+            num_transmits?: number;
+            /** @example WIDE1-1,WIDE2-1 */
+            path?: string;
+            /** @example 300 */
+            second_tx_delay_seconds?: number;
+            /**
+             * @example rf
+             * @enum {string}
+             */
+            send_path?: "rf" | "both" | "is_only";
+            /**
+             * @description Type is reserved for a future non-object CoT kind; only "object"
+             *     validates today.
+             * @example object
+             * @enum {string}
+             */
+            type?: "object";
+        };
+        "dto.CotSettingsResponse": {
+            channel?: number;
+            decay_factor?: number;
+            destination?: string;
+            num_transmits?: number;
+            path?: string;
+            second_tx_delay_seconds?: number;
+            send_path?: string;
+            type?: string;
+        };
+        "dto.CotTargetRequest": {
+            comment?: string;
+            latitude?: number;
+            longitude?: number;
+            /** @example WOOFWOOF */
+            object_name?: string;
+            overlay?: string;
+            /** @example D */
+            symbol?: string;
+            /** @example / */
+            symbol_table?: string;
+        };
+        "dto.CotTargetResponse": {
+            active?: boolean;
+            channel?: number;
+            comment?: string;
+            created_at?: string;
+            decay_factor?: number;
+            destination?: string;
+            first_sent_at?: string;
+            id?: number;
+            last_sent_at?: string;
+            latitude?: number;
+            longitude?: number;
+            next_send_at?: string;
+            num_transmits?: number;
+            object_name?: string;
+            overlay?: string;
+            path?: string;
+            second_tx_delay_seconds?: number;
+            send_path?: string;
+            symbol?: string;
+            symbol_table?: string;
+            tx_count?: number;
+            type?: string;
         };
         "dto.DigipeaterConfigRequest": {
             dedupe_window_seconds?: number;
@@ -3625,10 +3856,16 @@ export interface components {
             mark?: number;
             /** @description MarkDBFS is the mark-tone level in dBFS, floored at -60. */
             mark_dbfs?: number;
+            /** @description SampleRate is the capture device's sample rate, Hz. */
+            sample_rate?: number;
             /** @description Space is the legacy space-tone amplitude, scaled linearly to ~0-100. */
             space?: number;
             /** @description SpaceDBFS is the space-tone level in dBFS, floored at -60. */
             space_dbfs?: number;
+            /** @description SpeedErrorPct is the decoder's measured baud-rate error, percent. */
+            speed_error_pct?: number;
+            /** @description TwistDB is the absolute difference between MarkDBFS and SpaceDBFS. */
+            twist_db?: number;
         };
         /** @enum {string} */
         "packetlog.Direction": "RX" | "TX" | "IS";
@@ -3763,6 +4000,14 @@ export interface components {
             path_positions?: number[][];
             /** @description Positions is the station's position history, newest first; static stations have exactly one entry. */
             positions?: components["schemas"]["webapi.StationPosDTO"][];
+            /** @description QsyFrequency is the operating frequency in MHz parsed from an APRS frequency specification in the station's comment; omitted when not reported. */
+            qsy_frequency?: number;
+            /** @description QsyOffset is the repeater offset in MHz (signed, 0 is a valid forced-simplex value); omitted when no offset was reported. */
+            qsy_offset?: number;
+            /** @description QsyTone is the tone type parsed alongside QsyFrequency: "ctcss", "dcs", or omitted when no tone. */
+            qsy_tone?: string;
+            /** @description QsyToneFrequency is the tone value: a decimal Hz string for CTCSS (e.g. "100.0") or a 3-digit code for DCS (e.g. "023"). */
+            qsy_tone_frequency?: string;
             /** @description Source is the originating station's callsign for an object/item — the station that created and transmitted it, which may differ from the digipeater that relayed it. Empty for regular stations, where Callsign already is the source. */
             source?: string;
             /** @description SymbolCode is the APRS symbol code character within the selected table. */
@@ -6331,6 +6576,313 @@ export interface operations {
             };
         };
     };
+    getCotSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotSettingsResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateCotSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CoT settings */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.CotSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotSettingsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    listCotTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotTargetResponse"][];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    createCotTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description CoT target definition */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["dto.CotTargetRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotTargetResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteInactiveCotTargets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotDeleteInactiveResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteCotTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description CoT target id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    sendCotTarget: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description CoT target id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.CotSendResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
     getDigipeaterConfig: {
         parameters: {
             query?: never;
@@ -7465,6 +8017,45 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    scanBLEMobilinkd: {
+        parameters: {
+            query?: {
+                /** @description Scan duration in seconds (default 15, max 60) */
+                timeout?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSE stream of BLEMobilinkdDevice objects */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description scan already in progress */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description not available on this platform */
+            501: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };
@@ -9040,6 +9631,74 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    abortMessage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Message id */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["dto.MessageResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
                 };
             };
         };

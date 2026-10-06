@@ -457,6 +457,91 @@ func (m *Manager) repairWorldArchive(stateDir string) error {
 	return nil
 }
 
+// AdoptOrphanArchives scans cacheDir for .pmtiles files that have no
+// corresponding maps_downloads row and registers them as completed
+// downloads. This covers a tile-cache directory copied in from another
+// install (or shared between users out-of-band): without this scan,
+// List/Status are driven entirely by the DB, so a pre-existing archive
+// on disk is invisible to the UI and the region picker offers to
+// download it again.
+//
+// Bbox and max-zoom are read from each archive's v3 header on a
+// best-effort basis; a malformed or unreadable header still gets the
+// row adopted (bbox/max-zoom left at zero, falling back to the catalog
+// at render time), logged at WARN rather than aborting the scan.
+// Idempotent: slugs that already have a row (any status) are left
+// untouched.
+//
+// Called once at startup from pkg/app/wiring.go, after
+// MigrateLegacyArchives so legacy bare-slug files are already in their
+// namespaced location before slugs are derived from paths.
+func (m *Manager) AdoptOrphanArchives(ctx context.Context) error {
+	if m.cacheDir == "" {
+		return nil
+	}
+	existing, err := m.store.ListMapsDownloads(ctx)
+	if err != nil {
+		return fmt.Errorf("list downloads: %w", err)
+	}
+	known := make(map[string]bool, len(existing))
+	for _, r := range existing {
+		known[r.Slug] = true
+	}
+
+	return filepath.WalkDir(m.cacheDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".pmtiles") {
+			return nil
+		}
+		rel, err := filepath.Rel(m.cacheDir, path)
+		if err != nil {
+			return nil
+		}
+		slug := filepath.ToSlash(strings.TrimSuffix(rel, ".pmtiles"))
+		if _, _, _, ok := mapsslug.Parse(slug); !ok {
+			// Not a legal slug (e.g. a stray file) -- leave it alone.
+			return nil
+		}
+		if known[slug] {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			slog.Warn("mapscache orphan adoption: stat failed", "path", path, "err", err)
+			return nil
+		}
+		row := configstore.MapsDownload{
+			Slug:         slug,
+			Status:       "complete",
+			BytesTotal:   info.Size(),
+			DownloadedAt: info.ModTime().UTC(),
+		}
+		if bbox, err := ReadArchiveBBox(path); err == nil {
+			encoded := encodeBBox(bbox)
+			row.BBox = &encoded
+		} else {
+			slog.Warn("mapscache orphan adoption: bbox read failed", "slug", slug, "path", path, "err", err)
+		}
+		if maxZoom, err := ReadArchiveMaxZoom(path); err == nil {
+			row.MaxZoom = maxZoom
+		} else {
+			slog.Warn("mapscache orphan adoption: max zoom read failed", "slug", slug, "path", path, "err", err)
+		}
+		if err := m.store.UpsertMapsDownload(ctx, row); err != nil {
+			slog.Warn("mapscache orphan adoption: upsert failed", "slug", slug, "err", err)
+			return nil
+		}
+		known[slug] = true
+		slog.Info("mapscache: adopted pre-existing archive", "slug", slug, "bytes", info.Size())
+		return nil
+	})
+}
+
 func (m *Manager) fail(ctx context.Context, slug string, err error) {
 	// A user-initiated cancel (Delete) cancels the download context,
 	// which surfaces here as an error from http.Do or writeAtomic -- but

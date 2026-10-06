@@ -169,6 +169,9 @@ func parseMicE(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
 	mic.Status = stripMicEPipeTelemetry(mic.Status)
 	// DAO high-precision extension may appear in the Mic-E comment.
 	mic.Status = extractDAO(&mic.Position, mic.Status)
+	// AFRS frequency spec ("146.520MHz T100 +060") leads the comment on
+	// radios such as the TH-D74/D75; strip it into pkt.QSY.
+	pkt.QSY, mic.Status = ParseQSY(mic.Status)
 
 	pkt.MicE = &mic
 	// Surface the decoded free-form text as the packet-level comment.
