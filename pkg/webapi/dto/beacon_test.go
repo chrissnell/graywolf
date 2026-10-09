@@ -76,6 +76,56 @@ func TestBeaconRequest_Validate_PositionFormat(t *testing.T) {
 	}
 }
 
+func TestBeaconRequest_Validate_MicEMessageCode(t *testing.T) {
+	cases := []struct {
+		name    string
+		code    string
+		wantErr string // substring; "" means expect nil
+	}{
+		{"empty_ok", "", ""},
+		{"off_duty_ok", "off_duty", ""},
+		{"emergency_ok", "emergency", ""},
+		{"priority_ok", "priority", ""},
+		{"special_ok", "special", ""},
+		{"committed_ok", "committed", ""},
+		{"returning_ok", "returning", ""},
+		{"in_service_ok", "in_service", ""},
+		{"en_route_ok", "en_route", ""},
+		{"unknown_rejected", "urgent", "mic_e_message_code must be one of"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := BeaconRequest{Type: "custom", MicEMessageCode: tc.code}
+			err := r.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("Validate() = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestBeaconRequest_MicEMessageCodeDefaultsOffDuty(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1} // MicEMessageCode empty
+	m := r.ToModel()
+	if m.MicEMessageCode != "off_duty" {
+		t.Fatalf("empty mic_e_message_code should normalize to off_duty, got %q", m.MicEMessageCode)
+	}
+}
+
+func TestBeaconRequest_MicEMessageCodeEmergencyPreserved(t *testing.T) {
+	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1, MicEMessageCode: "emergency"}
+	m := r.ToModel()
+	if m.MicEMessageCode != "emergency" {
+		t.Fatalf("mic_e_message_code = %q, want emergency (must not be coerced to the default)", m.MicEMessageCode)
+	}
+}
+
 func TestBeaconRequest_SendPathDefaultsRF(t *testing.T) {
 	r := BeaconRequest{Type: "position", Latitude: 1, Longitude: 1} // SendPath empty
 	m := r.ToModel()

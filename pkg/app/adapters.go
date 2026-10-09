@@ -186,6 +186,7 @@ func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconC
 		CommentCmd:     commentCmd,
 		Format:         b.PositionFormat,
 		Ambiguity:      int(b.Ambiguity),
+		MicEMessageCode: beacon.MicEMessageCodeFromName(b.MicEMessageCode),
 		Messaging:      b.Messaging,
 		ObjectName:     b.ObjectName,
 		CustomInfo:     b.CustomInfo,
