@@ -177,6 +177,16 @@ type KissInterface struct {
 	// bytes. Default false so a shared APRS channel is not exposed to
 	// connected-mode traffic unless the operator opts in. See graywolf#463.
 	AllowConnectedMode bool `gorm:"column:allow_connected_mode;not null;default:false" json:"allow_connected_mode"`
+	// LinkWatchdog controls the serial stale-link watchdog (issue: a
+	// bluetooth serial port that silently stops delivering data after the
+	// radio restarts). "auto" (default) enables it for bluetooth
+	// interfaces only; "on" / "off" force it. Meaningful for the serial
+	// family of interface types; ignored for tcp / tcp-client.
+	LinkWatchdog string `gorm:"column:link_watchdog;not null;default:auto" json:"link_watchdog"`
+	// IdleReconnectSec is the RX-silence threshold after which the
+	// watchdog recycles the port. Zero selects the built-in default
+	// (kiss.DefaultIdleReconnectSec).
+	IdleReconnectSec uint32 `gorm:"column:idle_reconnect_sec;not null;default:0" json:"idle_reconnect_sec"`
 	// NeedsReconfig is set to true when a referential cascade (Phase 5)
 	// nulls this row's Channel. Phase 3 merely declares the column so
 	// the shape is stable before the cascade logic lands; no code reads

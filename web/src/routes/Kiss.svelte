@@ -122,7 +122,18 @@
     { value: 'tcp',           label: 'TCP (server)' },
     { value: 'tcp-client',    label: 'Network' },
   ];
-  let typeOptions = $derived(Platform.isAndroid ? androidTypeOptions : desktopTypeOptions);
+  // macOS builds with the native Bluetooth transport answer the bonded-
+  // devices endpoint (other desktops answer 501), so a successful probe on
+  // mount is what turns on the Bluetooth type and its device picker.
+  let desktopBt = $state(false);
+  const desktopBtOption = { value: 'bluetooth', label: 'Bluetooth (paired device)' };
+  let typeOptions = $derived(
+    Platform.isAndroid
+      ? androidTypeOptions
+      : desktopBt
+        ? [desktopTypeOptions[0], desktopTypeOptions[1], desktopTypeOptions[2], desktopBtOption, desktopTypeOptions[3]]
+        : desktopTypeOptions,
+  );
 
   // Bonded Bluetooth devices, fetched lazily the first time the
   // operator switches the type select to "bluetooth" with the modal
@@ -188,8 +199,12 @@
   // good enough for v1.
   let bondedHint = $derived(
     !bondedLoading && !bondedError && bondedDevices.length === 0
-      ? 'No paired Bluetooth devices found. Pair your TNC in Android Settings → Bluetooth, then click Refresh. If you have already paired the TNC but no devices appear, grant Bluetooth permission below.'
-      : 'Pair the TNC in Android Settings → Bluetooth first, then refresh.',
+      ? Platform.isAndroid
+        ? 'No paired Bluetooth devices found. Pair your TNC in Android Settings → Bluetooth, then click Refresh. If you have already paired the TNC but no devices appear, grant Bluetooth permission below.'
+        : 'No paired Bluetooth serial devices found. Pair the radio in System Settings → Bluetooth, then click Refresh.'
+      : Platform.isAndroid
+        ? 'Pair the TNC in Android Settings → Bluetooth first, then refresh.'
+        : 'Pair the radio in System Settings → Bluetooth first. Graywolf connects to it directly, so it reconnects by itself after the radio restarts.',
   );
 
   // True when the bonded list is empty and we have nothing else to
@@ -282,6 +297,13 @@
     return opts;
   });
 
+  // Stale-link watchdog choices for serial-family interfaces.
+  const linkWatchdogOptions = [
+    { value: 'auto', label: 'Auto (on for Bluetooth, off otherwise)' },
+    { value: 'on', label: 'On' },
+    { value: 'off', label: 'Off' },
+  ];
+
   // Mode names the source of the radio link, NOT the kind of device you
   // plugged in. The parentheticals exist because operators routinely read
   // "Modem" as "my device is a modem" and pick it for a hardware TNC,
@@ -337,6 +359,10 @@
       // connected-mode apps (Pat/Winlink via kissattach) can use
       // graywolf as a raw KISS modem. Default off — operator opts in.
       allow_connected_mode: false,
+      // Serial stale-link watchdog. 'auto' enables it for bluetooth
+      // links only; idle_reconnect_sec blank = built-in default (180s).
+      link_watchdog: 'auto',
+      idle_reconnect_sec: '',
       // Whether graywolf runs this interface. New rows start enabled;
       // the operator can disable an existing one to release its device
       // (e.g. a Bluetooth rfcomm tty) without losing the config.
@@ -378,7 +404,20 @@
     // MACs in the table, and the operator will see the real error
     // when they open the modal and trigger the lazy loader there.
     if (Platform.isAndroid) prewarmBondedDevices();
+    else probeDesktopBt();
   });
+
+  // Desktop capability probe: 200 means the native Bluetooth transport is
+  // available (macOS); 501 / any failure means it is not, silently.
+  async function probeDesktopBt() {
+    try {
+      const resp = await kissBt.bondedDevices();
+      desktopBt = true;
+      if (Array.isArray(resp?.devices)) bondedDevices = resp.devices;
+    } catch {
+      desktopBt = false;
+    }
+  }
 
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
@@ -424,6 +463,8 @@
       allow_tx_from_governor: !!row.allow_tx_from_governor,
       gate_tx_to_is: !!row.gate_tx_to_is,
       allow_connected_mode: !!row.allow_connected_mode,
+      link_watchdog: row.link_watchdog || 'auto',
+      idle_reconnect_sec: row.idle_reconnect_sec ? String(row.idle_reconnect_sec) : '',
       // Carry the persisted enabled state forward. KISS PUT is a
       // full-resource replace, so echoing it keeps a disabled interface
       // disabled across edits to unrelated fields. Default true for
@@ -470,14 +511,14 @@
   // modal AND selects bluetooth. Re-runs only when the gate
   // conditions flip back to satisfied — operator can clear an error
   // and click Refresh to retry without remounting. Gated on
-  // Platform.isAndroid: on desktop the GET returns 501 by design, so
-  // we short-circuit with a friendly message instead of letting the
+  // unsupported platforms: the GET returns 501 by design there, so we
+  // short-circuit with a friendly message instead of letting the
   // operator stare at "HTTP 501".
   $effect(() => {
     if (form.type !== 'bluetooth' || !modalOpen) return;
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid && !desktopBt) {
       if (!bondedError) {
-        bondedError = 'Bluetooth interfaces can only be configured from the Android app.';
+        bondedError = 'Bluetooth interfaces are only available in the Android app and in the macOS build.';
       }
       return;
     }
@@ -766,6 +807,8 @@
       case 'usbserial':
         data.serial_device = form.serial_device || '';
         data.baud_rate = parseInt(form.baud_rate) || 9600;
+        data.link_watchdog = form.link_watchdog || 'auto';
+        data.idle_reconnect_sec = parseInt(form.idle_reconnect_sec) || 0;
         break;
       case 'ble-device':
         // BLE address stored in serial_device; no baud rate.
@@ -1066,12 +1109,14 @@
 {#snippet statusCell(_value, row)}
   {@const disabled = row.enabled === false}
   {@const channelDisabled = isChannelDisabled(row)}
-  <!-- Only tcp-client rows carry live connection diagnostics worth an
-       expandable panel (peer, reconnect count, backoff, last error,
-       Retry now). For server / serial / disabled rows the status is a
-       plain badge — the old expand popped a gray box that just echoed
-       the Endpoint column and buried the disable action (GRA-85). -->
-  {@const expandable = !disabled && !channelDisabled && row.type === 'tcp-client'}
+  <!-- tcp-client and serial-family rows carry live connection
+       diagnostics worth an expandable panel (peer, reconnect count,
+       backoff, last error, Retry/Reconnect now, serial RX/TX counters).
+       For server / disabled rows the status is a plain badge — the old
+       expand popped a gray box that just echoed the Endpoint column and
+       buried the disable action (GRA-85). -->
+  {@const isSerialFamily = row.type === 'serial' || row.type === 'bluetooth' || row.type === 'usbserial' || row.type === 'ble-device'}
+  {@const expandable = !disabled && !channelDisabled && (row.type === 'tcp-client' || isSerialFamily)}
   <div class="status-cell" data-tick={clockTick}>
     <!-- clockTick is in data-tick so any change triggers snippet
          re-render; that propagates to the countdownText call below. -->
@@ -1105,14 +1150,29 @@
     {/if}
     {#if expandable && expandedId === row.id}
       <div id={`status-detail-${row.id}`} class="status-detail" role="region" aria-label="Status detail">
-        <div class="detail-row"><span class="detail-label">Peer:</span> <span>{row.peer_addr || `${row.remote_host}:${row.remote_port}`}</span></div>
+        <div class="detail-row"><span class="detail-label">Peer:</span> <span>{row.peer_addr || (isSerialFamily ? row.serial_device : `${row.remote_host}:${row.remote_port}`)}</span></div>
         <div class="detail-row"><span class="detail-label">Connected since:</span> <span>{formatLocalTime(row.connected_since) || '—'}</span></div>
         <div class="detail-row"><span class="detail-label">Reconnect count:</span> <span>{row.reconnect_count || 0}</span></div>
         <div class="detail-row"><span class="detail-label">Backoff:</span> <span>{row.backoff_seconds || 0}s</span></div>
+        {#if isSerialFamily}
+          <div class="detail-row"><span class="detail-label">Bytes received:</span> <span>{row.rx_bytes || 0}</span></div>
+          <div class="detail-row"><span class="detail-label">Last data received:</span> <span>{formatLocalTime(row.last_rx_unix_ms) || '—'}</span></div>
+          <div class="detail-row"><span class="detail-label">Failed TX writes:</span> <span>{row.tx_write_errors || 0}</span></div>
+          {#if row.link_lines}
+            <div class="detail-row"><span class="detail-label">Port lines:</span> <span>{row.link_lines}</span></div>
+          {/if}
+          {#if row.last_session_end}
+            <div class="detail-row"><span class="detail-label">Last session ended:</span> <span>{row.last_session_end}</span></div>
+          {/if}
+        {/if}
         {#if row.last_error}
           <div class="detail-row detail-err"><span class="detail-label">Last error:</span> <span>{row.last_error}</span></div>
         {/if}
-        {#if canRetryNow(row.state)}
+        {#if isSerialFamily && (row.state === 'connected' || row.state === 'connecting')}
+          <div class="detail-actions">
+            <Button variant="secondary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>Reconnect now</Button>
+          </div>
+        {:else if canRetryNow(row.state)}
           <div class="detail-actions">
             <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>Retry now</Button>
           </div>
@@ -1341,6 +1401,24 @@
       >
         <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
+    {/if}
+    {#if form.type === 'serial' || form.type === 'bluetooth' || form.type === 'usbserial'}
+      <FormField
+        label="Stale-link watchdog"
+        id="kiss-link-watchdog"
+        hint="Reopens the port when the OS still shows it connected but no data arrives, for example after a Bluetooth radio is restarted. Auto turns it on for Bluetooth devices only."
+      >
+        <Select id="kiss-link-watchdog" bind:value={form.link_watchdog} options={linkWatchdogOptions} />
+      </FormField>
+      {#if form.link_watchdog !== 'off'}
+        <FormField
+          label="Reconnect after silence (seconds)"
+          id="kiss-idle-reconnect"
+          hint="Reopen the port after this many seconds with no received data. Leave blank for the default (180). Allowed range 30 to 86400."
+        >
+          <Input id="kiss-idle-reconnect" bind:value={form.idle_reconnect_sec} type="number" min={30} max={86400} placeholder="180" />
+        </FormField>
+      {/if}
     {/if}
     <FormField label="Channel" id="kiss-channel">
       {#if channels.length > 0}

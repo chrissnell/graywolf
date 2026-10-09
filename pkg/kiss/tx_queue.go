@@ -54,7 +54,11 @@ type txFrame struct {
 type instanceTxQueue struct {
 	ch      chan txFrame
 	stopped atomic.Bool
-	depth   int32 // current queue depth, approximate; atomic
+	// down gates the queue while the underlying link is not live
+	// (serial supervisor between sessions). Enqueue returns
+	// ErrBackendDown and the drainer discards stale frames.
+	down  atomic.Bool
+	depth int32 // current queue depth, approximate; atomic
 
 	// writer lifecycle.
 	wg     sync.WaitGroup
@@ -101,7 +105,7 @@ func (q *instanceTxQueue) SetObservers(onEnqueue func(), onDrop func(reason stri
 // returns ErrBackendBusy immediately, a stopped queue returns
 // ErrBackendDown. Never blocks on I/O.
 func (q *instanceTxQueue) Enqueue(frame []byte, frameID uint64) error {
-	if q.stopped.Load() {
+	if q.stopped.Load() || q.down.Load() {
 		if q.onDrop != nil {
 			q.onDrop("down")
 		}
@@ -124,6 +128,9 @@ func (q *instanceTxQueue) Enqueue(frame []byte, frameID uint64) error {
 		return ErrBackendBusy
 	}
 }
+
+// setDown opens (false) or closes (true) the link gate.
+func (q *instanceTxQueue) setDown(down bool) { q.down.Store(down) }
 
 // Close stops the writer goroutine. Idempotent. After Close the queue
 // returns ErrBackendDown for every subsequent Enqueue.
@@ -148,6 +155,14 @@ func (q *instanceTxQueue) drain(ctx context.Context) {
 				q.onDepth(d)
 			}
 			if q.broadcast == nil {
+				continue
+			}
+			if q.down.Load() {
+				// Link went down after this frame was queued; a stale
+				// frame must not be sent minutes later on reconnect.
+				if q.onDrop != nil {
+					q.onDrop("down")
+				}
 				continue
 			}
 			// The server's Broadcast path already serialises per-client

@@ -581,6 +581,44 @@ func TestKissReconnect_Endpoint(t *testing.T) {
 	}
 }
 
+// TestKissReconnect_SerialRow verifies the reconnect endpoint accepts
+// serial-family rows (it used to 409 everything but tcp-client, leaving
+// no way to force a stale bluetooth serial link to reopen) and that the
+// link_watchdog fields round-trip through create + list.
+func TestKissReconnect_SerialRow(t *testing.T) {
+	_, mgr, mux := newSerialTestServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"type":               "serial",
+		"serial_device":      "/dev/cu.graywolf-test-BT-nonexistent",
+		"baud_rate":          9600,
+		"channel":            1,
+		"mode":               "modem",
+		"link_watchdog":      "on",
+		"idle_reconnect_sec": 240,
+		"reconnect_init_ms":  60000,
+		"reconnect_max_ms":   60000,
+	})
+	rr := doPost(mux, "/api/kiss", body)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("create serial: %d %s", rr.Code, rr.Body.String())
+	}
+	var created dto.KissResponse
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatal(err)
+	}
+	if created.LinkWatchdog != "on" || created.IdleReconnectSec != 240 {
+		t.Fatalf("created watchdog fields = %q/%d, want on/240", created.LinkWatchdog, created.IdleReconnectSec)
+	}
+	if !pollRegistered(mgr, created.ID, time.Now().Add(2*time.Second)) {
+		t.Fatalf("serial interface %d not registered", created.ID)
+	}
+
+	if rec := doPost(mux, "/api/kiss/"+itoa(created.ID)+"/reconnect", nil); rec.Code != http.StatusOK {
+		t.Errorf("serial reconnect: want 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
 // newSerialTestServer returns a *Server wired with a real kiss.Manager and the
 // bogus device path used by serial KISS tests. The manager context and cleanup
 // are registered on t. Callers receive the server and a ready-to-use ServeMux.

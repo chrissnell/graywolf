@@ -12,13 +12,16 @@ package kiss
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
+	"github.com/chrissnell/graywolf/pkg/internal/serialopen"
 	"go.bug.st/serial"
 )
 
@@ -56,6 +59,18 @@ type SerialConfig struct {
 	// OnReload fires on every state transition so the wiring layer can
 	// rebuild the tx backend. Mirrors ClientConfig.OnReload.
 	OnReload func()
+	// Bluetooth marks the interface as bluetooth-backed (interface type
+	// "bluetooth"); it makes LinkWatchdog "auto" resolve to enabled.
+	Bluetooth bool
+	// LinkWatchdog is "auto" (default), "on" or "off". When active, the
+	// supervisor probes the fd, recycles the port after IdleReconnectSec
+	// of RX silence, opens with a timeout, and waits a settle delay
+	// before reopening. Write errors and manual reconnects always end
+	// the session regardless of this setting.
+	LinkWatchdog string
+	// IdleReconnectSec is the RX-silence threshold for the watchdog.
+	// Zero selects DefaultIdleReconnectSec.
+	IdleReconnectSec uint32
 	// OpenFunc, when non-nil, replaces the go.bug.st/serial open. Tests
 	// inject a fake returning an in-memory pipe. Mirrors
 	// ClientConfig.DialFunc (client.go:131).
@@ -66,7 +81,15 @@ type SerialConfig struct {
 // settings: 8 data bits, no parity, 1 stop bit, no flow control.
 // serial.Open returns serial.Port, an interface that satisfies io.ReadWriteCloser.
 func defaultSerialOpen(device string, baud uint32) (io.ReadWriteCloser, error) {
-	return serial.Open(device, &serial.Mode{
+	// A Bluetooth Classic address (macOS) is dialed through IOBluetooth,
+	// not a cu.* tty: the tty only works while macOS itself holds the link
+	// and goes silently dead after the radio restarts and reconnects.
+	if addr, ch, ok := ParseBluetoothAddress(device); ok && classicBluetoothNative {
+		return OpenClassicBluetooth(addr, ch)
+	}
+	// serialopen.Open sets close-on-exec so graywolf-modem (and any other
+	// child) cannot inherit the fd and keep the tty open after we close it.
+	return serialopen.Open(device, &serial.Mode{
 		BaudRate: int(baud),
 		DataBits: 8,
 		Parity:   serial.NoParity,
@@ -100,6 +123,29 @@ type SerialSupervisor struct {
 	backoffSeconds uint32
 	cancel         context.CancelFunc
 
+	// Session telemetry. cur is the live session (nil between sessions);
+	// the *Total / last* fields accumulate across finished sessions.
+	cur            *serialSession
+	rxBytesTotal   uint64
+	lastRxUnixMs   int64
+	lastSessionEnd string
+	txErrors       atomic.Uint64
+
+	// watchdog is the resolved LinkWatchdog setting. The durations below
+	// are unexported so tests can shrink them.
+	watchdog     bool
+	idle         time.Duration
+	probeEvery   time.Duration
+	settle       time.Duration
+	writeTimeout time.Duration
+	closeTimeout time.Duration
+	abandonGrace time.Duration
+	openTimeout  time.Duration
+
+	// txq is the per-instance TX queue, gated down while no session is
+	// live so governor TX gets ErrBackendDown instead of vanishing.
+	txq *instanceTxQueue
+
 	wakeBackoff chan struct{}
 	done        chan struct{}
 	logger      *slog.Logger
@@ -129,13 +175,34 @@ func NewSerial(cfg SerialConfig, srv *Server) *SerialSupervisor {
 		lg = slog.Default()
 	}
 	return &SerialSupervisor{
-		cfg:         cfg,
-		srv:         srv,
-		open:        serialOpenOrDefault(cfg),
-		state:       StateStopped,
-		wakeBackoff: make(chan struct{}, 1),
-		done:        make(chan struct{}),
-		logger:      lg,
+		cfg:          cfg,
+		srv:          srv,
+		open:         serialOpenOrDefault(cfg),
+		state:        StateStopped,
+		watchdog:     cfg.watchdogActive(),
+		idle:         cfg.idleTimeout(),
+		probeEvery:   serialProbeInterval,
+		settle:       serialSettle,
+		writeTimeout: instanceTxSocketDeadline,
+		closeTimeout: serialCloseTimeout,
+		abandonGrace: serialAbandonGrace,
+		openTimeout:  serialOpenTimeout,
+		wakeBackoff:  make(chan struct{}, 1),
+		done:         make(chan struct{}),
+		logger:       lg,
+	}
+}
+
+// attachTxQueue registers the per-instance TX queue. It starts gated
+// down; run() opens the gate while a session is live.
+func (s *SerialSupervisor) attachTxQueue(q *instanceTxQueue) {
+	s.txq = q
+	q.setDown(true)
+}
+
+func (s *SerialSupervisor) setTxDown(down bool) {
+	if s.txq != nil {
+		s.txq.setDown(down)
 	}
 }
 
@@ -172,9 +239,18 @@ func (s *SerialSupervisor) sleepWithWake(ctx context.Context, d time.Duration) b
 	}
 }
 
-// Reconnect short-circuits the current backoff wait. Safe to call
-// concurrently; coalesces (buffered size-1, non-blocking send).
+// Reconnect short-circuits the current backoff wait and, when a session
+// is live, ends it so the port is closed and reopened. This is the only
+// way out of a link the OS still reports as open but that no longer
+// carries data. Safe to call concurrently; coalesces (buffered size-1,
+// non-blocking send).
 func (s *SerialSupervisor) Reconnect() {
+	s.mu.Lock()
+	cur := s.cur
+	s.mu.Unlock()
+	if cur != nil {
+		cur.fail(endManual, "manual reconnect")
+	}
 	select {
 	case s.wakeBackoff <- struct{}{}:
 	default:
@@ -186,6 +262,16 @@ func (s *SerialSupervisor) Reconnect() {
 func (s *SerialSupervisor) Status() InterfaceStatus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	rx := s.rxBytesTotal
+	lastRx := s.lastRxUnixMs
+	lines := ""
+	if s.cur != nil {
+		lines = s.cur.linesString()
+		rx += s.cur.rxBytes.Load()
+		if s.cur.lastRx.Load() != 0 {
+			lastRx = s.cur.lastRxTime().UnixMilli()
+		}
+	}
 	return InterfaceStatus{
 		State:          s.state,
 		LastError:      s.lastError,
@@ -194,6 +280,11 @@ func (s *SerialSupervisor) Status() InterfaceStatus {
 		ConnectedSince: s.connectedSince,
 		ReconnectCount: s.reconnectCount,
 		BackoffSeconds: s.backoffSeconds,
+		RxBytes:        rx,
+		LastRxUnixMs:   lastRx,
+		TxWriteErrors:  s.txErrors.Load(),
+		LastSessionEnd: s.lastSessionEnd,
+		LinkLines:      lines,
 	}
 }
 
@@ -233,9 +324,10 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		}
 		s.setState(StateConnecting, "", 0)
 
-		port, err := s.open(s.cfg.Device, s.cfg.BaudRate)
+		port, err := s.openPort(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
+				s.setTxDown(true)
 				s.setState(StateStopped, "", 0)
 				return
 			}
@@ -255,7 +347,10 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		}
 
 		bo.Reset()
+		sess := newSerialSession(port, s.cfg.Device, s.logger,
+			s.writeTimeout, s.closeTimeout, &s.txErrors)
 		s.mu.Lock()
+		s.cur = sess
 		s.reconnectCount++
 		s.connectedSince = time.Now().UnixMilli()
 		s.backoffSeconds = 0
@@ -263,13 +358,23 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		if s.onReconnect != nil {
 			s.onReconnect()
 		}
+		s.setTxDown(false)
 		s.setState(StateConnected, "", 0)
 		s.logger.Info("kiss serial supervisor: connected",
-			"device", s.cfg.Device, "baud", s.cfg.BaudRate)
+			"device", s.cfg.Device, "baud", s.cfg.BaudRate,
+			"link_watchdog", s.watchdog)
 
-		serveErr := s.srv.ServeTransport(ctx, port)
+		serveErr := s.serve(ctx, sess)
+
+		s.setTxDown(true)
+		kind, reason := sess.endInfo()
 		s.mu.Lock()
+		s.cur = nil
 		s.connectedSince = 0
+		s.rxBytesTotal += sess.rxBytes.Load()
+		if sess.lastRx.Load() != 0 {
+			s.lastRxUnixMs = sess.lastRxTime().UnixMilli()
+		}
 		s.mu.Unlock()
 
 		if ctx.Err() != nil {
@@ -278,22 +383,161 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		}
 
 		errStr := "device closed"
-		if serveErr == nil {
+		switch {
+		case reason != "":
+			errStr = reason
+			s.logger.Warn("kiss serial session ended",
+				"device", s.cfg.Device, "reason", reason,
+				"rx_bytes", sess.rxBytes.Load(),
+				"session", time.Since(sess.start).Round(time.Second))
+		case serveErr == nil:
 			// Clean EOF (e.g. USB removal). Surface disconnected then
 			// fall into backoff to retry the device.
 			s.setState(StateDisconnected, errStr, 0)
 			s.logger.Info("kiss serial session ended cleanly", "device", s.cfg.Device)
-		} else {
-			errStr = serveErr.Error()
+		default:
+			errStr = "read error: " + serveErr.Error()
 			s.logger.Warn("kiss serial session ended", "device", s.cfg.Device, "err", serveErr)
 		}
+		s.mu.Lock()
+		s.lastSessionEnd = errStr
+		s.mu.Unlock()
+
+		if kind == endManual {
+			// Reconnect() also queued a wake token; drop it so the
+			// settle delay below still applies.
+			select {
+			case <-s.wakeBackoff:
+			default:
+			}
+		}
 		delay := bo.Next()
+		if s.watchdog && delay < s.settle {
+			delay = s.settle
+		}
 		s.mu.Lock()
 		s.backoffSeconds = uint32((delay + time.Second - 1) / time.Second)
 		s.mu.Unlock()
 		s.setState(StateBackoff, errStr, time.Now().Add(delay).UnixMilli())
 		if !s.sleepWithWake(ctx, delay) {
 			s.setState(StateStopped, "", 0)
+			return
+		}
+	}
+}
+
+// openPort runs the open callback in its own goroutine so a driver that
+// blocks in open() (macOS bluetooth cu.* nodes can) cannot wedge the
+// supervisor: ctx cancel and, when the watchdog is active, an open
+// timeout both return promptly. A port that opens after we gave up is
+// closed.
+func (s *SerialSupervisor) openPort(ctx context.Context) (io.ReadWriteCloser, error) {
+	type result struct {
+		port io.ReadWriteCloser
+		err  error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		p, err := s.open(s.cfg.Device, s.cfg.BaudRate)
+		ch <- result{p, err}
+	}()
+	reap := func() {
+		if r := <-ch; r.port != nil {
+			_ = r.port.Close()
+		}
+	}
+	var timeout <-chan time.Time
+	if s.watchdog {
+		t := time.NewTimer(s.openTimeout)
+		defer t.Stop()
+		timeout = t.C
+	}
+	select {
+	case r := <-ch:
+		return r.port, r.err
+	case <-ctx.Done():
+		go reap()
+		return nil, ctx.Err()
+	case <-timeout:
+		go reap()
+		return nil, fmt.Errorf("open timed out after %s", s.openTimeout)
+	}
+}
+
+// serve runs ServeTransport over sess until the transport fails, the
+// session is failed by a watchdog / write error / manual reconnect, or
+// ctx is cancelled. If the transport does not unwind within
+// abandonGrace of the port being closed (a wedged driver), the stuck
+// goroutine is abandoned so the supervisor can reopen.
+func (s *SerialSupervisor) serve(ctx context.Context, sess *serialSession) error {
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- s.srv.ServeTransport(ctx, sess) }()
+
+	monitorStop := make(chan struct{})
+	defer close(monitorStop)
+	go s.monitor(sess, monitorStop)
+
+	select {
+	case err := <-serveDone:
+		return err
+	case <-sess.failed:
+	case <-ctx.Done():
+		go func() { _ = sess.Close() }()
+	}
+	select {
+	case err := <-serveDone:
+		return err
+	case <-time.After(s.abandonGrace):
+		s.logger.Warn("kiss serial transport did not unwind after close; abandoning",
+			"device", s.cfg.Device, "grace", s.abandonGrace)
+		return nil
+	}
+}
+
+// monitor is the stale-link watchdog for one session. It never writes to
+// the port: it asks the kernel whether the fd is still backed by a live
+// device and recycles the port after a long stretch of RX silence.
+func (s *SerialSupervisor) monitor(sess *serialSession, stop <-chan struct{}) {
+	if !s.watchdog {
+		return
+	}
+	probe, canProbe := sess.prober()
+	if canProbe && probe() != nil {
+		// Platform cannot report modem status for this device; don't
+		// treat that as a dead link.
+		canProbe = false
+	}
+	tick := s.probeEvery
+	if s.idle/4 < tick {
+		tick = s.idle / 4
+	}
+	if tick <= 0 {
+		tick = time.Millisecond
+	}
+	t := time.NewTicker(tick)
+	defer t.Stop()
+	probeFails := 0
+	for {
+		select {
+		case <-stop:
+			return
+		case <-sess.failed:
+			return
+		case <-t.C:
+		}
+		if canProbe {
+			if err := probe(); err != nil {
+				probeFails++
+				if probeFails >= probeFailLimit {
+					sess.fail(endProbe, "link probe failed: "+err.Error())
+					return
+				}
+			} else {
+				probeFails = 0
+			}
+		}
+		if quiet := time.Since(sess.lastRxTime()); quiet > s.idle {
+			sess.fail(endIdle, fmt.Sprintf("no data received for %s", quiet.Round(time.Second)))
 			return
 		}
 	}

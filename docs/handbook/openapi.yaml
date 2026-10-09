@@ -1758,6 +1758,23 @@ definitions:
           already feeds the iGate via the RX fanout) and silently ignored
           there by the server.
         type: boolean
+      idle_reconnect_sec:
+        description: |-
+          IdleReconnectSec is the RX-silence threshold, in seconds, after
+          which the watchdog recycles the port. 0 selects the default (180).
+        type: integer
+      link_watchdog:
+        description: |-
+          LinkWatchdog selects the serial stale-link watchdog: "auto"
+          (default; on for bluetooth interfaces only), "on", or "off". It
+          recycles a serial port that the OS still reports as open but that
+          has stopped delivering data (e.g. a bluetooth radio that was
+          restarted). Ignored for tcp / tcp-client.
+        enum:
+          - auto
+          - "on"
+          - "off"
+        type: string
       local_only:
         description: |-
           LocalOnly, when set on a tcp (server-listen) interface, binds the
@@ -1818,7 +1835,20 @@ definitions:
         type: boolean
       id:
         type: integer
+      idle_reconnect_sec:
+        type: integer
       last_error:
+        type: string
+      last_rx_unix_ms:
+        type: integer
+      last_session_end:
+        type: string
+      link_lines:
+        description: |-
+          LinkLines is the serial port's modem status lines (DCD/DSR/CTS/RI),
+          a hint whether the OS considers a bluetooth serial channel up.
+        type: string
+      link_watchdog:
         type: string
       local_only:
         description: |-
@@ -1844,6 +1874,11 @@ definitions:
         type: integer
       retry_at_unix_ms:
         type: integer
+      rx_bytes:
+        description: |-
+          Serial link telemetry: cumulative RX bytes, last RX time, failed
+          TX writes, and why the previous session ended. Serial types only.
+        type: integer
       serial_device:
         type: string
       state:
@@ -1859,6 +1894,8 @@ definitions:
       tnc_ingress_burst:
         type: integer
       tnc_ingress_rate_hz:
+        type: integer
+      tx_write_errors:
         type: integer
       type:
         type: string
@@ -2812,20 +2849,11 @@ definitions:
       mark_dbfs:
         description: MarkDBFS is the mark-tone level in dBFS, floored at -60.
         type: number
-      sample_rate:
-        description: SampleRate is the capture device's sample rate, Hz.
-        type: integer
       space:
         description: Space is the legacy space-tone amplitude, scaled linearly to ~0-100.
         type: integer
       space_dbfs:
         description: SpaceDBFS is the space-tone level in dBFS, floored at -60.
-        type: number
-      speed_error_pct:
-        description: SpeedErrorPct is the decoder's measured baud-rate error, percent.
-        type: number
-      twist_db:
-        description: TwistDB is the absolute difference between MarkDBFS and SpaceDBFS.
         type: number
     type: object
   packetlog.Direction:
@@ -6272,7 +6300,7 @@ paths:
             $ref: '#/definitions/webtypes.ErrorResponse'
       security:
         - CookieAuth: []
-      summary: Reconnect a KISS tcp-client interface now
+      summary: Reconnect a KISS tcp-client or serial interface now
       tags:
         - kiss
   /kiss/available-serial-ports:
@@ -6361,7 +6389,7 @@ paths:
             $ref: '#/definitions/webtypes.ErrorResponse'
       security:
         - CookieAuth: []
-      summary: List bonded Bluetooth devices (Android only)
+      summary: List paired Bluetooth devices (Android and macOS)
       tags:
         - kiss
   /maps/catalog:

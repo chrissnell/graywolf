@@ -522,3 +522,50 @@ func TestKissResponse_Enabled_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestKissRequest_LinkWatchdog(t *testing.T) {
+	base := KissRequest{Type: "serial", SerialDevice: "/dev/cu.ICOMBTID-5200", BaudRate: 9600, Mode: configstore.KissModeTnc}
+
+	for _, v := range []string{"", "auto", "on", "off"} {
+		r := base
+		r.LinkWatchdog = v
+		if err := r.Validate(); err != nil {
+			t.Errorf("link_watchdog %q rejected: %v", v, err)
+		}
+	}
+	r := base
+	r.LinkWatchdog = "maybe"
+	if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "link_watchdog") {
+		t.Errorf("bad link_watchdog err = %v", err)
+	}
+	for _, sec := range []uint32{1, 29, 86401} {
+		r := base
+		r.IdleReconnectSec = sec
+		if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "idle_reconnect_sec") {
+			t.Errorf("idle_reconnect_sec %d err = %v", sec, err)
+		}
+	}
+	for _, sec := range []uint32{0, 30, 180, 86400} {
+		r := base
+		r.IdleReconnectSec = sec
+		if err := r.Validate(); err != nil {
+			t.Errorf("idle_reconnect_sec %d rejected: %v", sec, err)
+		}
+	}
+}
+
+func TestKissRequest_LinkWatchdog_ModelRoundtrip(t *testing.T) {
+	r := KissRequest{Type: "serial", SerialDevice: "/dev/rfcomm0", BaudRate: 9600, Mode: configstore.KissModeTnc}
+	if got := r.ToModel().LinkWatchdog; got != "auto" {
+		t.Errorf("empty link_watchdog -> %q, want auto", got)
+	}
+	r.LinkWatchdog, r.IdleReconnectSec = "on", 240
+	m := r.ToModel()
+	if m.LinkWatchdog != "on" || m.IdleReconnectSec != 240 {
+		t.Fatalf("ToModel = %q/%d", m.LinkWatchdog, m.IdleReconnectSec)
+	}
+	resp := KissFromModel(m)
+	if resp.LinkWatchdog != "on" || resp.IdleReconnectSec != 240 {
+		t.Fatalf("KissFromModel = %q/%d", resp.LinkWatchdog, resp.IdleReconnectSec)
+	}
+}

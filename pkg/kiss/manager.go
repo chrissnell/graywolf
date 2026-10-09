@@ -69,6 +69,21 @@ type InterfaceStatus struct {
 	// BackoffSeconds is the current backoff duration in seconds, used
 	// by the UI to render a countdown. Zero when not in backoff. Phase 4.
 	BackoffSeconds uint32
+	// RxBytes is the cumulative number of bytes received over the serial
+	// link since the interface started. Serial only.
+	RxBytes uint64
+	// LastRxUnixMs is the Unix millisecond time of the last received
+	// byte, zero when none has arrived. Serial only.
+	LastRxUnixMs int64
+	// TxWriteErrors is the cumulative count of failed writes to the
+	// serial link. Serial only.
+	TxWriteErrors uint64
+	// LastSessionEnd is why the previous serial session ended (read
+	// error, write error, idle, link probe, manual reconnect, ...).
+	LastSessionEnd string
+	// LinkLines is the latest modem status line snapshot of the serial
+	// port ("DCD=1 DSR=1 CTS=0 RI=0"), empty when it cannot be read.
+	LinkLines string
 }
 
 // Manager tracks running KISS TCP servers and supports hot start/stop.
@@ -644,6 +659,7 @@ func (m *Manager) StartSerial(parent context.Context, id uint32, cfg SerialConfi
 			onDrop = func(reason string) { m.onTxQueueDrop(ifaceID, reason) }
 		}
 		q.SetObservers(onEnqueue, onDrop, onDepth)
+		sup.attachTxQueue(q)
 		ms.txQueue = q
 	}
 

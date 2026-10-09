@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/kiss"
 )
 
 // Upper bounds on the TNC ingress rate fields. Values above these are
@@ -67,6 +68,15 @@ type KissRequest struct {
 	// kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
 	// modem. Default false; the far end owns the LAPB session state.
 	AllowConnectedMode bool `json:"allow_connected_mode"`
+	// LinkWatchdog selects the serial stale-link watchdog: "auto"
+	// (default; on for bluetooth interfaces only), "on", or "off". It
+	// recycles a serial port that the OS still reports as open but that
+	// has stopped delivering data (e.g. a bluetooth radio that was
+	// restarted). Ignored for tcp / tcp-client.
+	LinkWatchdog string `json:"link_watchdog,omitempty" enums:"auto,on,off"`
+	// IdleReconnectSec is the RX-silence threshold, in seconds, after
+	// which the watchdog recycles the port. 0 selects the default (180).
+	IdleReconnectSec uint32 `json:"idle_reconnect_sec,omitempty"`
 	// Tcp-client fields (Phase 4): RemoteHost:RemotePort is the dial
 	// target; ReconnectInitMs / ReconnectMaxMs size the supervisor's
 	// exponential-backoff reconnect schedule. Unused / zero for
@@ -99,6 +109,16 @@ const (
 func (r KissRequest) Validate() error {
 	if !configstore.ValidKissInterfaceType(r.Type) {
 		return fmt.Errorf("type must be tcp, tcp-client, serial, bluetooth, or usbserial")
+	}
+	switch r.LinkWatchdog {
+	case "", kiss.LinkWatchdogAuto, kiss.LinkWatchdogOn, kiss.LinkWatchdogOff:
+	default:
+		return fmt.Errorf("link_watchdog must be auto, on, or off")
+	}
+	if r.IdleReconnectSec != 0 &&
+		(r.IdleReconnectSec < kiss.MinIdleReconnectSec || r.IdleReconnectSec > kiss.MaxIdleReconnectSec) {
+		return fmt.Errorf("idle_reconnect_sec must be 0 (default) or between %d and %d",
+			kiss.MinIdleReconnectSec, kiss.MaxIdleReconnectSec)
 	}
 	if r.Type == configstore.KissTypeTCP && r.TcpPort <= 0 {
 		return fmt.Errorf("tcp_port is required for tcp interfaces")
@@ -219,6 +239,10 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 	if r.Enabled != nil {
 		enabled = *r.Enabled
 	}
+	linkWatchdog := r.LinkWatchdog
+	if linkWatchdog == "" {
+		linkWatchdog = kiss.LinkWatchdogAuto
+	}
 	ki := configstore.KissInterface{
 		InterfaceType:       r.Type,
 		Device:              r.SerialDevice,
@@ -232,6 +256,8 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 		AllowTxFromGovernor: allowTx,
 		GateTxToIs:          r.GateTxToIs,
 		AllowConnectedMode:  r.AllowConnectedMode,
+		LinkWatchdog:        linkWatchdog,
+		IdleReconnectSec:    r.IdleReconnectSec,
 		RemoteHost:          r.RemoteHost,
 		RemotePort:          r.RemotePort,
 		ReconnectInitMs:     initMs,
@@ -302,6 +328,8 @@ type KissResponse struct {
 	AllowTxFromGovernor bool   `json:"allow_tx_from_governor"`
 	GateTxToIs          bool   `json:"gate_tx_to_is"`
 	AllowConnectedMode  bool   `json:"allow_connected_mode"`
+	LinkWatchdog        string `json:"link_watchdog"`
+	IdleReconnectSec    uint32 `json:"idle_reconnect_sec"`
 	NeedsReconfig       bool   `json:"needs_reconfig"`
 	// Enabled mirrors KissInterface.Enabled so the Kiss page can show a
 	// "Disabled" state and offer a re-enable action. A disabled interface
@@ -325,6 +353,15 @@ type KissResponse struct {
 	ConnectedSince int64  `json:"connected_since,omitempty"`
 	ReconnectCount uint64 `json:"reconnect_count,omitempty"`
 	BackoffSeconds uint32 `json:"backoff_seconds,omitempty"`
+	// Serial link telemetry: cumulative RX bytes, last RX time, failed
+	// TX writes, and why the previous session ended. Serial types only.
+	RxBytes        uint64 `json:"rx_bytes,omitempty"`
+	LastRxUnixMs   int64  `json:"last_rx_unix_ms,omitempty"`
+	TxWriteErrors  uint64 `json:"tx_write_errors,omitempty"`
+	LastSessionEnd string `json:"last_session_end,omitempty"`
+	// LinkLines is the serial port's modem status lines (DCD/DSR/CTS/RI),
+	// a hint whether the OS considers a bluetooth serial channel up.
+	LinkLines string `json:"link_lines,omitempty"`
 }
 
 // isLoopbackHost reports whether a ListenAddr host binds loopback only.
@@ -357,6 +394,8 @@ func KissFromModel(m configstore.KissInterface) KissResponse {
 		AllowTxFromGovernor: m.AllowTxFromGovernor,
 		GateTxToIs:          m.GateTxToIs,
 		AllowConnectedMode:  m.AllowConnectedMode,
+		LinkWatchdog:        m.LinkWatchdog,
+		IdleReconnectSec:    m.IdleReconnectSec,
 		NeedsReconfig:       m.NeedsReconfig,
 		Enabled:             m.Enabled,
 		RemoteHost:          m.RemoteHost,

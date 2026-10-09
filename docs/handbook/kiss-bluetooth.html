@@ -90,10 +90,10 @@
       <span class="callout-icon">i</span>
       <div class="callout-body">
         <p>
-          This interface is available <strong>only on the Android tablet
-          build</strong> of graywolf. Linux, macOS, and Windows desktops
-          do not see Bluetooth as a KISS interface type &mdash; on those
-          platforms, use <a href="kiss-serial.html">KISS over Serial</a>
+          This interface type is available on the <strong>Android
+          tablet build</strong> and on the <strong>macOS build</strong>
+          (see <a href="#macos">Bluetooth on macOS</a>). On Linux and
+          Windows, use <a href="kiss-serial.html">KISS over Serial</a>
           instead, including for Bluetooth-paired TNCs that present
           themselves as a virtual serial port (e.g.&nbsp;<code>/dev/rfcomm0</code>
           on Linux).
@@ -217,6 +217,14 @@
     </p>
 
     <p>
+      Bluetooth interfaces also run the stale-link watchdog by default:
+      if the link stops delivering data for a while (180 seconds unless
+      changed), graywolf closes and re-opens it. See
+      <a href="kiss-serial.html#stale-link-watchdog">Bluetooth serial
+      ports and the stale-link watchdog</a>.
+    </p>
+
+    <p>
       If you unpair the TNC in Android Settings while graywolf is
       running, the interface card's status flips to
       <strong>Unpaired</strong>. Re-pair the device in Android Settings,
@@ -279,6 +287,43 @@
         </table>
       </div>
     </div>
+
+    <h2 id="macos">Bluetooth on macOS</h2>
+
+    <p>
+      On a Mac, choose <strong>Bluetooth (paired device)</strong> as the
+      interface type and pick the radio from the list of devices paired
+      with the Mac. Pair the radio first in
+      <strong>System Settings &rarr; Bluetooth</strong>. Graywolf then
+      connects straight to the radio's Serial Port service. It does not use
+      the <code>/dev/cu.*</code> device that macOS creates for the radio.
+    </p>
+
+    <p>
+      That matters for reconnecting. macOS only dials the radio through
+      that <code>/dev/cu.*</code> device when macOS itself set up the link.
+      If the radio restarts and reconnects to the Mac on its own, the
+      device stays silently dead until you re-pair. A native Bluetooth
+      interface instead notices when the radio drops, closes the link, and
+      dials the radio again. If the radio has already reconnected to the Mac
+      by itself, graywolf drops that link first, because the radio accepts
+      only one serial connection at a time.
+    </p>
+
+    <ul>
+      <li>The interface is always in TNC mode and has no baud rate, as on
+        Android.</li>
+      <li>Graywolf reads the radio's Serial Port channel from its Bluetooth
+        service record. To force a channel, enter the device as
+        <code>AA:BB:CC:DD:EE:FF#3</code> (address, <code>#</code>, channel).</li>
+      <li>macOS asks the app that starts graywolf (for example Terminal) for
+        Bluetooth permission the first time. Allow it, or the radio will
+        not connect.</li>
+      <li>Connecting through graywolf disconnects the radio from anything
+        else on the Mac that was using it, such as an audio profile.</li>
+      <li>This is built into the macOS release only. A graywolf built without
+        cgo hides the option.</li>
+    </ul>
 
     <h2>Notes</h2>
 

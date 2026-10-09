@@ -51,6 +51,11 @@ func (s *Server) attachKissStatus(out []dto.KissResponse) []dto.KissResponse {
 			out[i].ConnectedSince = is.ConnectedSince
 			out[i].ReconnectCount = is.ReconnectCount
 			out[i].BackoffSeconds = is.BackoffSeconds
+			out[i].RxBytes = is.RxBytes
+			out[i].LastRxUnixMs = is.LastRxUnixMs
+			out[i].TxWriteErrors = is.TxWriteErrors
+			out[i].LastSessionEnd = is.LastSessionEnd
+			out[i].LinkLines = is.LinkLines
 		}
 	}
 	return out
@@ -356,6 +361,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 			AllowConnectedMode:  ki.AllowConnectedMode,
 			GateTxToIs:          ki.GateTxToIs,
+			LinkWatchdog:        ki.LinkWatchdog,
+			IdleReconnectSec:    ki.IdleReconnectSec,
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            s.kissSerialOpenFunc,
 		})
@@ -382,6 +389,9 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 			AllowConnectedMode:  ki.AllowConnectedMode,
 			GateTxToIs:          ki.GateTxToIs,
+			Bluetooth:           true,
+			LinkWatchdog:        ki.LinkWatchdog,
+			IdleReconnectSec:    ki.IdleReconnectSec,
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            s.kissSerialOpenFunc,
 		})
@@ -407,6 +417,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 			AllowConnectedMode:  ki.AllowConnectedMode,
 			GateTxToIs:          ki.GateTxToIs,
+			LinkWatchdog:        ki.LinkWatchdog,
+			IdleReconnectSec:    ki.IdleReconnectSec,
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            s.kissSerialOpenFunc,
 		})
@@ -431,6 +443,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			AllowTxFromGovernor: ki.AllowTxFromGovernor,
 			AllowConnectedMode:  ki.AllowConnectedMode,
 			GateTxToIs:          ki.GateTxToIs,
+			LinkWatchdog:        ki.LinkWatchdog,
+			IdleReconnectSec:    ki.IdleReconnectSec,
 			OnReload:            s.notifyTxBackendReload,
 			OpenFunc:            kiss.OpenBLEDevice,
 		})
@@ -440,12 +454,14 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 	}
 }
 
-// reconnectKiss cancels the backoff wait on a running tcp-client and
-// dials immediately. Returns 200 on success, 404 when the interface
-// isn't registered with the manager (either deleted or not tcp-client),
-// or 409 when the interface exists but is not a tcp-client supervisor.
+// reconnectKiss reconnects a running tcp-client or serial-family
+// (serial, bluetooth, usbserial, ble-device) interface now: it cancels
+// any backoff wait and, for a serial interface with a live session,
+// closes and reopens the port. Returns 200 on success, 404 when the
+// interface isn't registered, or 409 when the interface exists but is not
+// a reconnectable supervisor (e.g. a tcp server) or is not running.
 //
-// @Summary  Reconnect a KISS tcp-client interface now
+// @Summary  Reconnect a KISS tcp-client or serial interface now
 // @Tags     kiss
 // @ID       reconnectKiss
 // @Param    id  path int true "KISS interface id"
@@ -465,16 +481,22 @@ func (s *Server) reconnectKiss(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kiss manager unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	// Verify the row is actually a tcp-client before asking the
-	// manager — a server-listen row would hit the "not a tcp-client"
+	// Verify the row is a reconnectable supervisor before asking the
+	// manager — a server-listen row would hit the "not reconnectable"
 	// branch inside the manager and we'd still want to return 409.
 	ki, err := s.store.GetKissInterface(r.Context(), id)
 	if err != nil || ki == nil {
 		notFound(w)
 		return
 	}
-	if ki.InterfaceType != configstore.KissTypeTCPClient {
-		http.Error(w, "interface is not a tcp-client", http.StatusConflict)
+	switch ki.InterfaceType {
+	case configstore.KissTypeTCPClient,
+		configstore.KissTypeSerial,
+		configstore.KissTypeBluetooth,
+		configstore.KissTypeUsbSerial,
+		configstore.KissTypeBLEDevice:
+	default:
+		http.Error(w, "interface is not reconnectable", http.StatusConflict)
 		return
 	}
 	if err := s.kissManager.Reconnect(id); err != nil {

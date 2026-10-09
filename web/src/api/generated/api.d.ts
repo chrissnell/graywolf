@@ -1042,7 +1042,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List bonded Bluetooth devices (Android only) */
+        /** List paired Bluetooth devices (Android and macOS) */
         get: operations["getBondedBtDevices"];
         put?: never;
         post?: never;
@@ -1097,7 +1097,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reconnect a KISS tcp-client interface now */
+        /** Reconnect a KISS tcp-client or serial interface now */
         post: operations["reconnectKiss"];
         delete?: never;
         options?: never;
@@ -3161,6 +3161,20 @@ export interface components {
              */
             gate_tx_to_is?: boolean;
             /**
+             * @description IdleReconnectSec is the RX-silence threshold, in seconds, after
+             *     which the watchdog recycles the port. 0 selects the default (180).
+             */
+            idle_reconnect_sec?: number;
+            /**
+             * @description LinkWatchdog selects the serial stale-link watchdog: "auto"
+             *     (default; on for bluetooth interfaces only), "on", or "off". It
+             *     recycles a serial port that the OS still reports as open but that
+             *     has stopped delivering data (e.g. a bluetooth radio that was
+             *     restarted). Ignored for tcp / tcp-client.
+             * @enum {string}
+             */
+            link_watchdog?: "auto" | "on" | "off";
+            /**
              * @description LocalOnly, when set on a tcp (server-listen) interface, binds the
              *     KISS listener to loopback (127.0.0.1) instead of all interfaces
              *     (0.0.0.0). The intended use is an on-device iGate client (a KISS
@@ -3202,7 +3216,16 @@ export interface components {
             enabled?: boolean;
             gate_tx_to_is?: boolean;
             id?: number;
+            idle_reconnect_sec?: number;
             last_error?: string;
+            last_rx_unix_ms?: number;
+            last_session_end?: string;
+            /**
+             * @description LinkLines is the serial port's modem status lines (DCD/DSR/CTS/RI),
+             *     a hint whether the OS considers a bluetooth serial channel up.
+             */
+            link_lines?: string;
+            link_watchdog?: string;
             /**
              * @description LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
              *     listens on loopback only. Derived from the ListenAddr host.
@@ -3218,6 +3241,11 @@ export interface components {
             remote_host?: string;
             remote_port?: number;
             retry_at_unix_ms?: number;
+            /**
+             * @description Serial link telemetry: cumulative RX bytes, last RX time, failed
+             *     TX writes, and why the previous session ended. Serial types only.
+             */
+            rx_bytes?: number;
             serial_device?: string;
             /**
              * @description Per-interface runtime status (Phase 4). Surfaced verbatim from
@@ -3230,6 +3258,7 @@ export interface components {
             tcp_port?: number;
             tnc_ingress_burst?: number;
             tnc_ingress_rate_hz?: number;
+            tx_write_errors?: number;
             type?: string;
         };
         "dto.LocalBounds": {
@@ -3856,16 +3885,10 @@ export interface components {
             mark?: number;
             /** @description MarkDBFS is the mark-tone level in dBFS, floored at -60. */
             mark_dbfs?: number;
-            /** @description SampleRate is the capture device's sample rate, Hz. */
-            sample_rate?: number;
             /** @description Space is the legacy space-tone amplitude, scaled linearly to ~0-100. */
             space?: number;
             /** @description SpaceDBFS is the space-tone level in dBFS, floored at -60. */
             space_dbfs?: number;
-            /** @description SpeedErrorPct is the decoder's measured baud-rate error, percent. */
-            speed_error_pct?: number;
-            /** @description TwistDB is the absolute difference between MarkDBFS and SpaceDBFS. */
-            twist_db?: number;
         };
         /** @enum {string} */
         "packetlog.Direction": "RX" | "TX" | "IS";

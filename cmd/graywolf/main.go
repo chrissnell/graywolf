@@ -20,6 +20,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/logbuffer"
+	"github.com/chrissnell/graywolf/pkg/mainthread"
 )
 
 // Version and GitCommit are injected at build time via -ldflags. Both
@@ -36,6 +37,13 @@ func fullVersion() string {
 }
 
 func main() {
+	// macOS Bluetooth (IOBluetooth) delivers its callbacks on the main
+	// thread's run loop, so the program body runs off the main thread.
+	// Elsewhere this simply calls realMain.
+	mainthread.Run(realMain)
+}
+
+func realMain() {
 	// Pre-flag-parse logger: subcommands (auth, version) only need a
 	// minimal handler. The full logbuffer-wrapped handler is constructed
 	// after ParseFlags so we know cfg.DBPath and cfg.LogBufferRamdisk.

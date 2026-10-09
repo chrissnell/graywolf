@@ -28,23 +28,25 @@ type BondedBtDevicesResponse struct {
 
 // BondedBtDevicesSource is the narrow surface the bonded-BT handler
 // consumes. The Android build wires this through the platformsvc client
-// (see pkg/app/btsource_android.go); desktop builds leave it nil and the
-// handler returns 501 Not Implemented.
+// (see pkg/app/btsource_android.go) and macOS builds with cgo through
+// IOBluetooth (pkg/app/btsource_darwin.go); other builds leave it nil and
+// the handler returns 501 Not Implemented, which the UI uses to hide the
+// Bluetooth interface type.
 type BondedBtDevicesSource interface {
 	BondedBtDevices(ctx context.Context) ([]BondedBtDevice, error)
 }
 
 // SetBtSource installs the Bluetooth bonded-devices source
-// post-construction. Called from pkg/app on Android builds; remains nil
-// elsewhere so the handler returns 501 on non-Android platforms.
+// post-construction. Called from pkg/app; remains nil on platforms without
+// a Bluetooth transport so the handler returns 501.
 func (s *Server) SetBtSource(src BondedBtDevicesSource) { s.btSource = src }
 
-// handleGetBondedBtDevices returns the bonded Bluetooth devices visible
-// to the Android platform service. On non-Android builds (no source
-// wired) it returns 501 Not Implemented; on Android the response body is
+// handleGetBondedBtDevices returns the paired Bluetooth devices visible
+// to the Android platform service or, on macOS, to IOBluetooth. Without a
+// source it returns 501 Not Implemented; otherwise the response body is
 // {"devices": [...]}. An empty bond set returns an empty array, never null.
 //
-// @Summary  List bonded Bluetooth devices (Android only)
+// @Summary  List paired Bluetooth devices (Android and macOS)
 // @Tags     kiss
 // @ID       getBondedBtDevices
 // @Produce  json
@@ -56,7 +58,7 @@ func (s *Server) SetBtSource(src BondedBtDevicesSource) { s.btSource = src }
 func (s *Server) handleGetBondedBtDevices(w http.ResponseWriter, r *http.Request) {
 	if s.btSource == nil {
 		writeJSON(w, http.StatusNotImplemented, webtypes.ErrorResponse{
-			Error: "Bluetooth is only available on the Android platform service",
+			Error: "Bluetooth is only available on Android and in the macOS build",
 		})
 		return
 	}

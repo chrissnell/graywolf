@@ -292,6 +292,53 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{seria
       No daemon restart is required.
     </p>
 
+    <h3 id="stale-link-watchdog">Bluetooth serial ports and the stale-link watchdog</h3>
+
+    <p>
+      A Bluetooth radio that appears as a serial port (for example
+      <code>/dev/cu.ICOMBTID-5200</code> on macOS or
+      <code>/dev/rfcomm0</code> on Linux) can leave the port open in the
+      operating system after the radio is restarted, even though the
+      radio link underneath is gone or has been re-established on a new
+      channel. Nothing is received and nothing you send reaches the
+      radio, yet the port never reports an error.
+    </p>
+
+    <p>
+      To recover from this without re-pairing, the serial interface has a
+      <strong>Stale-link watchdog</strong> setting:
+    </p>
+
+    <ul>
+      <li><strong>Auto</strong> (default) &mdash; on for Bluetooth
+        interfaces (a Bluetooth interface type, or a device path that
+        looks like a Bluetooth serial port), off for everything
+        else.</li>
+      <li><strong>On</strong> / <strong>Off</strong> &mdash; force it for
+        any serial interface.</li>
+    </ul>
+
+    <p>
+      When active, graywolf checks the port without sending anything to
+      the radio, and closes and re-opens the port if no data has been
+      received for <strong>Reconnect after silence</strong> seconds
+      (default 180, range 30&ndash;86400). The check applies to received
+      data only, so a quiet channel will cause a brief reconnect every
+      interval; raise the value if that bothers you. A hung open is also
+      abandoned after 45 seconds, and a short pause precedes each
+      reopen so the operating system can release the old link.
+    </p>
+
+    <p>
+      Independent of that setting, a failed or stuck write to the port
+      ends the session and reconnects (transmit requests are refused
+      while the link is down rather than silently lost), and the
+      <strong>Reconnect now</strong> button in the interface's status
+      detail closes and re-opens the port immediately. The status detail
+      also shows bytes received, the time of the last received data,
+      failed transmit writes, and why the previous session ended.
+    </p>
+
     <h2>Troubleshooting</h2>
 
     <h3>Linux permission denied (EACCES)</h3>

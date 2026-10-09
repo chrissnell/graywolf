@@ -2036,3 +2036,104 @@ Source: [`../../pkg/kiss/manager.go`](../../pkg/kiss/manager.go)
 (`stopManaged`, `Manager.Start`, `managedServer.serveDone`,
 `serveShutdownGrace`);
 [`../../pkg/kiss/manager_rebind_test.go`](../../pkg/kiss/manager_rebind_test.go).
+
+### 68. A serial KISS session must end on write failure, manual reconnect, or (watched links) RX silence -- never only on a read error
+
+`SerialSupervisor.run` used to return to its backoff/retry loop only when
+`ServeTransport` returned, i.e. when `Read` errored. A macOS Bluetooth
+`/dev/cu.*` node (or an `rfcomm` tty) can stay open and valid after the radio
+restarts: `go.bug.st/serial` sets `CLOCAL` so carrier loss raises no hangup, and
+its `Read` blocks in `select` with no timeout. The supervisor stayed
+`connected`, RX was silent, and TX writes (previously logged at Debug and
+dropped, with the tx queue still accepting frames) went nowhere. Re-pairing
+was the only recovery.
+
+Every serial session is therefore wrapped in a `serialSession`
+([`../../pkg/kiss/serial_link.go`](../../pkg/kiss/serial_link.go)) and
+`SerialSupervisor.serve` ends it when any of these happen:
+
+- a write error, short write, or write exceeding `writeTimeout` (always on);
+- `SerialSupervisor.Reconnect()` while connected (always on; the
+  `POST /api/kiss/{id}/reconnect` endpoint accepts serial-family rows);
+- the **link watchdog** (`kiss_interfaces.link_watchdog` = `auto`/`on`/`off`;
+  `auto` resolves on for type `bluetooth` or `kiss.IsBluetoothSerialPath`):
+  two failed non-writing modem-status probes, or no received byte for
+  `idle_reconnect_sec` (default 180). The watchdog also bounds `open()`
+  (45s) and enforces a settle delay before reopening.
+
+Rules that follow from this:
+
+- The watchdog **never writes** to the port. A stray byte to a TNC could key
+  the radio; liveness is the kernel probe plus RX silence only.
+- `Close()` is bounded (`closeTimeout`) and `serve()` abandons a transport
+  that does not unwind within `abandonGrace`, so a wedged driver cannot stall
+  the supervisor or `Manager.stopManaged` (invariant 67 blocks on `close()`).
+- `ServeTransport` must keep receiving the **supervisor's** long-lived
+  context, not a per-session one: `startIngressDrain` is a `sync.Once` bound
+  to the first context it sees. End a session by closing the port, not by
+  cancelling a derived context.
+- The per-instance tx queue is gated (`instanceTxQueue.setDown`) while no
+  session is live, so the dispatcher gets `ErrBackendDown` and frames queued
+  before a drop are discarded rather than sent minutes later.
+- `link_watchdog` / `idle_reconnect_sec` must be set in **both** dispatch
+  sites (invariant 34): `wiring.go` `kissComponent` and `webapi/kiss.go`
+  `notifyKissManager`, for every `StartSerial` arm.
+- **Serial fds must be close-on-exec.** `go.bug.st/serial` opens without
+  `O_CLOEXEC`, so `graywolf-modem` (spawned/respawned by `modembridge` at any
+  time) inherited the open `/dev/cu.*` fd. The child then kept the tty open
+  after graywolf "closed" it: every watchdog recycle, hot reload, and even
+  disabling the interface left the macOS bluetooth link attached to the same
+  dead RFCOMM channel, and only quitting graywolf (or re-pairing) released
+  it. Open serial ports through
+  [`../../pkg/internal/serialopen`](../../pkg/internal/serialopen/serialopen.go)
+  (`serialopen.Open`), never `serial.Open` directly. Diagnose with
+  `lsof /dev/cu.X`: only the graywolf PID may appear, not `graywolf-modem`.
+  `TestOpenSetsCloseOnExec` / `TestOpenedPortNotInheritedByChild` guard it
+  against a go.bug.st upgrade changing the internals it reads.
+
+Source: [`../../pkg/kiss/serial.go`](../../pkg/kiss/serial.go)
+(`SerialSupervisor.run`, `serve`, `monitor`, `openPort`, `Reconnect`),
+[`../../pkg/kiss/serial_link.go`](../../pkg/kiss/serial_link.go),
+[`../../pkg/kiss/tx_queue.go`](../../pkg/kiss/tx_queue.go) (`setDown`);
+tests in [`../../pkg/kiss/serial_link_test.go`](../../pkg/kiss/serial_link_test.go).
+
+### 69. macOS Bluetooth Classic is dialed through IOBluetooth, and its callbacks need the main thread's run loop
+
+A paired Classic radio appears on macOS as `/dev/cu.<name>`, but that
+pseudo-serial port only dials the radio when macOS set the link up itself.
+When the radio restarts and reconnects on its own, macOS treats it as an
+*incoming* RFCOMM connection (`RFCOMM_ConnectInd`, bound to
+`Bluetooth-Incoming-Port`), opening the cu node never dials out
+(`bluetoothd` logs no `BTSerialPort Connecting to RFCOMM`), and the port is
+silently dead until the device is re-paired. The radio also accepts only one
+serial connection, so a radio-initiated link makes a Mac-initiated dial fail
+(`RFCOMM Channel connect failure 913`).
+
+So a `bluetooth` interface whose device is an address (`AA:BB:..`, optional
+`#channel`) is opened by `kiss.OpenClassicBluetooth`
+([`../../pkg/kiss/rfcomm_darwin.m`](../../pkg/kiss/rfcomm_darwin.m), cgo,
+`darwin && cgo`; other builds get `rfcomm_stub.go`). `defaultSerialOpen`
+routes to it, so no wiring-site change is needed. Rules:
+
+- **IOBluetooth delivers every delegate callback on the process main thread's
+  run loop, whichever thread opened the channel.** A Go program does not run
+  it, so without help the open "succeeds" in `bluetoothd` and the app never
+  hears about it. `cmd/graywolf/main.go` therefore runs its body through
+  [`../../pkg/mainthread`](../../pkg/mainthread/mainthread_darwin.go)
+  (`mainthread.Run`: `LockOSThread` in `init`, body in a goroutine, CF run loop
+  on the main thread). Any new binary or test that opens Bluetooth must do the
+  same; `OpenClassicBluetooth` returns an error if the loop is not running.
+- Do not trust `IOBluetoothSDPServiceRecord.getRFCOMMChannelID`: it returned
+  the wrong channel for an Icom ID-5200 (1 for a record whose protocol
+  descriptor list says 3). The channel is parsed from the
+  ProtocolDescriptorList, for the record with Serial Port class 0x1101.
+- Before dialing, an existing baseband link is closed (the radio-initiated one)
+  and the open waits ~1.5s. EOF on the pipe means the radio dropped, which
+  ends the session so `SerialSupervisor` redials. The auto link watchdog is
+  off for these addresses (`nativeBluetoothDevice`); `on` still forces it.
+- The device list for the UI comes from `GET /api/kiss/bonded-bt-devices`
+  (`pkg/app/btsource_darwin.go`); a 501 there is how the UI knows to hide the
+  Bluetooth type.
+
+Manual check against real hardware (skipped in CI):
+`GRAYWOLF_BT_ADDR=AA:BB:.. go test ./pkg/kiss -run Hardware -v`.
