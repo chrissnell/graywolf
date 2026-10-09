@@ -8,6 +8,7 @@
   import PageHeader from '../components/PageHeader.svelte';
   import PacketLogViewer from '../components/PacketLogViewer.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
+  import { kissLinkStatus, kissTransportLabel } from '../lib/kissDashboard.js';
 
   let packets = $state([]);
   let status = $state(null);
@@ -15,6 +16,12 @@
   let beacons = $state([]);
   let stationCallsign = $state('');
   let audioDevices = $state([]);
+  let kissInterfaces = $state([]);
+  let kissStatusAvailable = $state(false);
+  let kissUpdatedAt = $state(0);
+  let now = $state(Date.now());
+  let loadSequence = 0;
+  let kissFresh = $derived(kissStatusAvailable && now - kissUpdatedAt < 15000);
   let pollTimer = $state(null);
 
   let offline = $derived(!$online);
@@ -30,6 +37,7 @@
       status = null;
       position = null;
       packets = [];
+      kissStatusAvailable = false;
     }
   });
 
@@ -90,16 +98,26 @@
     loadBeacons();
     loadStationCallsign();
     loadAudioDevices();
-    pollTimer = setInterval(loadData, 5000);
+    pollTimer = setInterval(() => { now = Date.now(); loadData(); }, 5000);
     return () => clearInterval(pollTimer);
   });
 
   async function loadData() {
-    const [pkts, pos, st] = await Promise.allSettled([
+    const sequence = ++loadSequence;
+    const [pkts, pos, st, kiss] = await Promise.allSettled([
       api.get('/packets?limit=20'),
       api.get('/position'),
       api.get('/status'),
+      api.get('/kiss'),
     ]);
+    // Never keep an old green link after a failed refresh or server loss.
+    if (!$online || sequence !== loadSequence) return;
+    kissStatusAvailable = kiss.status === 'fulfilled' && Array.isArray(kiss.value);
+    if (kissStatusAvailable) {
+      kissInterfaces = kiss.value;
+      kissUpdatedAt = Date.now();
+      now = kissUpdatedAt;
+    }
     // Auto-refresh gates only the packet feed (its toolbar owns the toggle),
     // so the operator can freeze the log to read it while the status cards
     // and position keep updating. See the toolbarToggles wiring below.
@@ -232,7 +250,7 @@
   </div>
 {/if}
 
-{#if !offline}
+{#if !offline && status?.channels?.some(ch => !!ch.input_device_id)}
   <div class="readiness-row">
     <div class="ready-chip" class:ok={hasInput}>
       <span class="ready-dot">{hasInput ? '\u25CF' : '\u25CB'}</span>
@@ -250,17 +268,35 @@
   {#if status?.channels?.length}
     {#each status.channels as ch}
       {@const channelBeacons = beaconsByChannel[ch.id] || []}
-      {@const audioPeak = ch.device_peak_dbfs || ch.audio_peak}
+      {@const hasAudio = !!ch.input_device_id}
+      {@const channelKiss = kissInterfaces.filter(iface => iface.mode === 'tnc' && iface.channel === ch.id)}
+      {@const audioPeak = ch.device_peak_dbfs ?? ch.audio_peak}
       <div class="ch-card">
         <div class="ch-header">
           <span class="ch-title">CH{ch.id}: {ch.name}</span>
-          <span class="ch-modem">{ch.modem_type.toUpperCase()} {ch.bit_rate} bd</span>
+          <span class="ch-modem">{hasAudio ? `${ch.modem_type.toUpperCase()} ${ch.bit_rate} bd` : 'KISS · TNC'}</span>
         </div>
 
+        {#if !hasAudio}
+          <div class="kiss-links" aria-label="KISS connection status" aria-live="polite">
+            {#each channelKiss as iface (iface.id)}
+              {@const link = kissLinkStatus(iface, kissFresh)}
+              <div class="kiss-link" title={kissFresh ? (iface.last_error || '') : ''}>
+                <span class="kiss-state {link.tone}"><span class="kiss-dot"></span>{link.label}</span>
+                <span class="kiss-transport">KISS · {kissTransportLabel(iface.type)}{channelKiss.length > 1 ? ` · #${iface.id}` : ''}</span>
+              </div>
+            {:else}
+              <span class="kiss-state unknown"><span class="kiss-dot"></span>{kissFresh ? 'No TNC configured' : 'Status unavailable'}</span>
+            {/each}
+          </div>
+        {/if}
+
         <div class="ch-indicators">
+          {#if hasAudio}
           <span class="indicator" class:active={ch.dcd_state}>
             <span class="ind-dot dcd"></span> DCD
           </span>
+          {/if}
           <span class="indicator" class:active={rxActive[ch.id]}>
             <span class="ind-dot rx"></span> RX
           </span>
@@ -269,17 +305,19 @@
           </span>
         </div>
 
+        {#if hasAudio}
         <div class="ch-audio">
           <div class="level-bar">
             <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
           </div>
           <span class="level-value">{formatPeak(audioPeak)}</span>
         </div>
+        {/if}
 
         <div class="ch-stats">
           <span>RX: <strong>{ch.rx_frames || 0}</strong></span>
           <span>TX: <strong>{ch.tx_frames || 0}</strong></span>
-          <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          {#if hasAudio}<span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>{/if}
         </div>
 
         {#if channelBeacons.length > 0}
@@ -425,6 +463,8 @@
     display: flex;
     justify-content: space-between;
     align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
   }
   .ch-title {
     font-size: 15px;
@@ -436,6 +476,15 @@
     color: var(--color-text-dim);
     letter-spacing: 0.03em;
   }
+
+  .kiss-links { display: flex; flex-direction: column; gap: 8px; }
+  .kiss-link { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+  .kiss-state { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--color-text-muted); }
+  .kiss-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
+  .kiss-state.connected { color: var(--color-success, #3fb950); }
+  .kiss-state.pending { color: var(--color-warning, #d29922); }
+  .kiss-state.disconnected { color: var(--color-danger, #f85149); }
+  .kiss-transport { color: var(--color-text-dim); font-size: var(--text-xs); }
 
   /* ── DCD / RX / TX indicators ─────────────────── */
   .ch-indicators {
