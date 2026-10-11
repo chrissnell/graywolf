@@ -66,7 +66,7 @@
 
   <main class="content">
     <h1>Beacons</h1>
-    <p class="subtitle">Position reports, objects, trackers, and custom beacons</p>
+    <p class="subtitle">Position reports, objects, trackers, weather, and custom beacons</p>
 
     <p>
       Beacons are periodic APRS transmissions that announce your station&rsquo;s
@@ -110,12 +110,135 @@
               <td>GPS-driven position beacon with SmartBeacon rate adaptation. For mobile stations.</td>
             </tr>
             <tr>
+              <td><code>weather</code></td>
+              <td>Positioned APRS weather report from a Davis or Peet Bros serial console or a standard two-line <code>WxNow.txt</code> file.</td>
+            </tr>
+            <tr>
               <td><code>custom</code></td>
               <td>Raw APRS info field. Full control over the transmitted packet content.</td>
             </tr>
             <tr>
               <td><code>igate</code></td>
               <td>iGate status beacon. Automatically includes iGate statistics in the comment.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <h2 id="weather-sources">Weather sources</h2>
+
+    <p>
+      Weather hardware and file adapters produce the same internal observation.
+      Graywolf then performs the unit conversions and APRS Weather encoding in
+      one place before sending the positioned report through RF or APRS-IS. The hardware protocol is therefore not coupled to the APRS
+      packet format.
+    </p>
+
+    <h3>Davis serial</h3>
+
+    <p>
+      The native Davis source talks directly to a Vantage console through its
+      WeatherLink serial interface. It uses the console&rsquo;s normal
+      <code>19200 8N1</code> settings, wakes it with a line feed, sends
+      <code>LPS 3 2</code>, verifies the CRC-16 of both 99-byte packets, and
+      merges the alternating LOOP and LOOP2 measurements. Requesting two
+      packets obtains a fresh complete observation without starting the
+      ten-minute <code>LPS 3 250</code> stream used by continuously-running
+      embedded clients.
+    </p>
+
+    <p>
+      Select the serial device and the rain collector fitted to the station:
+      <code>0.2 mm</code> or <code>0.01 inch</code> per bucket tip. The driver
+      handles Davis invalid-value sentinels and converts temperature, pressure,
+      wind and rain to the hardware-independent SI observation before APRS
+      encoding. A missing console, timeout, NAK, malformed packet, or bad CRC
+      aborts that beacon fire rather than transmitting stale measurements.
+    </p>
+
+    <h3>Peet Bros Ultimeter serial</h3>
+
+    <p>
+      The native Peet Bros source reads the console&rsquo;s continuous serial
+      output at the normal <code>2400 8N1</code> settings. It accepts both
+      Data Logger records beginning with <code>!!</code> and Packet Mode
+      records beginning with <code>$ULTW</code>. Data Logger mode is preferable
+      for scheduled beacons because records arrive continuously; Packet Mode
+      emits only once every five minutes and may therefore miss Graywolf&rsquo;s
+      bounded serial-read window.
+    </p>
+
+    <p>
+      Select the serial device, baud rate, and the rain-counter unit configured
+      on the Ultimeter: <code>0.01 inch</code> for the normal imperial counter
+      or <code>0.1 mm</code> for a console using the metric collector setting.
+      Graywolf validates the fixed-width hexadecimal record, converts its
+      temperature, pressure, humidity, wind, gust, and daily-rain fields into
+      the common observation, and then uses the same APRS Weather encoder as
+      Davis and WxNow.txt.
+    </p>
+
+    <h3>WxNow.txt</h3>
+
+    <p>
+      The file source is the manufacturer-neutral handoff for third-party
+      weather software. Graywolf re-reads it at every scheduled transmission,
+      decodes it into the same observation model, then uses the common APRS
+      encoder.
+    </p>
+
+    <pre><code>Feb 01 2009 12:34
+272/010g006t069r010p030P020h61b10150</code></pre>
+
+    <p>
+      The first non-empty line must use <code>Mon DD YYYY HH:MM</code>. The
+      second must be an APRS complete weather report. Graywolf checks the
+      timestamp&rsquo;s format but does not currently reject old timestamps;
+      the weather program remains responsible for updating the file. The
+      file path must be readable by the account running the Graywolf service.
+    </p>
+
+    <p>
+      Choose either the live GPS fix or fixed latitude/longitude. Graywolf
+      emits an uncompressed positioned report with the APRS weather symbol
+      (<code>_</code>) and places the encoded weather fields immediately after
+      it. Weather beacons intentionally omit altitude, PHG, static comments,
+      and <code>comment_cmd</code> so nothing is inserted ahead of the weather
+      fields.
+    </p>
+
+    <div class="box">
+      <div class="box-body">
+        <table>
+          <thead>
+            <tr><th>Field</th><th>Value</th><th>Description</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>weather_source</code></td>
+              <td><code>davis_serial</code>, <code>peet_serial</code>, or <code>wxnow_file</code></td>
+              <td>Observation source adapter.</td>
+            </tr>
+            <tr>
+              <td><code>weather_path</code></td>
+              <td>&mdash;</td>
+              <td>Absolute path to the two-line <code>WxNow.txt</code> file.</td>
+            </tr>
+            <tr>
+              <td><code>weather_device</code></td>
+              <td>&mdash;</td>
+              <td>Davis or Peet Bros serial device, for example <code>/dev/ttyUSB0</code>.</td>
+            </tr>
+            <tr>
+              <td><code>weather_baud</code></td>
+              <td><code>19200</code> or <code>2400</code></td>
+              <td>Davis and Peet Bros console serial speeds, respectively.</td>
+            </tr>
+            <tr>
+              <td><code>weather_bucket</code></td>
+              <td><code>0.2mm</code>, <code>0.1mm</code>, or <code>0.01in</code></td>
+              <td>Davis collector size or Peet Bros rain-counter unit.</td>
             </tr>
           </tbody>
         </table>

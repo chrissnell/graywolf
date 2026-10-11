@@ -421,3 +421,17 @@ Bluetooth code on this surface is [invariant 35](invariants.md).
 | udev rules (CM108 / AIOC / SSS) | [`../../packaging/udev/99-graywolf-cm108.rules`](../../packaging/udev/99-graywolf-cm108.rules) |
 | Windows NSIS installer | [`../../packaging/nsis/graywolf.nsi`](../../packaging/nsis/graywolf.nsi) |
 | Grafana dashboard | [`../../packaging/grafana/remote-kiss-tnc.json`](../../packaging/grafana/remote-kiss-tnc.json) |
+
+## Weather beacon sources
+
+`pkg/weather` holds a shared observation, APRS complete-weather encoder,
+WxNow.txt reader and Peet Bros serial reader. `pkg/weather/davis` handles
+Davis LOOP/LOOP2 serial exchanges and CRC validation.
+`pkg/beacon/builder.go` selects the source for `TypeWeather`; the adapter
+in `pkg/app/adapters.go` maps persisted weather settings into the scheduler.
+`pkg/webapi/dto/beacon.go` validates and normalizes weather beacons, and
+`web/src/routes/Beacons.svelte` exposes their source settings. The five
+`weather_*` Beacon columns are added by configstore AutoMigrate.
+Weather fields directly follow the uncompressed weather symbol; comments,
+PHG and altitude must not be prepended to them. See the
+[beacon handbook](../handbook/beacons.html#weather-sources).
