@@ -421,3 +421,11 @@ Bluetooth code on this surface is [invariant 35](invariants.md).
 | udev rules (CM108 / AIOC / SSS) | [`../../packaging/udev/99-graywolf-cm108.rules`](../../packaging/udev/99-graywolf-cm108.rules) |
 | Windows NSIS installer | [`../../packaging/nsis/graywolf.nsi`](../../packaging/nsis/graywolf.nsi) |
 | Grafana dashboard | [`../../packaging/grafana/remote-kiss-tnc.json`](../../packaging/grafana/remote-kiss-tnc.json) |
+
+## Custom beacon form
+
+`web/src/lib/beaconForm.js` holds beacon type choices, position-control
+visibility, custom-information validation and edit-form defaults.
+`web/src/routes/Beacons.svelte` exposes `custom_info` for custom beacons and
+`comment_cmd` for all beacon types. The scheduler already supports these
+fields; `pkg/webapi/dto/beacon.go` rejects empty custom information on save.
