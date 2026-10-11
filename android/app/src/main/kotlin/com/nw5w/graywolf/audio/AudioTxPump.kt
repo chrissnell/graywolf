@@ -28,9 +28,10 @@ class AudioTxPump(
 
     @Volatile private var track: AudioTrack? = null
     @Volatile private var routedDevice: String = "<none>"
-    @Volatile private var sampleRateHz: Int = 22050
-    // Cumulative frames handed to AudioTrack.write — the ceiling for
+    // Cumulative frames (not shorts: one stereo frame = 2 shorts) handed to
+    // AudioTrack.write on the current track — the ceiling for
     // presentedFrames() so getTimestamp extrapolation can't over-report.
+    // Reset whenever a new track is built.
     @Volatile private var framesWritten: Long = 0L
     // Reused across drain polls; getTimestamp fills it in place.
     private val timestamp = AudioTimestamp()
@@ -87,7 +88,6 @@ class AudioTxPump(
         if (track != null) return
         this.sampleRate = sampleRate
         if (stereo && osc == null) osc = ToneOscillator(sampleRate)
-        sampleRateHz = sampleRate
         // New track → playback head restarts at 0, so the presentedFrames
         // ceiling must too.
         framesWritten = 0L
@@ -204,13 +204,19 @@ class AudioTxPump(
         routeToUsb(t)
         t.play()
         track = t
+        // New track → playback head restarts at 0, so the presentedFrames
+        // ceiling must too.
+        framesWritten = 0L
         Log.i(TAG, "AudioTxPump rebuilt stereo=$wantStereo routed=$routedDevice")
     }
 
     /**
      * Called from Rust modem via JNI on every TX PCM frame.
      * Blocking write — Rust modem TX thread is OK to block while audio drains.
-     * Returns -1 if the pump is stopped.
+     * Returns the number of mono input samples (= output frames) written, in
+     * both mono and stereo layouts, so the Rust drain watermark and
+     * [presentedFrames] share a unit; negative AudioTrack error codes pass
+     * through. Returns -1 if the pump is stopped.
      *
      * `@Synchronized` on the same monitor as [setTone]/[rebuildTrack]/[stop]:
      * key/unkey and pushSamples already serialise on the single TX-worker
@@ -239,7 +245,13 @@ class AudioTxPump(
             stereoScratch[i * 2] = samples[i]
             stereoScratch[i * 2 + 1] = if (emitTone) o!!.nextI16() else 0
         }
-        return t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
+        val written = t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
+        if (written < 0) return written
+        // write() counts shorts (2 per stereo frame); report frames so the
+        // Rust drain watermark is in the same unit as presentedFrames().
+        val frames = written / 2
+        framesWritten += frames
+        return frames
     }
 
     /**
@@ -251,19 +263,31 @@ class AudioTxPump(
      * latency but never over-reports. The result is clamped to framesWritten so
      * a stale timestamp during an inter-transmission underrun can't extrapolate
      * past what we actually wrote and make the Rust drain loop unkey early.
+     *
+     * `@Synchronized` with [pushSamples]/[setTone]/[rebuildTrack]/[stop] so a
+     * cross-thread tone pre-warm can't release the track mid-query. Any
+     * Throwable is swallowed and reported as 0: an exception escaping into the
+     * JNI downcall would be left pending on the Rust TX thread, and 0 only
+     * makes the drain loop hold PTT longer (bounded by its timeout).
      */
+    @Synchronized
     override fun presentedFrames(): Long {
         val t = track ?: return 0L
-        val written = framesWritten
-        val raw: Long = if (t.getTimestamp(timestamp)) {
-            val elapsedNs = System.nanoTime() - timestamp.nanoTime
-            val extra = if (elapsedNs > 0) elapsedNs * sampleRateHz / 1_000_000_000L else 0L
-            timestamp.framePosition + extra
-        } else {
-            // Int frame counter; mask to unsigned 32-bit for the wrap boundary.
-            t.playbackHeadPosition.toLong() and 0xFFFF_FFFFL
+        return try {
+            val written = framesWritten
+            val raw: Long = if (t.getTimestamp(timestamp)) {
+                val elapsedNs = System.nanoTime() - timestamp.nanoTime
+                val extra = if (elapsedNs > 0) elapsedNs * sampleRate / 1_000_000_000L else 0L
+                timestamp.framePosition + extra
+            } else {
+                // Int frame counter; mask to unsigned 32-bit for the wrap boundary.
+                t.playbackHeadPosition.toLong() and 0xFFFF_FFFFL
+            }
+            minOf(raw, written)
+        } catch (e: Throwable) {
+            Log.w(TAG, "presentedFrames failed: $e")
+            0L
         }
-        return minOf(raw, written)
     }
 
     @Synchronized

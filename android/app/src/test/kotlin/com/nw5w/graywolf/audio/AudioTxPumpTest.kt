@@ -253,4 +253,69 @@ class AudioTxPumpTest {
 
         assertEquals(30L, pump.presentedFrames())
     }
+
+    // -----------------------------------------------------------------------
+    // presentedFrames() with the Digirig Lite stereo (tone PTT) layout.
+    // -----------------------------------------------------------------------
+
+    @Test fun `stereo pushSamples returns frames, not interleaved shorts`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start(22050)
+        pump.setTone(active = true, hz = 1200) // → stereo
+
+        // 3 mono samples become 6 interleaved shorts on the wire, but the
+        // Rust drain watermark is compared against presentedFrames(), which
+        // counts frames — so pushSamples must report 3, not 6.
+        assertEquals(3, pump.pushSamples(shortArrayOf(100, 200, 300), 3))
+    }
+
+    @Test fun `stereo frames-written ceiling counts frames, not shorts`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        // Stale timestamp far in the past → extrapolation overshoots, so the
+        // result is the frames-written ceiling itself.
+        whenever(track.getTimestamp(any())).thenAnswer {
+            val ts = it.getArgument<AudioTimestamp>(0)
+            ts.framePosition = 0L
+            ts.nanoTime = System.nanoTime() - 10_000_000_000L
+            true
+        }
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start(22050)
+        pump.setTone(active = true, hz = 1200) // → stereo
+        pump.pushSamples(ShortArray(100), 100) // 200 shorts, 100 frames
+
+        assertEquals(100L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames frames-written ceiling resets when tone rebuilds the track`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        whenever(track.getTimestamp(any())).thenReturn(false)
+        whenever(track.playbackHeadPosition).thenReturn(50)
+        val pump = AudioTxPump(ctx) { _ -> track }
+
+        pump.start(22050)
+        pump.pushSamples(ShortArray(100), 100) // mono: framesWritten = 100
+        pump.setTone(active = true, hz = 1200) // mono → stereo rebuild
+
+        // The rebuilt track has presented nothing; a stale ceiling of 100
+        // would let the fallback head (50) leak through.
+        assertEquals(0L, pump.presentedFrames())
+    }
+
+    @Test fun `presentedFrames reports 0 instead of throwing when the track fails`() {
+        val (ctx, _) = contextWith()
+        val track = mockTrack().also { it.stubWriteEchoesCount() }
+        whenever(track.getTimestamp(any())).thenThrow(IllegalStateException("released"))
+        val pump = AudioTxPump(ctx) { _ -> track }
+        pump.start()
+        pump.pushSamples(ShortArray(100), 100)
+
+        // An exception escaping here would be left pending on the Rust JNI
+        // thread; 0 just makes the drain loop hold PTT until its timeout.
+        assertEquals(0L, pump.presentedFrames())
+    }
 }

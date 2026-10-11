@@ -108,6 +108,17 @@ always toward over-holding: `presentedFrames` clamps to frames-written, and a
 failed downcall degrades to the submitted count so the wall-clock gate still
 bounds the wait.
 
+The watermark and `presentedFrames` must count the same unit: **frames**.
+In the Digirig Lite tone-PTT stereo layout `AudioTrack.write` counts
+interleaved shorts (2 per frame), so `AudioTxPump.pushSamples` converts its
+return value back to frames and the frames-written ceiling counts frames;
+reporting shorts would double the watermark and every tone-PTT transmission
+would run to the drain timeout. The ceiling resets whenever the pump builds
+a new track (`start` or a tone-driven `rebuildTrack`), because the track's
+playback head restarts at 0. `presentedFrames` shares the pump's monitor and
+swallows exceptions (reporting 0), so a cross-thread track rebuild can't leave
+a Java exception pending on the Rust JNI thread.
+
 Source: [`../../graywolf-modem/src/modem/tx_worker.rs`](../../graywolf-modem/src/modem/tx_worker.rs) (`drive_tx_cycle`);
 [`../../graywolf-modem/src/android/audio_tx.rs`](../../graywolf-modem/src/android/audio_tx.rs) (`AndroidTxSink`);
 [`../../android/app/src/main/kotlin/com/nw5w/graywolf/audio/AudioTxPump.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/audio/AudioTxPump.kt) (`presentedFrames`).
