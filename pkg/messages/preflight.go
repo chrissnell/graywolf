@@ -199,10 +199,6 @@ func (p *Preflight) SendAutoAck(
 		return
 	}
 	if pkt.Direction == aprs.DirectionIS {
-		// RF-only operators must not transmit automatic IS acknowledgements.
-		if p.cfg.Preferences != nil && NormalizeFallbackPolicy(p.cfg.Preferences.Current().FallbackPolicy) == FallbackPolicyRFOnly {
-			return
-		}
 		if p.cfg.IGateSender == nil {
 			return
 		}

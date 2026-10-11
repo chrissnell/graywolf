@@ -137,7 +137,7 @@ func TestPreflightRFOnlyPathAppliedToAutoAck(t *testing.T) {
 	}
 }
 
-func TestPreflightRFOnlyDoesNotSendISAutoAck(t *testing.T) {
+func TestPreflightRFOnlyPathDoesNotSuppressISAutoAck(t *testing.T) {
 	p, sink, igs, _ := newPreflightForTest(t)
 	prefs := &Preferences{}
 	prefs.current.Store(&configstore.MessagePreferences{
@@ -146,8 +146,8 @@ func TestPreflightRFOnlyDoesNotSendISAutoAck(t *testing.T) {
 	})
 	p.cfg.Preferences = prefs
 	p.SendAutoAck(context.Background(), &aprs.DecodedAPRSPacket{Direction: aprs.DirectionIS}, "W1ABC", "001")
-	if len(sink.list()) != 0 || len(igs.list()) != 0 {
-		t.Fatal("RF-only should not send IS ACKs")
+	if len(sink.list()) != 0 || len(igs.list()) != 1 {
+		t.Fatal("RF path preference must preserve IS-originated message acknowledgements")
 	}
 }
 
