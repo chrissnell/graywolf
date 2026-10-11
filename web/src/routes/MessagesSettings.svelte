@@ -18,6 +18,8 @@
   ];
 
   let txChannel = $state(0);
+  let messageAprsPath = $state('');
+  let messagePathSaving = $state(false);
 
   // --- Blocked call signs ---
   /** @type {Array<any>} */
@@ -28,7 +30,8 @@
   let addingBlock = $state(false);
 
   onMount(async () => {
-    messagesPreferencesState.fetchPreferences();
+    await messagesPreferencesState.fetchPreferences();
+    messageAprsPath = messagesPreferencesState.defaultPath;
     startChannels();
     const cfg = await getMessagesConfig().catch(() => null);
     txChannel = cfg?.tx_channel ?? 0;
@@ -50,6 +53,17 @@
     } catch {
       const cfg = await getMessagesConfig().catch(() => null);
       txChannel = cfg?.tx_channel ?? 0;
+    }
+  }
+
+  async function saveMessagePath() {
+    if (messagePathSaving || messagesPreferencesState.saving) return;
+    messagePathSaving = true;
+    try {
+      const saved = await messagesPreferencesState.setDefaultPath(messageAprsPath);
+      if (saved) messageAprsPath = messagesPreferencesState.defaultPath;
+    } finally {
+      messagePathSaving = false;
     }
   }
 
@@ -152,6 +166,28 @@
     default tries RF first and silently falls back to APRS-IS when no
     modem is available.
   </p>
+  <p class="tx-channel-label">APRS packet path (RF)</p>
+  <div class="message-path-row">
+    <Input
+      type="text"
+      value={messageAprsPath}
+      oninput={(e) => messageAprsPath = e.target.value.toUpperCase()}
+      placeholder="RFONLY"
+      aria-label="Message APRS packet path"
+      disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving || messagePathSaving}
+    />
+    <Button
+      variant="primary"
+      onclick={saveMessagePath}
+      disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving || messagePathSaving || !messageAprsPath.trim() || messageAprsPath.trim().toUpperCase() === messagesPreferencesState.defaultPath}
+    >Save path</Button>
+  </div>
+  <p class="messages-hint">
+    This is the AX.25 path inside RF packets, separate from the send
+    transport above. Use <code>RFONLY</code> to ask iGates not to forward
+    messages to APRS-IS. This also applies to RF auto-ACKs. iGates must
+    honor the marker; it is not an absolute guarantee.
+  </p>
 </Box>
 
 <Box title="Blocked call signs">
@@ -226,6 +262,13 @@
     font-weight: 500;
     color: var(--text-default);
   }
+  .message-path-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .message-path-row :global(input) { min-width: 150px; margin-bottom: 0; }
   .block-intro { margin-top: 0; margin-bottom: 16px; }
   .block-intro code {
     font-family: var(--font-mono);

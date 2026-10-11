@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/configstore"
 )
 
 func newPreflightForTest(t *testing.T) (*Preflight, *fakeTxSink, *fakeIGateSender, *fakeClock) {
@@ -114,6 +115,39 @@ func TestPreflightSendAutoAckRFSubmitsFrame(t *testing.T) {
 	}
 	if !subs[0].Src.SkipDedup {
 		t.Fatal("auto-ACK must SkipDedup")
+	}
+}
+
+func TestPreflightRFOnlyPathAppliedToAutoAck(t *testing.T) {
+	p, sink, _, _ := newPreflightForTest(t)
+	prefs := &Preferences{}
+	prefs.current.Store(&configstore.MessagePreferences{
+		FallbackPolicy: FallbackPolicyRFOnly,
+		DefaultPath: "RFONLY",
+	})
+	p.cfg.Preferences = prefs
+	pkt := &aprs.DecodedAPRSPacket{Direction: aprs.DirectionRF, Channel: 3}
+	p.SendAutoAck(context.Background(), pkt, "W1ABC", "001")
+	subs := sink.list()
+	if len(subs) != 1 {
+		t.Fatalf("want 1 RF submit, got %d", len(subs))
+	}
+	if len(subs[0].Frame.Path) != 1 || subs[0].Frame.Path[0].String() != "RFONLY" {
+		t.Fatalf("RF auto-ACK missing RFONLY path: %+v", subs[0].Frame.Path)
+	}
+}
+
+func TestPreflightRFOnlyDoesNotSendISAutoAck(t *testing.T) {
+	p, sink, igs, _ := newPreflightForTest(t)
+	prefs := &Preferences{}
+	prefs.current.Store(&configstore.MessagePreferences{
+		FallbackPolicy: FallbackPolicyRFOnly,
+		DefaultPath: "RFONLY",
+	})
+	p.cfg.Preferences = prefs
+	p.SendAutoAck(context.Background(), &aprs.DecodedAPRSPacket{Direction: aprs.DirectionIS}, "W1ABC", "001")
+	if len(sink.list()) != 0 || len(igs.list()) != 0 {
+		t.Fatal("RF-only should not send IS ACKs")
 	}
 }
 

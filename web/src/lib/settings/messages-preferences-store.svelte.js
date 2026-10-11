@@ -174,6 +174,50 @@ export const messagesPreferencesState = (() => {
     }
   }
 
+  // Save the actual on-air AX.25 path; transport policy is independent.
+  async function setDefaultPath(value) {
+    const path = String(value ?? '').trim().toUpperCase();
+    const parts = path.split(',').map((part) => part.trim());
+    const valid = path.length > 0 && path.length <= 64 && parts.length <= 8 &&
+      parts.every((part) => {
+        const match = /^([A-Z0-9]{1,6})(?:-(\d{1,2}))?$/.exec(part);
+        return match && (match[2] === undefined || Number(match[2]) <= 15);
+      });
+    if (!valid) {
+      toasts.error('Invalid APRS path (example: RFONLY or WIDE1-1,WIDE2-1).');
+      return false;
+    }
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return false;
+      }
+    }
+    if (prefs?.default_path === path) return true;
+    const baseline = prefs;
+    const prev = baseline;
+    const optimistic = { ...baseline, default_path: path };
+    prefs = optimistic;
+    saving = true;
+    error = null;
+    try {
+      const resp = await putPreferences(buildPayload(baseline, { default_path: path }));
+      const next = resp ?? optimistic;
+      next.max_message_text_override = normalizeOverride(next.max_message_text_override);
+      prefs = next;
+      toasts.success('Message APRS path saved');
+      return true;
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save message APRS path — try again.");
+      return false;
+    } finally {
+      saving = false;
+    }
+  }
+
   return {
     get loaded() { return loaded; },
     get saving() { return saving; },
@@ -189,6 +233,7 @@ export const messagesPreferencesState = (() => {
       return normalizeOverride(prefs?.max_message_text_override) > 0;
     },
     get fallbackPolicy() { return prefs?.fallback_policy || 'is_fallback'; },
+    get defaultPath() { return prefs?.default_path || 'WIDE1-1,WIDE2-1'; },
     // Effective cap the compose bar should enforce. Mirrors the server's
     // sender gate: 0 => 67, otherwise => the override value itself.
     get maxMessageText() {
@@ -200,6 +245,7 @@ export const messagesPreferencesState = (() => {
     setOverride,
     setAllowLong,
     setFallbackPolicy,
+    setDefaultPath,
   };
 })();
 

@@ -61,6 +61,9 @@ type PreflightConfig struct {
 	// AutoAckChannel is the RF channel used when submitting auto-ACKs
 	// for IS-sourced inbound. Defaults to 1.
 	AutoAckChannel uint32
+	// Preferences supplies the configured APRS path for RF auto-ACKs.
+	// Nil retains the legacy direct-path behavior for stand-alone callers.
+	Preferences *Preferences
 	// DedupWindow overrides the (from, msg_id, text_hash) dedup window.
 	// <= 0 falls back to DefaultRouterDedupWindow.
 	DedupWindow time.Duration
@@ -196,6 +199,10 @@ func (p *Preflight) SendAutoAck(
 		return
 	}
 	if pkt.Direction == aprs.DirectionIS {
+		// RF-only operators must not transmit automatic IS acknowledgements.
+		if p.cfg.Preferences != nil && NormalizeFallbackPolicy(p.cfg.Preferences.Current().FallbackPolicy) == FallbackPolicyRFOnly {
+			return
+		}
 		if p.cfg.IGateSender == nil {
 			return
 		}
@@ -208,7 +215,11 @@ func (p *Preflight) SendAutoAck(
 		p.mAutoAckSent.Inc()
 		return
 	}
-	frame, err := preflightAckFrame(ourCall, peerCall, msgID)
+	path := ""
+	if p.cfg.Preferences != nil {
+		path = p.cfg.Preferences.Current().DefaultPath
+	}
+	frame, err := preflightAckFrameWithPath(ourCall, peerCall, msgID, path)
 	if err != nil {
 		p.logger.Warn("preflight auto-ACK encode failed",
 			"error", err, "peer", peerCall, "msgid", msgID)
@@ -232,6 +243,10 @@ func (p *Preflight) SendAutoAck(
 }
 
 func preflightAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
+	return preflightAckFrameWithPath(ourCall, peerCall, msgID, "")
+}
+
+func preflightAckFrameWithPath(ourCall, peerCall, msgID, path string) (*ax25.Frame, error) {
 	info, err := aprs.EncodeMessageAck(peerCall, msgID)
 	if err != nil {
 		return nil, err
@@ -244,7 +259,11 @@ func preflightAckFrame(ourCall, peerCall, msgID string) (*ax25.Frame, error) {
 	if err != nil {
 		return nil, fmt.Errorf("messages: ack dest: %w", err)
 	}
-	return ax25.NewUIFrame(src, dest, nil, info)
+	via, err := parsePath(path)
+	if err != nil {
+		return nil, fmt.Errorf("messages: ack path: %w", err)
+	}
+	return ax25.NewUIFrame(src, dest, via, info)
 }
 
 func preflightAckTNC2(ourCall, peerCall, msgID string) string {

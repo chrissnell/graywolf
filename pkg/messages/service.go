@@ -171,6 +171,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		Logger:         logger.With("component", "messages-preflight"),
 		Clock:          clock,
 		AutoAckChannel: autoAckCh,
+		Preferences:    prefs,
 	})
 	if err != nil {
 		return nil, err
