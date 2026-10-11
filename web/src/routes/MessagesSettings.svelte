@@ -172,7 +172,7 @@
       type="text"
       value={messageAprsPath}
       oninput={(e) => messageAprsPath = e.target.value.toUpperCase()}
-      placeholder="RFONLY"
+      placeholder="RFONLY or NOGATE"
       aria-label="Message APRS packet path"
       disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving || messagePathSaving}
     />
@@ -184,7 +184,7 @@
   </div>
   <p class="messages-hint">
     This is the AX.25 path inside RF packets, separate from the send
-    transport above. Use <code>RFONLY</code> to ask iGates not to forward
+    transport above. Use <code>RFONLY</code> or <code>NOGATE</code> to ask iGates not to forward
     messages to APRS-IS. This also applies to RF auto-ACKs. iGates must
     honor the marker; it is not an absolute guarantee.
   </p>

@@ -184,7 +184,7 @@ export const messagesPreferencesState = (() => {
         return match && (match[2] === undefined || Number(match[2]) <= 15);
       });
     if (!valid) {
-      toasts.error('Invalid APRS path (example: RFONLY or WIDE1-1,WIDE2-1).');
+      toasts.error('Invalid APRS path (example: RFONLY, NOGATE or WIDE1-1,WIDE2-1).');
       return false;
     }
     if (!hydrated) {
