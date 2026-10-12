@@ -14,6 +14,8 @@ package mapsstyle
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -141,6 +143,14 @@ type Cache struct {
 	mu       sync.Mutex
 	inflight map[string]chan struct{}
 
+	// Upstream-failure log throttle (see logUpstreamFailure). An offline
+	// browser can miss dozens of distinct glyph ranges in one page load,
+	// so the throttle is global rather than per asset.
+	failMu         sync.Mutex
+	failLastLog    time.Time
+	failSuppressed int
+	now            func() time.Time
+
 	prewarmMaxRange int // highest Unicode block index probed (default 255)
 	prewarmStop404  int // bail per fontstack after N consecutive 404s (default 4)
 }
@@ -169,8 +179,31 @@ func New(cfg Config) *Cache {
 		inflight:        map[string]chan struct{}{},
 		prewarmMaxRange: 255,
 		prewarmStop404:  4,
+		now:             time.Now,
 	}
 	return cache
+}
+
+// CheckWritable creates the cache directory if needed and confirms a
+// file can be written there. Called once at startup: an unwritable
+// style directory doesn't break the map while the host is online (every
+// request just re-fetches upstream), but nothing is ever cached, so the
+// map has no style once the host goes offline. Surfacing it at boot
+// names the path instead of leaving a stream of write-failure WARNs.
+func (c *Cache) CheckWritable() error {
+	if err := os.MkdirAll(c.cacheDir, 0o755); err != nil {
+		return fmt.Errorf("create %s: %w", c.cacheDir, err)
+	}
+	f, err := os.CreateTemp(c.cacheDir, ".writecheck-*")
+	if err != nil {
+		return fmt.Errorf("write to %s: %w", c.cacheDir, err)
+	}
+	name := f.Name()
+	_ = f.Close()
+	if err := os.Remove(name); err != nil {
+		return fmt.Errorf("remove probe file in %s: %w", c.cacheDir, err)
+	}
+	return nil
 }
 
 // readDisk returns the cached body + content-type for rel, or an error
@@ -237,6 +270,13 @@ func (c *Cache) fetchUpstream(ctx context.Context, rel string) ([]byte, string, 
 	}
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		// *url.Error embeds the full request URL, which carries the
+		// bearer token as ?t=. Keep only the underlying cause so the
+		// token never reaches a log line.
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			err = ue.Err
+		}
 		return nil, "", fmt.Errorf("upstream %s: %w", rel, err)
 	}
 	defer resp.Body.Close()
@@ -251,10 +291,30 @@ func (c *Cache) fetchUpstream(ctx context.Context, rel string) ([]byte, string, 
 	return body, contentTypeFor(rel), nil
 }
 
+// validateAsset reports whether body is a usable copy of rel. Only JSON
+// assets (style.json, shields.json, sprite JSON, tiles.json) are
+// checked; a corrupt one would otherwise be served from disk forever,
+// since a disk hit never consults upstream. Binary assets (sprite PNGs,
+// glyph PBFs) pass through.
+func validateAsset(rel string, body []byte) error {
+	if !strings.HasSuffix(rel, ".json") {
+		return nil
+	}
+	if !json.Valid(body) {
+		return errors.New("not valid JSON")
+	}
+	return nil
+}
+
 // Get returns the body + content-type for rel. Tries disk first; on
 // miss, fetches upstream and writes to disk before returning. Returns
 // an error if the path is unsafe or both disk + upstream are
 // unavailable.
+//
+// A cached JSON asset that fails validation is treated as a miss and
+// refetched; the good upstream copy overwrites it. An upstream response
+// that fails validation (e.g. a captive portal's HTML page served with
+// 200) is returned as an error and never written to disk.
 //
 // Concurrent Gets for the same rel coalesce: the first caller fetches,
 // subsequent callers wait and re-read from disk.
@@ -265,7 +325,12 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 	}
 	// Fast path: disk hit.
 	if body, ct, err := c.readDisk(cleaned); err == nil {
-		return c.maybeRewrite(cleaned, body, ct)
+		verr := validateAsset(cleaned, body)
+		if verr == nil {
+			return c.maybeRewrite(cleaned, body, ct)
+		}
+		c.logger.Warn("mapsstyle: cached copy is corrupt, refetching",
+			"rel", cleaned, "err", verr)
 	}
 
 	// Coalesce concurrent misses.
@@ -281,6 +346,10 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 		if err != nil {
 			return nil, "", err
 		}
+		// The leader's fetch may have failed, leaving a corrupt copy.
+		if verr := validateAsset(cleaned, body); verr != nil {
+			return nil, "", fmt.Errorf("mapsstyle: cached %s: %w", cleaned, verr)
+		}
 		return c.maybeRewrite(cleaned, body, ct)
 	}
 	ch := make(chan struct{})
@@ -288,6 +357,11 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 	c.mu.Unlock()
 
 	body, ct, err := c.fetchUpstream(ctx, cleaned)
+	if err == nil {
+		if verr := validateAsset(cleaned, body); verr != nil {
+			err = fmt.Errorf("upstream %s: invalid response: %w", cleaned, verr)
+		}
+	}
 	if err == nil {
 		if werr := c.writeDisk(cleaned, body); werr != nil {
 			c.logger.Warn("mapsstyle: write disk failed", "rel", cleaned, "err", werr)
@@ -300,9 +374,43 @@ func (c *Cache) Get(ctx context.Context, rel string) ([]byte, string, error) {
 	close(ch)
 
 	if err != nil {
+		c.logUpstreamFailure(cleaned, err)
 		return nil, "", err
 	}
 	return c.maybeRewrite(cleaned, body, ct)
+}
+
+// upstreamFailureLogInterval bounds how often a disk-miss + upstream
+// failure is logged. The first failure logs immediately; later ones
+// within the window are counted and reported on the next logged line.
+const upstreamFailureLogInterval = time.Minute
+
+// logUpstreamFailure records a Get that found nothing on disk and could
+// not reach upstream -- the case the HTTP handler turns into a 502 and
+// the browser shows as a missing basemap. Without this the operator's
+// logs stay clean while the map is broken (graywolf#637). A canceled
+// context means the browser went away, not that upstream is down.
+func (c *Cache) logUpstreamFailure(rel string, err error) {
+	if errors.Is(err, context.Canceled) {
+		return
+	}
+	c.failMu.Lock()
+	now := c.now()
+	if !c.failLastLog.IsZero() && now.Sub(c.failLastLog) < upstreamFailureLogInterval {
+		c.failSuppressed++
+		c.failMu.Unlock()
+		return
+	}
+	suppressed := c.failSuppressed
+	c.failLastLog = now
+	c.failSuppressed = 0
+	c.failMu.Unlock()
+
+	attrs := []any{"rel", rel, "err", err}
+	if suppressed > 0 {
+		attrs = append(attrs, "suppressed", suppressed)
+	}
+	c.logger.Warn("mapsstyle: upstream fetch failed and no usable cached copy", attrs...)
 }
 
 // maybeRewrite applies the URL rewriter to style.json responses and

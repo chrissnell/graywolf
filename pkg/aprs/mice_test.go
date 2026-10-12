@@ -2,6 +2,7 @@ package aprs
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
@@ -67,30 +68,34 @@ func TestParseMicEFrame(t *testing.T) {
 		t.Fatal(err)
 	}
 	srcAddr, _ := ax25.ParseAddress("W1AW")
-	// Info field: encode longitude 72.5 → deg=72 (+28=100=='d'), min=30
-	// (+28=58=':'), hund=0 (+28=28=0x1C). Speed=0, course=0. Symbol />.
-	info := []byte{
-		'`',
-		byte(72 + 28), byte(30 + 28), byte(0 + 28),
-		byte(0 + 28), byte(0 + 28), byte(0 + 28),
-		'>', '/',
-	}
-	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pkt, err := Parse(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pkt.Type != PacketMicE || pkt.MicE == nil {
-		t.Fatalf("type %q", pkt.Type)
-	}
-	if abs(pkt.MicE.Position.Latitude-35.5) > 0.01 {
-		t.Errorf("lat %v", pkt.MicE.Position.Latitude)
-	}
-	if abs(pkt.MicE.Position.Longitude+72.5) > 0.01 {
-		t.Errorf("lon %v", pkt.MicE.Position.Longitude)
+	for _, dti := range []byte{'`', '\'', 0x1c, 0x1d} {
+		t.Run(fmt.Sprintf("dti=0x%02x", dti), func(t *testing.T) {
+			// Info field: encode longitude 72.5 → deg=72 (+28=100=='d'), min=30
+			// (+28=58=':'), hund=0 (+28=28=0x1C). Speed=0, course=0. Symbol />.
+			info := []byte{
+				dti,
+				byte(72 + 28), byte(30 + 28), byte(0 + 28),
+				byte(0 + 28), byte(0 + 28), byte(0 + 28),
+				'>', '/',
+			}
+			f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkt, err := Parse(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if pkt.Type != PacketMicE || pkt.MicE == nil {
+				t.Fatalf("type %q", pkt.Type)
+			}
+			if abs(pkt.MicE.Position.Latitude-35.5) > 0.01 {
+				t.Errorf("lat %v", pkt.MicE.Position.Latitude)
+			}
+			if abs(pkt.MicE.Position.Longitude+72.5) > 0.01 {
+				t.Errorf("lon %v", pkt.MicE.Position.Longitude)
+			}
+		})
 	}
 }
 
@@ -149,6 +154,86 @@ func TestParseMicEAmbiguousLonRejected(t *testing.T) {
 	}
 	if !errors.Is(err, ErrMicELonAmbiguous) {
 		t.Fatalf("wrong error: %v (want ErrMicELonAmbiguous)", err)
+	}
+}
+
+// TestParseMicESpaceInLonMinutesRejected: the minutes byte can never
+// legally be 0x20 (minutes encode to 38..97), so SPACE there is the
+// unknown-data sentinel just like in the degrees byte.
+func TestParseMicESpaceInLonMinutesRejected(t *testing.T) {
+	srcAddr, _ := ax25.ParseAddress("N0CALL")
+	destAddr, _ := ax25.ParseAddress("TRUW63")
+	info := []byte{'`', 72 + 28, 0x20, 51 + 28, 28, 28, 28, '>', '/'}
+	f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Parse(f); !errors.Is(err, ErrMicELonAmbiguous) {
+		t.Fatalf("err = %v, want ErrMicELonAmbiguous", err)
+	}
+}
+
+// TestParseMicELonHundredthsFourIsNotSentinel is the GH #652 regression:
+// the hundredths byte is plain hh+28, so hh=04 encodes to 0x20 (SPACE).
+// That is an ordinary digit, not the unknown-data sentinel, and the
+// position must decode. Rejecting it dropped ~1 in 100 valid Mic-E
+// positions from every station.
+func TestParseMicELonHundredthsFourIsNotSentinel(t *testing.T) {
+	cases := []struct {
+		name    string
+		dest    string // lat 42 57.63 N; dest[4] = +100 offset, dest[5] = west
+		lonByte [3]byte
+		wantLon float64
+	}{
+		// 72 51.04 E: no offset.
+		{"72E", "TRUW63", [3]byte{72 + 28, 51 + 28, 0x20}, 72 + 51.04/60},
+		// 122 05.04 W: +100 offset (wire 22), minutes < 10 use the +88 form.
+		{"122W", "TRUWVS", [3]byte{22 + 28, 5 + 88, 0x20}, -(122 + 5.04/60)},
+		// 4 00.04 E: 0..9 degrees ride the +100 offset at wire 90..99.
+		{"4E", "TRUWV3", [3]byte{94 + 28, 0 + 88, 0x20}, 4 + 0.04/60},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srcAddr, _ := ax25.ParseAddress("N0CALL")
+			destAddr, err := ax25.ParseAddress(tc.dest)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info := []byte{'`', tc.lonByte[0], tc.lonByte[1], tc.lonByte[2], 28, 28, 28, '>', '/'}
+			f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pkt, err := Parse(f)
+			if err != nil {
+				t.Fatalf("valid hundredths=04 longitude rejected: %v", err)
+			}
+			if pkt.MicE == nil || abs(pkt.MicE.Position.Longitude-tc.wantLon) > 1e-9 {
+				t.Fatalf("lon = %+v, want %.9f", pkt.MicE, tc.wantLon)
+			}
+		})
+	}
+}
+
+// TestParseMicELonEveryHundredthsDecodes sweeps the whole hundredths
+// range so no other digit can quietly collide with a sentinel.
+func TestParseMicELonEveryHundredthsDecodes(t *testing.T) {
+	srcAddr, _ := ax25.ParseAddress("N0CALL")
+	destAddr, _ := ax25.ParseAddress("TRUW63")
+	for hh := 0; hh <= 99; hh++ {
+		info := []byte{'`', 72 + 28, 51 + 28, byte(hh + 28), 28, 28, 28, '>', '/'}
+		f, err := ax25.NewUIFrame(srcAddr, destAddr, nil, info)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pkt, err := Parse(f)
+		if err != nil {
+			t.Fatalf("hundredths=%02d: %v", hh, err)
+		}
+		want := 72 + (51+float64(hh)/100)/60
+		if abs(pkt.MicE.Position.Longitude-want) > 1e-9 {
+			t.Fatalf("hundredths=%02d: lon = %.9f, want %.9f", hh, pkt.MicE.Position.Longitude, want)
+		}
 	}
 }
 

@@ -99,7 +99,7 @@ func parseInfoDepth(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame, dept
 		return parseObject(pkt, info)
 	case ')':
 		return parseItem(pkt, info)
-	case '\'', '`':
+	case '\'', '`', 0x1c, 0x1d:
 		return parseMicE(pkt, info, frame)
 	case '>':
 		return parseStatus(pkt, info)

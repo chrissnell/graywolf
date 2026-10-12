@@ -17,7 +17,9 @@
   import { localBoundsStore } from '../maps/local-bounds-store.svelte.js';
   import { createFederatedProtocol } from './sources/gw-federated-protocol.js';
   import { absolutizeStyleUrls } from './style-urls.js';
+  import { selectBasemapStyle } from './basemap-style.js';
   import { markConnected, markDisconnected } from '../stores/connection.js';
+  import { toasts } from '../stores.js';
 
   let {
     initialCenter = [-98, 39],
@@ -146,13 +148,32 @@
     return absolutizeStyleUrls(style);
   }
 
+  // Toast once per outage, not on every style rebuild; cleared when the
+  // graywolf style builds again so a later outage notifies afresh.
+  let styleFallbackNotified = false;
+
+  // A failed graywolf style build falls back to OSM instead of leaving
+  // the map uncreated (graywolf#636). cachedUpstreamStyle is only set on
+  // success, so each rebuild retries the graywolf style.
   async function buildStyle() {
-    if (mapsState.source === 'graywolf' && mapsState.registered) {
-      return await buildGraywolfStyle({
-        federated: downloadsState.completed.size > 0,
-      });
-    }
-    return osmRasterStyle();
+    return selectBasemapStyle({
+      useGraywolf: mapsState.source === 'graywolf' && mapsState.registered,
+      buildGraywolf: () =>
+        buildGraywolfStyle({ federated: downloadsState.completed.size > 0 }),
+      buildFallback: osmRasterStyle,
+      onFallback: (err) => {
+        console.warn('graywolf basemap unavailable, using OpenStreetMap:', err);
+        if (!styleFallbackNotified) {
+          styleFallbackNotified = true;
+          toasts.error(
+            'Graywolf basemap unavailable -- showing OpenStreetMap instead. Check that the graywolf host can reach maps.nw5w.com.',
+          );
+        }
+      },
+      onRecovered: () => {
+        styleFallbackNotified = false;
+      },
+    });
   }
 
   // transformRequest: attach the bearer token as ?t=<token> on

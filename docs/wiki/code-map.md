@@ -422,6 +422,15 @@ Bluetooth code on this surface is [invariant 35](invariants.md).
 | Windows NSIS installer | [`../../packaging/nsis/graywolf.nsi`](../../packaging/nsis/graywolf.nsi) |
 | Grafana dashboard | [`../../packaging/grafana/remote-kiss-tnc.json`](../../packaging/grafana/remote-kiss-tnc.json) |
 
+## KISS TCP transmit stalls
+
+`pkg/kiss/client.go` configures Linux `TCP_USER_TIMEOUT` through
+`pkg/internal/tcpstall` (20 seconds). The kernel closes a connection when
+transmitted data stays unacknowledged, or buffered data cannot be sent
+because the peer advertises a zero window, allowing the existing client
+supervisor to reconnect. This is not an idle receive timeout; a silent
+receive-only link remains open. Other platforms retain the existing behavior.
+
 ## Weather beacon sources
 
 `pkg/weather` holds a shared observation, APRS complete-weather encoder,

@@ -9,11 +9,8 @@
 // The FCS is stripped upstream (see packetlog.Entry.Raw), so checksum
 // validation is intentionally not attempted here.
 
-// Data type identifiers that mark a Mic-E payload. Kept in sync with the
-// Go decoder's dispatch (pkg/aprs/parse.go), which treats only '`' (current)
-// and '\'' (old) as Mic-E so the inspector's "Mic-E" label matches what the
-// rest of graywolf actually decodes.
-const MICE_TYPE_BYTES = new Set([0x60, 0x27]);
+// Mic-E identifiers, kept in sync with pkg/aprs/parse.go.
+const MICE_TYPE_BYTES = new Set([0x60, 0x27, 0x1c, 0x1d]);
 
 // AX.25 control/PID expected for an APRS UI frame.
 const AX25_UI_CONTROL = 0x03;
@@ -220,10 +217,12 @@ function validateControl(result, issues) {
 // symbol-table = 9 bytes minimum (APRS101 ch.10). The longitude/speed
 // bytes are offset-encoded (byte = digit + 28), so the legal range is
 // 0x1c-0x7f, not 0x26-0x7f — digit 0 legitimately encodes as 0x1c.
-// 0x20 (SPACE) in the longitude bytes (1-3) is the APRS101 ch.10
-// "unknown data" sentinel and makes the position unplottable. In the
-// speed/course bytes (4-6) it is just digit 4 and decodes normally
-// (e.g. 0x6c 0x20 0x60 is 0 kt / 68 degrees, GH #596), so it is only
+// 0x20 (SPACE) in the longitude degrees/minutes bytes (1-2) is the
+// APRS101 ch.10 "unknown data" sentinel and makes the position
+// unplottable; no valid longitude encodes to 0x20 there. In the
+// longitude hundredths byte (3) it is just digit 04 (GH #652), and in the
+// speed/course bytes (4-6) it is just digit 4; both decode normally
+// (e.g. 0x6c 0x20 0x60 is 0 kt / 68 degrees, GH #596). Speed/course is only
 // called out when it matches the squashed double-space shape that
 // mice.go's accept_broken_mice realigns. 0x7f (DEL) is never flagged —
 // the Go decoder no longer special-cases it either, since it's just the
@@ -239,7 +238,7 @@ function validateMicE(result, info, issues) {
   }
   for (let i = 1; i <= 6; i++) {
     const b = info[i];
-    if (b === 0x20 && i <= 3) {
+    if (b === 0x20 && i <= 2) {
       issues.push({
         severity: 'error',
         text: `Mic-E longitude byte at info offset ${i} is 0x20 (SPACE), the APRS101 "unknown data" sentinel — receivers must not plot this position.`,

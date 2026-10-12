@@ -15,6 +15,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/app/ingress"
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
+	"github.com/chrissnell/graywolf/pkg/internal/tcpstall"
 	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -26,6 +27,9 @@ const (
 	defaultReconnectJitterFrac = 0.25
 	defaultReconnectInitMs     = 1000
 	defaultReconnectMaxMs      = 300000
+	// A TNC that stops reading the connection is treated as dead after
+	// this long without its acknowledging our data (see tcpstall.Set).
+	txStallTimeout = 20 * time.Second
 )
 
 // Client is the outbound-dial KISS interface: a single supervised TCP
@@ -363,7 +367,13 @@ func (c *Client) dial(ctx context.Context) (net.Conn, error) {
 	if dialer == nil {
 		dialer = &net.Dialer{Timeout: defaultDialTimeout}
 	}
-	return dialer.DialContext(ctx, "tcp", addr)
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
+	if err == nil {
+		if serr := tcpstall.Set(conn, txStallTimeout); serr != nil {
+			c.logger.Debug("kiss client TCP_USER_TIMEOUT not set", "err", serr)
+		}
+	}
+	return conn, err
 }
 
 // frameLoop reads frames from conn and dispatches them via the shared

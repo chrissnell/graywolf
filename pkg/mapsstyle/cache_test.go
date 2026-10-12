@@ -1,7 +1,9 @@
 package mapsstyle
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestCleanRelPath(t *testing.T) {
@@ -255,5 +258,203 @@ func TestCache_Get_RewritesStyleJSON(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"sprite":"/api/maps/style/americana/sprites/sprite"`) {
 		t.Fatalf("sprite not rewritten: %s", body)
+	}
+}
+
+// captureLogger returns a logger writing text records into buf.
+func captureLogger(buf *bytes.Buffer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+}
+
+func TestCache_Get_UpstreamFailureIsLoggedAndThrottled(t *testing.T) {
+	var buf bytes.Buffer
+	c := New(Config{BaseURL: "http://127.0.0.1:1", CacheDir: t.TempDir(), Logger: captureLogger(&buf)})
+	clock := time.Unix(1_700_000_000, 0)
+	c.now = func() time.Time { return clock }
+
+	const msg = "upstream fetch failed and no usable cached copy"
+	get := func(rel string) {
+		t.Helper()
+		if _, _, err := c.Get(context.Background(), rel); err == nil {
+			t.Fatalf("Get(%q): expected error", rel)
+		}
+	}
+
+	get("americana-roboto/style.json")
+	if n := strings.Count(buf.String(), msg); n != 1 {
+		t.Fatalf("after first failure: %d log lines, want 1\n%s", n, buf.String())
+	}
+	if !strings.Contains(buf.String(), "rel=americana-roboto/style.json") {
+		t.Errorf("log line missing rel: %s", buf.String())
+	}
+
+	// Within the window: counted, not logged.
+	get("tiles.json")
+	get("americana/shields.json")
+	if n := strings.Count(buf.String(), msg); n != 1 {
+		t.Fatalf("within window: %d log lines, want 1\n%s", n, buf.String())
+	}
+
+	// After the window: logged again with the suppressed count.
+	clock = clock.Add(upstreamFailureLogInterval)
+	get("tiles.json")
+	if n := strings.Count(buf.String(), msg); n != 2 {
+		t.Fatalf("after window: %d log lines, want 2\n%s", n, buf.String())
+	}
+	if !strings.Contains(buf.String(), "suppressed=2") {
+		t.Errorf("second log line missing suppressed=2: %s", buf.String())
+	}
+}
+
+func TestCache_Get_CanceledContextNotLogged(t *testing.T) {
+	var buf bytes.Buffer
+	c := New(Config{BaseURL: "http://127.0.0.1:1", CacheDir: t.TempDir(), Logger: captureLogger(&buf)})
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := c.Get(ctx, "tiles.json"); err == nil {
+		t.Fatalf("expected error")
+	}
+	if buf.Len() != 0 {
+		t.Errorf("canceled request logged: %s", buf.String())
+	}
+}
+
+func TestCache_FetchUpstream_ErrorRedactsToken(t *testing.T) {
+	const tok = "s3cret-bearer-token"
+	var buf bytes.Buffer
+	c := New(Config{
+		BaseURL:       "http://127.0.0.1:1",
+		CacheDir:      t.TempDir(),
+		Logger:        captureLogger(&buf),
+		TokenProvider: func(context.Context) string { return tok },
+	})
+	_, _, err := c.Get(context.Background(), "tiles.json")
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+	if strings.Contains(err.Error(), tok) {
+		t.Errorf("error leaks token: %v", err)
+	}
+	if strings.Contains(buf.String(), tok) {
+		t.Errorf("log leaks token: %s", buf.String())
+	}
+}
+
+func TestCache_Get_CorruptCachedJSONIsRefetched(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		w.Write([]byte(`{"fresh":true}`))
+	}))
+	defer srv.Close()
+
+	var buf bytes.Buffer
+	dir := t.TempDir()
+	c := New(Config{BaseURL: srv.URL, CacheDir: dir, Logger: captureLogger(&buf)})
+	if err := c.writeDisk("tiles.json", []byte(`{"truncated":`)); err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := c.Get(context.Background(), "tiles.json")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if string(body) != `{"fresh":true}` {
+		t.Fatalf("expected refetched body, got %s", body)
+	}
+	if upstreamCalls.Load() != 1 {
+		t.Fatalf("expected 1 upstream call, got %d", upstreamCalls.Load())
+	}
+	if !strings.Contains(buf.String(), "cached copy is corrupt") {
+		t.Errorf("corrupt cache not logged: %s", buf.String())
+	}
+	// The good copy replaced the corrupt one on disk.
+	onDisk, err := os.ReadFile(filepath.Join(dir, "tiles.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(onDisk) != `{"fresh":true}` {
+		t.Fatalf("disk not repaired, got %s", onDisk)
+	}
+}
+
+func TestCache_Get_CorruptCachedJSONUpstreamDownReturnsError(t *testing.T) {
+	var buf bytes.Buffer
+	c := New(Config{BaseURL: "http://127.0.0.1:1", CacheDir: t.TempDir(), Logger: captureLogger(&buf)})
+	if err := c.writeDisk("americana-roboto/style.json", []byte(`<html>`)); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Get(context.Background(), "americana-roboto/style.json"); err == nil {
+		t.Fatalf("expected error instead of serving corrupt cached copy")
+	}
+	if !strings.Contains(buf.String(), "no usable cached copy") {
+		t.Errorf("upstream failure not logged: %s", buf.String())
+	}
+}
+
+func TestCache_Get_InvalidUpstreamJSONNotCached(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// e.g. a captive portal answering 200 with its login page
+		w.Write([]byte(`<html><body>Sign in to Wi-Fi</body></html>`))
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	c := New(Config{BaseURL: srv.URL, CacheDir: dir})
+	if _, _, err := c.Get(context.Background(), "tiles.json"); err == nil {
+		t.Fatalf("expected error for non-JSON upstream body")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "tiles.json")); !os.IsNotExist(err) {
+		t.Fatalf("invalid upstream body was written to disk (stat err=%v)", err)
+	}
+}
+
+func TestCache_Get_BinaryAssetsNotValidated(t *testing.T) {
+	c := New(Config{BaseURL: "http://127.0.0.1:1", CacheDir: t.TempDir()})
+	png := []byte{0x89, 'P', 'N', 'G'}
+	if err := c.writeDisk("americana/sprites/sprite.png", png); err != nil {
+		t.Fatal(err)
+	}
+	body, _, err := c.Get(context.Background(), "americana/sprites/sprite.png")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if !bytes.Equal(body, png) {
+		t.Fatalf("binary asset altered: %v", body)
+	}
+}
+
+func TestCache_CheckWritable(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "tiles", "style")
+	c := New(Config{CacheDir: dir})
+	if err := c.CheckWritable(); err != nil {
+		t.Fatalf("CheckWritable on fresh dir: %v", err)
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		t.Fatalf("cache dir not created: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("probe file left behind: %v", entries)
+	}
+}
+
+func TestCache_CheckWritable_ReadOnlyDir(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	c := New(Config{CacheDir: dir})
+	err := c.CheckWritable()
+	if err == nil {
+		t.Fatalf("expected error for read-only dir")
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Errorf("error doesn't name the directory: %v", err)
 	}
 }

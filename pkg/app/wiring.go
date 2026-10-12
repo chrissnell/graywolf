@@ -1363,6 +1363,10 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		LocalPrefix:   "/api/maps/style",
 		Logger:        a.logger.With("component", "mapsstyle"),
 	})
+	if err := styleCache.CheckWritable(); err != nil {
+		a.logger.Warn("map style cache directory is not writable; the live map will work while online but will have no basemap style offline",
+			"dir", filepath.Join(a.cfg.TileCacheDir, "style"), "err", err)
+	}
 
 	apiSrv, err := webapi.NewServer(webapi.Config{
 		Store:              a.store,
