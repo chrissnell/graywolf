@@ -19,6 +19,23 @@ func newTestStore(t *testing.T) *Store {
 	return s
 }
 
+func TestOpenMemoryIsIsolated(t *testing.T) {
+	ctx := context.Background()
+	a, b := newTestStore(t), newTestStore(t)
+	d := &AudioDevice{Name: "only-in-a", SourceType: "soundcard", SourcePath: "default",
+		SampleRate: 48000, Channels: 1, Format: "s16le"}
+	if err := a.CreateAudioDevice(ctx, d); err != nil {
+		t.Fatalf("CreateAudioDevice: %v", err)
+	}
+	got, err := b.ListAudioDevices(ctx)
+	if err != nil {
+		t.Fatalf("ListAudioDevices: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("second OpenMemory store sees %d audio device(s) of the first, want 0", len(got))
+	}
+}
+
 func TestMigrateIsIdempotent(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.Migrate(); err != nil {
