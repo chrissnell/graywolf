@@ -42,14 +42,14 @@ var miceMessageLabels = [8]string{
 	"Returning", "In Service", "En Route", "Off Duty",
 }
 
-// parseMicE is invoked when the info field starts with '\'' or '`'.
+// parseMicE accepts current (` or 0x1c) and old (' or 0x1d) Mic-E identifiers.
 // The frame is required to pull the latitude from the destination
 // address; if it's nil (e.g. ParseInfo without a frame) we bail.
 func parseMicE(pkt *DecodedAPRSPacket, info []byte, frame *ax25.Frame) error {
 	if frame == nil {
 		return errors.New("aprs: mic-e requires frame")
 	}
-	// info[0] is the Mic-E type byte ('`' current, '\'' old). The
+	// info[0] is the Mic-E type byte (` or 0x1c current, ' or 0x1d old). The
 	// actual payload — longitude, speed/course, symbol — starts at
 	// info[1].
 	// Minimum: type byte + 3 lon + 3 spd/crs + 1 sym code + 1 sym table = 9.
@@ -358,9 +358,10 @@ func isMicEHighBit(c byte) bool {
 }
 
 // ErrMicELonAmbiguous reports that the Mic-E info-field longitude
-// decodes to an invalid value: one of the three bytes is a "no data"
-// sentinel (0x20 SPACE — the APRS101 ch 10 convention for unknown
-// data, always rejected regardless of offset), or the degrees byte
+// decodes to an invalid value: the degrees or minutes byte is the
+// "no data" sentinel (0x20 SPACE — the APRS101 ch 10 convention for
+// unknown data, always rejected regardless of offset; in the
+// hundredths byte 0x20 is just the digit 04), or the degrees byte
 // still falls outside 0..179 after the offset/wrap normalisation
 // below (a corrupt byte, not a real longitude). The receiver MUST
 // NOT plot either state; doing so drops the station thousands of km
@@ -373,14 +374,18 @@ func decodeMicELon(b []byte, offset int, sign float64) (float64, error) {
 	if len(b) < 3 {
 		return 0, errors.New("mic-e: lon short")
 	}
-	// APRS101 ch 10: a SPACE (0x20) in any of the three longitude
-	// bytes flags that field as unknown — the convention used when GPS
+	// APRS101 ch 10: a SPACE (0x20) in the degrees or minutes byte
+	// flags the longitude as unknown — the convention used when GPS
 	// has not locked or the encoder is otherwise unwilling to assert a
-	// value. Always rejected, regardless of the +100° offset.
-	for _, c := range b[:3] {
-		if c == ' ' {
-			return 0, ErrMicELonAmbiguous
-		}
+	// value (e.g. DL9DAK's pre-lock beacons, SPACE in the degrees
+	// byte). Always rejected, regardless of the +100° offset. No valid
+	// longitude ever encodes to 0x20 in those two bytes: degrees use
+	// 38..127 and minutes 38..97 on the wire. The hundredths byte is
+	// different — it is plain hh+28 over 28..127, so 0x20 there is the
+	// ordinary digit 04 (about 1 in 100 positions) and must decode
+	// normally (GH #652).
+	if b[0] == ' ' || b[1] == ' ' {
+		return 0, ErrMicELonAmbiguous
 	}
 	// 0x7f (DEL) is NOT a spec-reserved sentinel — byte-28 encodes it
 	// as the ordinary top-of-range digit 99, which some radios (e.g.

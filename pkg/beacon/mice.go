@@ -76,22 +76,46 @@ func MicEPositionInfo(lat, lon float64, course int, speedKt float64, altM float6
 	return sb.String()
 }
 
-// micELonFields returns the longitude degree value (with the +100
-// adjustment applied when the source longitude falls in the
-// +/-100..180 band), whether that adjustment was needed, and whether
-// the longitude is west. Mirrors the parser-side logic in
-// pkg/aprs/mice.go so a round-trip is byte-clean.
+// micELonFields returns the longitude degree value as it must appear
+// before the information-field +28 byte offset, whether the destination
+// must carry the +100 longitude flag, and whether the longitude is west.
+//
+// APRS101 ch 10 splits longitude degrees into four wire ranges. The
+// apparently odd encodings for 0..9 and 100..109 avoid invalid control
+// bytes while the destination's +100 flag lets the decoder distinguish
+// the overlapping values:
+//
+//	actual degrees  wire value  destination offset
+//	0..9            90..99      +100
+//	10..99          10..99      +0
+//	100..109        80..89      +100
+//	110..179        10..79      +100
 func micELonFields(lon float64) (degAdjusted int, offset100 bool, west bool) {
 	west = lon < 0
-	absLon := lon
-	if absLon < 0 {
-		absLon = -absLon
-	}
-	d := int(absLon)
-	if d >= 100 {
+	d, _, _ := micELonParts(lon)
+	switch {
+	case d < 10:
+		return d + 90, true, west
+	case d < 100:
+		return d, false, west
+	case d < 110:
+		return d - 20, true, west
+	default:
 		return d - 100, true, west
 	}
-	return d, false, west
+}
+
+// micELonParts rounds once to the wire precision before separating degrees
+// and minutes. Both the destination offset and info bytes must use that same
+// rounding, including a carry across a degree-range boundary. Mic-E cannot
+// represent 180 degrees; saturate at 179 degrees 59.99 minutes.
+func micELonParts(lon float64) (degrees, minutes, hundredths int) {
+	total := int(math.Round(math.Abs(lon) * 6000))
+	const maxTotal = 180*6000 - 1
+	if total > maxTotal {
+		total = maxTotal
+	}
+	return total / 6000, (total % 6000) / 100, total % 100
 }
 
 // micELonBytes returns the 3-byte longitude info-field bytes per
@@ -117,23 +141,7 @@ func micELonFields(lon float64) (degAdjusted int, offset100 bool, west bool) {
 func micELonBytes(lon float64, ambiguity int) [3]byte {
 	degAdjusted, _, _ := micELonFields(lon)
 
-	absLon := lon
-	if absLon < 0 {
-		absLon = -absLon
-	}
-	// Recover the minutes portion from the fractional degrees.
-	frac := absLon - math.Trunc(absLon)
-	minF := frac * 60.0
-	minWhole := int(minF)
-	minFrac := int(math.Round((minF - float64(minWhole)) * 100.0))
-	// Float carry guard: rounding may push minFrac to 100.
-	if minFrac >= 100 {
-		minFrac = 0
-		minWhole++
-	}
-	if minWhole >= 60 {
-		minWhole = 0 // wrap; the degree byte already covers this case
-	}
+	_, minWhole, minFrac := micELonParts(lon)
 
 	// Coarsen by truncation to match the destination's K/L/Z blanking.
 	// Truncation (rather than round-to-nearest) keeps the encoded value
@@ -152,11 +160,10 @@ func micELonBytes(lon float64, ambiguity int) [3]byte {
 		minFrac = (minFrac / 10) * 10
 	}
 
-	// Degrees byte: just value + 28. For 0-9 the resulting raw byte is
-	// in 28-37 (control chars) but the APRS101 parser accepts them; we
-	// do not use the +80 alternate range because the in-tree decoder
-	// has no branch for that variant. For values >= 100 the caller has
-	// already subtracted 100 (offset100 is set in the destination).
+	// Degrees byte: the four APRS101 longitude ranges have already been
+	// folded to their wire values by micELonFields; add the standard 28
+	// byte offset. In particular, 0..9 degrees becomes 'v'..DEL rather
+	// than the invalid control-byte range 0x1c..0x25.
 	degByte := byte(degAdjusted + 28)
 
 	// Minutes byte: value + 28; if value < 10, also +60 so the byte

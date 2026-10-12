@@ -3,7 +3,6 @@ package diagcollect
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"testing"
 )
 
@@ -114,8 +113,13 @@ func TestDiscoverConfigDB_RealFileSystem(t *testing.T) {
 	if err := os.WriteFile(dbPath, []byte{}, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Point the service and user-config candidates at nonexistent paths so
+	// an installed graywolf.db cannot win discovery ahead of the test's
+	// working-directory database.
 	got, src, err := DiscoverConfigDB(DiscoverOptions{
-		Workdir: dir,
+		ServiceInstall: filepath.Join(dir, "missing-service.db"),
+		UserConfigDir:  filepath.Join(dir, "missing-user-config"),
+		Workdir:        dir,
 	})
 	if err != nil {
 		t.Fatalf("err = %v", err)
@@ -126,5 +130,4 @@ func TestDiscoverConfigDB_RealFileSystem(t *testing.T) {
 	if src != "cwd" {
 		t.Fatalf("src = %q, want cwd", src)
 	}
-	_ = runtime.GOOS // silence unused-import warnings on platforms that change defaults
 }

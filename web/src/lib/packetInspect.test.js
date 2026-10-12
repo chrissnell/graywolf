@@ -139,6 +139,21 @@ test('analyzeFrame flags a SPACE byte in the Mic-E longitude field', () => {
   assert.ok(r.issues.some((i) => i.severity === 'error' && /SPACE/.test(i.text)));
 });
 
+test('analyzeFrame flags a SPACE byte in the Mic-E longitude degrees byte', () => {
+  // DL9DAK pre-GPS-lock shape: SPACE in the degrees byte.
+  const f = frame('T7SUTV', 'NW5W', ['`', 0x20, 0x55, 0x68, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.ok(r.issues.some((i) => i.severity === 'error' && /SPACE/.test(i.text)));
+});
+
+test('analyzeFrame does not flag SPACE in the Mic-E longitude hundredths byte', () => {
+  // GH #652: hundredths are plain hh+28, so 0x20 is the digit 04
+  // (72 51.04 here), not the unknown-data sentinel.
+  const f = frame('TRUW63', 'NW5W', ['`', 0x64, 0x4f, 0x20, 0x6c, 0x25, 0x25, 0x62, 0x2f]);
+  const r = analyzeFrame(f);
+  assert.deepEqual(r.issues, []);
+});
+
 test('analyzeFrame does not flag a DEL byte in the Mic-E longitude field', () => {
   // 0x7f is an ordinary top-of-range digit (99), never flagged — mice.go
   // no longer special-cases it against the dest's +100 offset bit either.
@@ -157,7 +172,8 @@ test('analyzeFrame does not flag a DEL byte in the Mic-E minutes/hundredths byte
 test('analyzeFrame does not flag an aligned SPACE byte in the Mic-E speed/course field', () => {
   // In the speed/course bytes 0x20 is just digit 4 and the Go decoder
   // reads it normally (this frame decodes to 30 kt / 84 degrees). Only
-  // the longitude bytes treat SPACE as the "unknown data" sentinel.
+  // the longitude degrees/minutes bytes treat SPACE as the "unknown data"
+  // sentinel.
   for (const i of [4, 5, 6]) {
     const info = ['`', 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x2f];
     info[i] = 0x20;
@@ -223,11 +239,11 @@ test('analyzeFrame handles a frame that ends before its PID', () => {
   assert.ok(r.issues.some((i) => i.severity === 'warn' && /PID/.test(i.text)));
 });
 
-test('analyzeFrame does not treat legacy 0x1c/0x1d info bytes as Mic-E', () => {
-  // Matches the Go decoder, which only dispatches '`' and '\'' to Mic-E.
+test('analyzeFrame flags truncated legacy Mic-E info', () => {
   const f = frame('T7SUTV', 'NW5W', [0x1c, 0x21, 0x22]);
   const r = analyzeFrame(f);
-  assert.equal(r.isMicE, false);
+  assert.equal(r.isMicE, true);
+  assert.ok(r.issues.some((i) => /needs at least 9/.test(i.text)));
 });
 
 test('analyzeFrame warns on unexpected control/PID bytes', () => {
@@ -235,4 +251,12 @@ test('analyzeFrame warns on unexpected control/PID bytes', () => {
   const r = analyzeFrame(f);
   assert.ok(r.issues.some((i) => i.severity === 'warn' && /Control byte/.test(i.text)));
   assert.ok(r.issues.some((i) => i.severity === 'warn' && /PID/.test(i.text)));
+});
+
+test('analyzeFrame recognizes all four Mic-E data identifiers', () => {
+  for (const dti of [0x60, 0x27, 0x1c, 0x1d]) {
+    const r = analyzeFrame(frame('T7SUTV', 'NW5W', [dti, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x2f]));
+    assert.equal(r.isMicE, true);
+    assert.deepEqual(r.issues, []);
+  }
 });

@@ -296,6 +296,24 @@ func TestKissRequest_ToModel_TcpClientModeDefault(t *testing.T) {
 			t.Errorf("AllowTxFromGovernor=false, want true for a defaulted tcp-client")
 		}
 	})
+	t.Run("serial empty mode defaults to tnc + governor TX", func(t *testing.T) {
+		m := KissRequest{Type: "serial", SerialDevice: "/dev/ttyUSB0", BaudRate: 9600}.ToModel()
+		if m.Mode != configstore.KissModeTnc {
+			t.Errorf("Mode=%q, want %q", m.Mode, configstore.KissModeTnc)
+		}
+		if !m.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=false, want true for a defaulted serial interface")
+		}
+	})
+	t.Run("usb-serial empty mode defaults to tnc + governor TX", func(t *testing.T) {
+		m := KissRequest{Type: "usbserial", SerialDevice: "1a86:7523", BaudRate: 9600}.ToModel()
+		if m.Mode != configstore.KissModeTnc {
+			t.Errorf("Mode=%q, want %q", m.Mode, configstore.KissModeTnc)
+		}
+		if !m.AllowTxFromGovernor {
+			t.Errorf("AllowTxFromGovernor=false, want true for a defaulted usb-serial interface")
+		}
+	})
 	t.Run("tcp server empty mode keeps modem default", func(t *testing.T) {
 		m := KissRequest{Type: "tcp", TcpPort: 8001}.ToModel()
 		if m.Mode != configstore.KissModeModem {
@@ -303,6 +321,15 @@ func TestKissRequest_ToModel_TcpClientModeDefault(t *testing.T) {
 		}
 		if m.AllowTxFromGovernor {
 			t.Errorf("AllowTxFromGovernor=true, want false for a modem-default tcp server")
+		}
+	})
+	t.Run("explicit modem mode on serial is preserved", func(t *testing.T) {
+		m := KissRequest{
+			Type: "serial", SerialDevice: "/dev/ttyUSB0", BaudRate: 9600,
+			Mode: configstore.KissModeModem,
+		}.ToModel()
+		if m.Mode != configstore.KissModeModem {
+			t.Errorf("Mode=%q, want explicit %q preserved", m.Mode, configstore.KissModeModem)
 		}
 	})
 	t.Run("explicit modem mode on tcp-client is preserved", func(t *testing.T) {

@@ -153,7 +153,7 @@ type Item struct {
 	Comment  string
 }
 
-// MicE is a decoded Mic-E (' or `) position report.
+// MicE is a decoded Mic-E (', `, 0x1c, or 0x1d) position report.
 type MicE struct {
 	Position     Position
 	MessageCode  int // 0..7 index into the standard Mic-E message table

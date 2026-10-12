@@ -10,7 +10,7 @@
 //   - Telemetry (T#... and base-91 compressed form)
 //   - Weather reports (_ positionless, @/` with weather appendix)
 //   - Objects (;) and items ())
-//   - Mic-E (' and `) with bit-packed latitude and manufacturer encoding
+//   - Mic-E (', `, 0x1c, and 0x1d) with bit-packed latitude and manufacturer encoding
 //   - Station capabilities (<IGATE,...>)
 //   - Direction finding (DF reports with BRG/NRQ appendix)
 //
