@@ -2494,6 +2494,11 @@ export interface components {
             tone?: string;
             type?: string;
             use_gps?: boolean;
+            weather_baud?: number;
+            weather_bucket?: string;
+            weather_device?: string;
+            weather_path?: string;
+            weather_source?: string;
         };
         "dto.BeaconResponse": {
             alt_ft?: number;
@@ -2540,6 +2545,11 @@ export interface components {
             tone?: string;
             type?: string;
             use_gps?: boolean;
+            weather_baud?: number;
+            weather_bucket?: string;
+            weather_device?: string;
+            weather_path?: string;
+            weather_source?: string;
         };
         "dto.BeaconSendResponse": {
             /** @description "sent" */

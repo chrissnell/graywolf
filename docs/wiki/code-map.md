@@ -430,3 +430,17 @@ transmitted data stays unacknowledged, or buffered data cannot be sent
 because the peer advertises a zero window, allowing the existing client
 supervisor to reconnect. This is not an idle receive timeout; a silent
 receive-only link remains open. Other platforms retain the existing behavior.
+
+## Weather beacon sources
+
+`pkg/weather` holds a shared observation, APRS complete-weather encoder,
+WxNow.txt reader and Peet Bros serial reader. `pkg/weather/davis` handles
+Davis LOOP/LOOP2 serial exchanges and CRC validation.
+`pkg/beacon/builder.go` selects the source for `TypeWeather`; the adapter
+in `pkg/app/adapters.go` maps persisted weather settings into the scheduler.
+`pkg/webapi/dto/beacon.go` validates and normalizes weather beacons, and
+`web/src/routes/Beacons.svelte` exposes their source settings. The five
+`weather_*` Beacon columns are added by configstore AutoMigrate.
+Weather fields directly follow the uncompressed weather symbol; comments,
+PHG and altitude must not be prepended to them. See the
+[beacon handbook](../handbook/beacons.html#weather-sources).

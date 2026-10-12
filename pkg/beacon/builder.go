@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
+	weatherobs "github.com/chrissnell/graywolf/pkg/weather"
+	"github.com/chrissnell/graywolf/pkg/weather/davis"
 )
 
 // buildInfo constructs the APRS info field for b, including optional
@@ -22,17 +24,20 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 			"id", b.ID, "type", b.Type, "ambiguity", b.Ambiguity)
 		b.Ambiguity = 4
 	}
-	comment := ExpandComment(b.Comment, s.version)
-	if len(b.CommentCmd) > 0 {
-		out, err := RunCommentCmd(ctx, b.CommentCmd, 5*time.Second)
-		if err != nil {
-			s.logger.Warn("comment_cmd failed", "id", b.ID, "err", err)
-			// Fall through with static comment.
-		} else if out != "" {
-			if comment != "" {
-				comment = comment + " " + out
-			} else {
-				comment = out
+	comment := ""
+	if b.Type != TypeWeather {
+		comment = ExpandComment(b.Comment, s.version)
+		if len(b.CommentCmd) > 0 {
+			out, err := RunCommentCmd(ctx, b.CommentCmd, 5*time.Second)
+			if err != nil {
+				s.logger.Warn("comment_cmd failed", "id", b.ID, "err", err)
+				// Fall through with static comment.
+			} else if out != "" {
+				if comment != "" {
+					comment = comment + " " + out
+				} else {
+					comment = out
+				}
 			}
 		}
 	}
@@ -142,6 +147,51 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		// once wall-clock time drifts away from it (issue #412).
 		ts := DHMZulu(s.clock.Now().UTC())
 		return ObjectInfo(b.ObjectName, true, ts, lat, lon, altM, b.SymbolTable, b.SymbolCode, phg, comment), nil
+
+	case TypeWeather:
+		var source weatherobs.Source
+		switch b.WeatherSource {
+		case "wxnow_file":
+			source = weatherobs.WxNowSource{Path: b.WeatherPath}
+		case "davis_serial":
+			source = davis.SerialConfig{
+				Device: b.WeatherDevice,
+				Baud:   int(b.WeatherBaud),
+				Bucket: davis.Bucket(b.WeatherBucket),
+			}
+		case "peet_serial":
+			source = weatherobs.PeetSerialConfig{
+				Device:   b.WeatherDevice,
+				Baud:     int(b.WeatherBaud),
+				RainUnit: weatherobs.PeetRainUnit(b.WeatherBucket),
+			}
+		default:
+			return "", fmt.Errorf("weather beacon: unsupported source %q", b.WeatherSource)
+		}
+		observation, err := source.Read(ctx)
+		if err != nil {
+			return "", fmt.Errorf("weather beacon: read %s: %w", b.WeatherSource, err)
+		}
+		weatherAppendix, err := weatherobs.EncodeAPRS(observation)
+		if err != nil {
+			return "", fmt.Errorf("weather beacon: encode APRS: %w", err)
+		}
+		lat, lon := b.Lat, b.Lon
+		if b.UseGps {
+			if s.cache == nil {
+				return "", fmt.Errorf("weather beacon: use_gps set but no GPS cache configured")
+			}
+			fix, ok := s.cache.Get()
+			if !ok {
+				return "", fmt.Errorf("weather beacon: use_gps set but no GPS fix available")
+			}
+			lat, lon = fix.Latitude, fix.Longitude
+		} else if lat == 0 && lon == 0 {
+			return "", fmt.Errorf("weather beacon: fixed coordinates are 0/0 (configure lat/lon or enable use_gps)")
+		}
+		// Keep the complete weather appendix immediately after the mandatory
+		// weather symbol. Altitude, PHG and comments would precede and corrupt it.
+		return PositionInfo(lat, lon, 0, 0, 0, '/', '_', false, "", weatherAppendix, 0), nil
 
 	case TypeCustom:
 		if b.CustomInfo == "" {

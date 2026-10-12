@@ -13,6 +13,7 @@ const (
 	TypePosition Type = "position"
 	TypeObject   Type = "object"
 	TypeTracker  Type = "tracker"
+	TypeWeather  Type = "weather"
 	TypeCustom   Type = "custom"
 	TypeIGate    Type = "igate"
 )
@@ -20,28 +21,33 @@ const (
 // Config describes one beacon entry from the beacons table. Fields match
 // the SQL schema in .context/graywolf-implementation-plan.md §beacons.
 type Config struct {
-	ID          uint32
-	Type        Type
-	Channel     uint32 // send_to parsed as channel number (IG/APP handled by caller)
-	Source      ax25.Address
-	Dest        ax25.Address
-	Path        []ax25.Address
-	Delay       time.Duration // initial delay
-	Every       time.Duration // periodic interval
-	Slot        int           // seconds past the hour; -1 means unset
-	UseGps      bool          // if true, source lat/lon/alt from the GPS cache instead of Lat/Lon/AltFt
-	Lat, Lon    float64       // fixed position
-	AltFt       float64
-	SymbolTable byte
-	SymbolCode  byte
-	Comment     string
-	CommentCmd  []string // already-split argv; empty = static comment
-	Format      string   // "compressed" | "uncompressed" | "mic_e" (APRS101 ch 9/6/10)
-	Ambiguity   int      // 0..4; trailing position digits blanked per APRS101 ch 6 table 8
-	Messaging   bool
-	ObjectName  string             // for TypeObject
-	CustomInfo  string             // for TypeCustom (raw info field override)
-	SmartBeacon *SmartBeaconConfig // non-nil + .Enabled → use for tracker
+	ID            uint32
+	Type          Type
+	Channel       uint32 // send_to parsed as channel number (IG/APP handled by caller)
+	Source        ax25.Address
+	Dest          ax25.Address
+	Path          []ax25.Address
+	Delay         time.Duration // initial delay
+	Every         time.Duration // periodic interval
+	Slot          int           // seconds past the hour; -1 means unset
+	UseGps        bool          // if true, source lat/lon/alt from the GPS cache instead of Lat/Lon/AltFt
+	Lat, Lon      float64       // fixed position
+	AltFt         float64
+	SymbolTable   byte
+	SymbolCode    byte
+	Comment       string
+	CommentCmd    []string // already-split argv; empty = static comment
+	Format        string   // "compressed" | "uncompressed" | "mic_e" (APRS101 ch 9/6/10)
+	Ambiguity     int      // 0..4; trailing position digits blanked per APRS101 ch 6 table 8
+	Messaging     bool
+	ObjectName    string             // for TypeObject
+	CustomInfo    string             // for TypeCustom (raw info field override)
+	WeatherSource string             // for TypeWeather: "wxnow_file", "davis_serial", or "peet_serial"
+	WeatherPath   string             // path to the WxNow.txt source file
+	WeatherDevice string             // serial device for Davis or Peet Bros
+	WeatherBaud   uint32             // serial baud (Davis 19200; Peet Bros 2400)
+	WeatherBucket string             // Davis bucket or Peet Bros rain counter unit
+	SmartBeacon   *SmartBeaconConfig // non-nil + .Enabled → use for tracker
 	// PHG radio-capability extension (APRS101 ch 7) for fixed-station
 	// position, igate, and object beacons. Emitted only when PHGPower
 	// > 0. Not valid for trackers (CSE/SPD occupies the same slot).
@@ -49,7 +55,7 @@ type Config struct {
 	PHGHeightFt    int // feet above average terrain
 	PHGGainDB      int // dBi
 	PHGDirectivity int // 0 = omni, 1..8 = 45° × d compass direction
-	Enabled  bool
+	Enabled        bool
 	// SendPath selects the transmission destination. Empty is treated as
 	// SendPathRF for safety. SendPathISOnly skips RF entirely so a station
 	// with no radio can beacon to APRS-IS.

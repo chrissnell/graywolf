@@ -33,7 +33,7 @@ background, the operator handbook is the starting point.
 | PHG | Power / antenna height / antenna gain encoding. | [`../../pkg/aprs/phg.go`](../../pkg/aprs/phg.go) |
 | DAO | High-precision position augmentation. | [`../../pkg/aprs/dao.go`](../../pkg/aprs/dao.go) |
 | DF | Direction-finding bearing/quality fields. | [`../../pkg/aprs/df.go`](../../pkg/aprs/df.go) |
-| Peet Bros | Peet Bros weather-station serial format. | [`../../pkg/aprs/peetbros.go`](../../pkg/aprs/peetbros.go) |
+| Peet Bros | Ultimeter weather-station serial formats: decoded as received APRS in `pkg/aprs`, or read directly from a console as a native weather source in `pkg/weather`. | [`../../pkg/aprs/peetbros.go`](../../pkg/aprs/peetbros.go), [`../../pkg/weather/peet.go`](../../pkg/weather/peet.go), [`../handbook/beacons.html`](../handbook/beacons.html) |
 | Telemetry | APRS telemetry packets and parameter coefficients. | [`../../pkg/aprs/telemetry.go`](../../pkg/aprs/telemetry.go) |
 | Capabilities packet | APRS station-capabilities advertisements. | [`../../pkg/aprs/capabilities.go`](../../pkg/aprs/capabilities.go) |
 | Object packet | APRS named-object advertisements. | [`../../pkg/aprs/object.go`](../../pkg/aprs/object.go) |
