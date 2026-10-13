@@ -17,6 +17,16 @@ GIT_REMOTE ?= origin
 
 GO_LDFLAGS := -X main.Version=$(VERSION) -X main.GitCommit=$(FULL_COMMIT)
 
+# Xcode 15+ ld warns "ignoring duplicate libraries: '-lobjc'" because several
+# cgo packages each link Objective-C frameworks. Harmless; silence it on macOS
+# (older ld rejects the flag, so only add it when the linker accepts it).
+ifeq ($(shell uname -s),Darwin)
+ifneq ($(shell echo 'int main(void){return 0;}' | $(or $(CC),cc) -x c - -o /dev/null -Wl,-no_warn_duplicate_libraries 2>&1),)
+else
+export CGO_LDFLAGS := $(CGO_LDFLAGS) -Wl,-no_warn_duplicate_libraries
+endif
+endif
+
 # Subproject directories (see refactor/split-modem-and-app).
 MODEM_DIR := graywolf-modem
 APP_DIR   := .
