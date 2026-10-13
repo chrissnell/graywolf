@@ -10,9 +10,11 @@ import (
 )
 
 // encodeTNC2 renders a decoded APRS packet as a TNC2-monitor line suitable
-// for APRS-IS uplink, WITHOUT the trailing CRLF. The path has its
-// trailing `*` H-bit markers stripped and a `,qAR,IGATECALL` construct
-// appended (APRS-IS convention identifying the gating station).
+// for APRS-IS uplink, WITHOUT the trailing CRLF. The path is passed
+// through unchanged, including `*` H-bit markers, and a `,qAR,IGATECALL`
+// construct is appended (APRS-IS convention identifying the gating
+// station). The markers must survive: they are how aprs.fi and other
+// consumers tell a digipeated copy from one heard directly.
 // Wire-format glue is delegated to aprs.FormatTNC2 so this encoder
 // shares structural rules with the originating-side encoder in
 // pkg/messages.
@@ -32,7 +34,7 @@ func encodeTNC2(pkt *aprs.DecodedAPRSPacket, igateCall string) (string, error) {
 		if p == "" {
 			continue
 		}
-		path = append(path, strings.TrimSuffix(p, "*"))
+		path = append(path, p)
 	}
 	path = append(path, "qAR", igateCall)
 	return aprs.FormatTNC2(pkt.Source, pkt.Dest, path, info), nil

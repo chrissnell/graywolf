@@ -209,18 +209,28 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			if ev, ok := stationcache.BuildRxEvent(pkt); ok {
 				a.stationCache.RecordRxEvent(ev)
 			}
-		} else if err != nil && a.logger != nil {
-			// A UI frame that AX.25-decoded but failed APRS parsing never
-			// reaches the station cache/map/digipeater's APRS output, with
-			// no prior log line — the operator only sees the AX.25 decode
-			// succeed (RX counter ticks) and nothing else happen. KISS-TNC
-			// frames carry no FCS check in software (the hardware TNC is
-			// trusted to have validated it), so a transport that silently
-			// corrupts bytes (e.g. a lossy BLE link) can still produce a
-			// structurally valid AX.25 frame with garbled APRS content.
-			a.logger.Debug("kiss/modem rx: aprs parse failed",
-				"kind", src.Kind, "channel", rf.Channel,
-				"source_callsign", f.Source.String(), "err", err)
+		} else if err != nil {
+			// APRS-IS gating criteria exclude only specific packet classes,
+			// not packets graywolf can't decode, so still hand the frame to
+			// the iGate (Parse populates Source/Dest/Path/Raw before failing).
+			if pkt != nil {
+				pkt.Channel = int(rf.Channel)
+				pkt.Direction = aprs.DirectionRF
+				_ = a.igateOut.SendPacket(ctx, pkt)
+			}
+			if a.logger != nil {
+				// A UI frame that AX.25-decoded but failed APRS parsing never
+				// reaches the station cache/map/digipeater's APRS output, with
+				// no prior log line — the operator only sees the AX.25 decode
+				// succeed (RX counter ticks) and nothing else happen. KISS-TNC
+				// frames carry no FCS check in software (the hardware TNC is
+				// trusted to have validated it), so a transport that silently
+				// corrupts bytes (e.g. a lossy BLE link) can still produce a
+				// structurally valid AX.25 frame with garbled APRS content.
+				a.logger.Debug("kiss/modem rx: aprs parse failed",
+					"kind", src.Kind, "channel", rf.Channel,
+					"source_callsign", f.Source.String(), "err", err)
+			}
 		}
 	} else if a.ax25Mgr != nil {
 		// Connected-mode dispatch: any non-UI frame goes to the LAPB

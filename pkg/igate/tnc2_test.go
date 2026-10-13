@@ -54,6 +54,24 @@ func TestEncodeTNC2AppendsQAR(t *testing.T) {
 	}
 }
 
+func TestEncodeTNC2PreservesHBit(t *testing.T) {
+	raw := buildRawFrame(t, "KE7XYZ-1", "APRS", []string{"W3XYZ*", "WIDE2-1"}, "!3725.00N/12158.00W>Hello")
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "KE7XYZ-1",
+		Dest:   "APRS",
+		Path:   []string{"W3XYZ*", "WIDE2-1"},
+		Raw:    raw,
+	}
+	line, err := encodeTNC2(pkt, "W5XYZ-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "KE7XYZ-1>APRS,W3XYZ*,WIDE2-1,qAR,W5XYZ-10:!3725.00N/12158.00W>Hello"
+	if line != want {
+		t.Fatalf("encodeTNC2 mismatch:\n got: %s\nwant: %s", line, want)
+	}
+}
+
 func TestEncodeTNC2RejectsMissingInfo(t *testing.T) {
 	pkt := &aprs.DecodedAPRSPacket{Source: "KE7XYZ", Dest: "APRS"}
 	if _, err := encodeTNC2(pkt, "W5XYZ-10"); err == nil {

@@ -2137,3 +2137,22 @@ routes to it, so no wiring-site change is needed. Rules:
 
 Manual check against real hardware (skipped in CI):
 `GRAYWOLF_BT_ADDR=AA:BB:.. go test ./pkg/kiss -run Hardware -v`.
+
+### 70. RF→IS uploads keep the path verbatim (including `*`), and aprs.fi decides "heard directly" itself
+
+`igate.encodeTNC2` ([`../../pkg/igate/tnc2.go`](../../pkg/igate/tnc2.go)) may only
+append `,qAR,IGATECALL` to the path (APRS-IS IGateDetails: "must not modify
+paths ... except to append qAR"). It must NOT strip the `*` H-bit markers:
+aprs.fi and other consumers use them to tell a digipeated copy from one heard
+directly, so stripping makes digipeated packets look direct. Likewise
+`dispatchRxFrame` hands UI frames that fail `aprs.Parse` to the iGate anyway;
+the gating exclusions are only the ones in `gateRFToIS` (third-party, TCPIP/
+TCPXX/NOGATE/RFONLY, own messages). There is deliberately no client-side dedup
+(IGATE-HINTS).
+
+Whether a station appears under "Stations heard directly by X" on aprs.fi is
+aprs.fi's call, not graywolf's: its stats are monthly summaries, only the first
+gated copy within ~30 s of APRS-IS dedup is credited, and its "first heard"
+algorithm refuses to count a packet as direct when unsure (user guide,
+`aprsfi-info-pages`). When debugging a missing credit, first confirm the upload
+by listening on APRS-IS with `filter b/<CALL>` and looking for `,qAR,<yourcall>:`.
