@@ -97,3 +97,50 @@ func TestParseTNC2RejectsBadLine(t *testing.T) {
 		}
 	}
 }
+
+func TestEncodeTNC2LineFraming(t *testing.T) {
+	for _, tc := range []struct {
+		name, in, want string
+	}{
+		{"plain", ">status", ">status"},
+		{"trailing CR", ">status\r", ">status"},
+		{"trailing LF", ">status\n", ">status"},
+		{"trailing CRLF", ">status\r\n", ">status"},
+		{"repeated terminators", ">status\r\n\r", ">status"},
+		{"embedded CR", ">status\rbody", ">status"},
+		{"embedded LF", ">status\nbody", ">status"},
+		{"binary control preserved", ">status\x1cbody\r", ">status\x1cbody"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := buildRawFrame(t, "DL9ABC-9", "APRS", nil, tc.in)
+			pkt := &aprs.DecodedAPRSPacket{
+				Source: "DL9ABC-9",
+				Dest: "APRS",
+				Raw: raw,
+			}
+			{
+				got, err := encodeTNC2(pkt, "W5XYZ-10")
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := "DL9ABC-9>APRS,qAR,W5XYZ-10:" + tc.want
+				if got != want {
+					t.Errorf("got %q, want %q", got, want)
+				}
+			}
+			f, err := ax25.Decode(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(f.Info); got != tc.in {
+				t.Fatalf("RF AX.25 info changed: got %q, want %q", got, tc.in)
+			}
+		})
+	}
+}
+
+
+func TestEncodeTNC2RejectsEmptySanitizedInfo(t *testing.T) {
+ pkt := &aprs.DecodedAPRSPacket{Source: "K1ABC", Dest: "APRS", Raw: buildRawFrame(t, "K1ABC", "APRS", nil, "\r>status")}
+ if _, err := encodeTNC2(pkt, "W5XYZ-10"); err == nil { t.Fatal("expected empty sanitized information to be rejected") }
+}

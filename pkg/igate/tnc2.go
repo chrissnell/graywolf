@@ -1,6 +1,7 @@
 package igate
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +25,10 @@ func encodeTNC2(pkt *aprs.DecodedAPRSPacket, igateCall string) (string, error) {
 		return "", errors.New("igate: packet missing source or dest")
 	}
 	info := infoBytes(pkt)
+	// APRS-IS is line-oriented. Sanitize only the outgoing record; preserve RF bytes.
+	if cut := bytes.IndexAny(info, "\r\n"); cut >= 0 {
+		info = info[:cut]
+	}
 	if len(info) == 0 {
 		return "", errors.New("igate: packet has no info field")
 	}
