@@ -97,3 +97,25 @@ func TestParseTNC2RejectsBadLine(t *testing.T) {
 		}
 	}
 }
+
+func TestEncodeTNC2PreservesRepeatedDigipeaterHBits(t *testing.T) {
+	path := []string{"DB0KX-2*", "WIDE2-1"}
+	raw := buildRawFrame(t, "DB0OTV-2", "APOT21", path, ">IGate path regression")
+	pkt := &aprs.DecodedAPRSPacket{
+		Source: "DB0OTV-2",
+		Dest:   "APOT21",
+		Path:   path,
+		Raw:    raw,
+	}
+	got, err := encodeTNC2(pkt, "DA6PG-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "DB0OTV-2>APOT21,DB0KX-2*,WIDE2-1,qAR,DA6PG-1:>IGate path regression"
+	if got != want {
+		t.Fatalf("uplink path changed:\n got: %s\nwant: %s", got, want)
+	}
+	if path[0] != "DB0KX-2*" {
+		t.Fatal("uplink encoder modified the input path")
+	}
+}
