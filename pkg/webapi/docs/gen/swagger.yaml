@@ -1476,6 +1476,8 @@ definitions:
         type: integer
       rf_channel:
         type: integer
+      rf_to_is_blocklist:
+        type: string
       server:
         type: string
       server_filter:
@@ -1505,6 +1507,8 @@ definitions:
         type: integer
       rf_channel:
         type: integer
+      rf_to_is_blocklist:
+        type: string
       server:
         type: string
       server_filter:

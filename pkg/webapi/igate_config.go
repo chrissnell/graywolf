@@ -64,6 +64,12 @@ func (s *Server) updateIgateConfig(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
+	canonicalBlocklist, err := req.ValidateRFToISBlocklist()
+	if err != nil {
+		badRequest(w, err.Error())
+		return
+	}
+	req.RFToISBlocklist = canonicalBlocklist
 	ctx := r.Context()
 	// is_tx_via has no legacy-invalid data (migration 27 seeds it empty),
 	// so unlike server_filter it is validated on every save, not only
