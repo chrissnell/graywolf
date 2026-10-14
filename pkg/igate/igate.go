@@ -171,7 +171,7 @@ type Config struct {
 
 // Status is the current state exposed via the REST endpoint.
 type Status struct {
-	RFToISEnabled bool `json:"rf_to_is_enabled"`
+	RFToISEnabled  bool      `json:"rf_to_is_enabled"`
 	Connected      bool      `json:"connected"`
 	Server         string    `json:"server"`
 	Callsign       string    `json:"callsign"`
@@ -711,7 +711,7 @@ type GateReason string
 
 const (
 	GateReasonNilPacket   GateReason = "nil-packet"
-	GateReasonDisabled GateReason = "rf-to-is-disabled"
+	GateReasonDisabled    GateReason = "rf-to-is-disabled"
 	GateReasonThirdParty  GateReason = "third-party"
 	GateReasonPathBlocks  GateReason = "path-blocks"
 	GateReasonSelfMessage GateReason = "self-message"
@@ -907,7 +907,7 @@ func (ig *Igate) Status() Status {
 	ig.mu.Lock()
 	defer ig.mu.Unlock()
 	return Status{
-		RFToISEnabled: ig.rfToIsEnabled.Load(),
+		RFToISEnabled:  ig.rfToIsEnabled.Load(),
 		Connected:      ig.connected,
 		Server:         ig.cfg.Server,
 		Callsign:       ig.stationCallsign,

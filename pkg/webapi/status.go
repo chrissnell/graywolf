@@ -97,11 +97,11 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			}},
 			Igate: &StatusIgateDTO{
 				RFToISEnabled: true,
-				Connected:  true,
-				Server:     "rotate.aprs2.net:14580",
-				Callsign:   "NW5W-8",
-				Gated:      c.IgateGated,
-				Downlinked: c.IgateDownlink,
+				Connected:     true,
+				Server:        "rotate.aprs2.net:14580",
+				Callsign:      "NW5W-8",
+				Gated:         c.IgateGated,
+				Downlinked:    c.IgateDownlink,
 			},
 		})
 		return
@@ -189,7 +189,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // Field mapping is 1:1 to preserve JSON compatibility with prior releases.
 func newStatusIgateDTO(s igate.Status) *StatusIgateDTO {
 	return &StatusIgateDTO{
-		RFToISEnabled: s.RFToISEnabled,
+		RFToISEnabled:  s.RFToISEnabled,
 		Connected:      s.Connected,
 		Server:         s.Server,
 		Callsign:       s.Callsign,

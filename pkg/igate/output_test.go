@@ -106,7 +106,7 @@ func TestRFToISMasterSwitch(t *testing.T) {
 	out := NewIgateOutput(ig)
 	pkt := &aprs.DecodedAPRSPacket{
 		Source: "W5ABC-7", Dest: "APRS",
-		Raw: buildRawFrame(t, "W5ABC-7", "APRS", nil, ">RF to IS toggle"),
+		Raw:  buildRawFrame(t, "W5ABC-7", "APRS", nil, ">RF to IS toggle"),
 		Type: aprs.PacketStatus,
 	}
 	ig.SetRFToISEnabled(false)
@@ -123,17 +123,23 @@ func TestRFToISMasterSwitch(t *testing.T) {
 }
 
 func TestRFToISMasterBlocksBothIngressPathsWhenConnected(t *testing.T) {
- ig := mustIgate(t)
- ig.mu.Lock()
- ig.connected = true
- ig.mu.Unlock()
- ig.SetRFToISEnabled(false)
- out := NewIgateOutput(ig)
- pkt := &aprs.DecodedAPRSPacket{Source: "W5ABC-7", Dest: "APRS", Type: aprs.PacketStatus, Raw: buildRawFrame(t, "W5ABC-7", "APRS", nil, ">test")}
- for _, simulation := range []bool{false, true} {
-  ig.simulation.Store(simulation)
-  if err := out.SendPacket(context.Background(), pkt); err != nil { t.Fatal(err) }
-  if got := out.GateClientTx(context.Background(), pkt); got != GateReasonDisabled { t.Fatalf("client TX escaped master switch: %q", got) }
-  if ig.Status().Gated != 0 { t.Fatal("disabled master uploaded an RF packet") }
- }
+	ig := mustIgate(t)
+	ig.mu.Lock()
+	ig.connected = true
+	ig.mu.Unlock()
+	ig.SetRFToISEnabled(false)
+	out := NewIgateOutput(ig)
+	pkt := &aprs.DecodedAPRSPacket{Source: "W5ABC-7", Dest: "APRS", Type: aprs.PacketStatus, Raw: buildRawFrame(t, "W5ABC-7", "APRS", nil, ">test")}
+	for _, simulation := range []bool{false, true} {
+		ig.simulation.Store(simulation)
+		if err := out.SendPacket(context.Background(), pkt); err != nil {
+			t.Fatal(err)
+		}
+		if got := out.GateClientTx(context.Background(), pkt); got != GateReasonDisabled {
+			t.Fatalf("client TX escaped master switch: %q", got)
+		}
+		if ig.Status().Gated != 0 {
+			t.Fatal("disabled master uploaded an RF packet")
+		}
+	}
 }
