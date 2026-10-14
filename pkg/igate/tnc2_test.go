@@ -115,8 +115,8 @@ func TestEncodeTNC2LineFraming(t *testing.T) {
 			raw := buildRawFrame(t, "DL9ABC-9", "APRS", nil, tc.in)
 			pkt := &aprs.DecodedAPRSPacket{
 				Source: "DL9ABC-9",
-				Dest: "APRS",
-				Raw: raw,
+				Dest:   "APRS",
+				Raw:    raw,
 			}
 			{
 				got, err := encodeTNC2(pkt, "W5XYZ-10")
@@ -139,8 +139,9 @@ func TestEncodeTNC2LineFraming(t *testing.T) {
 	}
 }
 
-
 func TestEncodeTNC2RejectsEmptySanitizedInfo(t *testing.T) {
- pkt := &aprs.DecodedAPRSPacket{Source: "K1ABC", Dest: "APRS", Raw: buildRawFrame(t, "K1ABC", "APRS", nil, "\r>status")}
- if _, err := encodeTNC2(pkt, "W5XYZ-10"); err == nil { t.Fatal("expected empty sanitized information to be rejected") }
+	pkt := &aprs.DecodedAPRSPacket{Source: "K1ABC", Dest: "APRS", Raw: buildRawFrame(t, "K1ABC", "APRS", nil, "\r>status")}
+	if _, err := encodeTNC2(pkt, "W5XYZ-10"); err == nil {
+		t.Fatal("expected empty sanitized information to be rejected")
+	}
 }
