@@ -46,7 +46,9 @@ func ParseRFToISBlocklist(input string) (string, error) {
 			base := strings.SplitN(call, "-", 2)[0]
 			call = fmt.Sprintf("%s-%d", base, ssid)
 		}
-		if _, ok := unique[call]; ok { continue }
+		if _, ok := unique[call]; ok {
+			continue
+		}
 		unique[call] = struct{}{}
 		ordered = append(ordered, call)
 	}
@@ -55,7 +57,7 @@ func ParseRFToISBlocklist(input string) (string, error) {
 
 func newRFToISBlocklist(value string) *rfToISBlocklist {
 	result := &rfToISBlocklist{
-		base: make(map[string]struct{}),
+		base:  make(map[string]struct{}),
 		exact: make(map[string]struct{}),
 	}
 	canonical, err := ParseRFToISBlocklist(value)
@@ -77,9 +79,13 @@ func (b *rfToISBlocklist) blocks(source string) bool {
 		return false
 	}
 	source = strings.ToUpper(strings.TrimSpace(source))
-	if _, ok := b.exact[source]; ok { return true }
+	if _, ok := b.exact[source]; ok {
+		return true
+	}
 	if !strings.Contains(source, "-") {
-		if _, ok := b.exact[source+"-0"]; ok { return true }
+		if _, ok := b.exact[source+"-0"]; ok {
+			return true
+		}
 	}
 	base, _, _ := strings.Cut(source, "-")
 	_, ok := b.base[base]

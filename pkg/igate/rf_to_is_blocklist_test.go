@@ -7,13 +7,17 @@ import (
 
 func TestRFToISBlocklistParsing(t *testing.T) {
 	normalized, err := ParseRFToISBlocklist(" k1abc, W5XYZ-07 \nw5xyz-7\nK1ABC ")
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	if want := "K1ABC\nW5XYZ-7"; normalized != want {
 		t.Fatalf("canonical = %q, want %q", normalized, want)
 	}
 	t.Run("blank is no filtering", func(t *testing.T) {
 		l, err := ParseRFToISBlocklist("")
-		if err != nil || l != "" { t.Fatalf("empty list = %q, %v", l, err) }
+		if err != nil || l != "" {
+			t.Fatalf("empty list = %q, %v", l, err)
+		}
 		if newRFToISBlocklist("").blocks("K1ABC") {
 			t.Fatal("empty list excludes any station")
 		}
@@ -30,7 +34,7 @@ func TestRFToISBlocklistParsing(t *testing.T) {
 func TestRFToISBlocklistSSIDMatching(t *testing.T) {
 	l := newRFToISBlocklist("K1ABC\nW5XYZ-7\nN0CALL-0")
 	for _, tc := range []struct {
-		source string
+		source  string
 		blocked bool
 	}{
 		{"K1ABC", true},

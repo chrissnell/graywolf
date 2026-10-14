@@ -110,7 +110,7 @@ type Config struct {
 	// (e.g. "m/100" for a 100km radius around the station).
 	// RFToISBlocklist is a local source exclusion policy; empty excludes nothing.
 	RFToISBlocklist string
-	ServerFilter string
+	ServerFilter    string
 	// SoftwareName and SoftwareVersion appear in the login banner.
 	SoftwareName    string
 	SoftwareVersion string
@@ -197,9 +197,9 @@ type Igate struct {
 	// and the cfg.StationCallsign field is only consulted at New() time.
 	stationCallsign string
 
-	filter atomic.Pointer[filters.Engine]
+	filter          atomic.Pointer[filters.Engine]
 	rfToISBlocklist atomic.Pointer[rfToISBlocklist]
-	heard  *heardDirect
+	heard           *heardDirect
 
 	mu            sync.Mutex
 	connected     bool
