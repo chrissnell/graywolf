@@ -3571,6 +3571,7 @@ export interface components {
             last_connected?: string;
             packets_filtered?: number;
             rf_to_is_dropped?: number;
+            rf_to_is_enabled?: boolean;
             rf_to_is_gated?: number;
             server?: string;
             simulation_mode?: boolean;
@@ -3842,6 +3843,8 @@ export interface components {
             packets_filtered?: number;
             /** @description DroppedOffline is the cumulative count of RF packets dropped because the IS session was offline. */
             rf_to_is_dropped?: number;
+            /** @description RFToISEnabled is the live RF→IS master switch, independent of connectivity. */
+            rf_to_is_enabled?: boolean;
             /** @description Gated is the cumulative count of RF packets forwarded to APRS-IS. */
             rf_to_is_gated?: number;
             /** @description Server is the APRS-IS host:port currently in use (or last attempted). */
