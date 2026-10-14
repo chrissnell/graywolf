@@ -2560,6 +2560,8 @@ definitions:
         type: integer
       rf_to_is_dropped:
         type: integer
+      rf_to_is_enabled:
+        type: boolean
       rf_to_is_gated:
         type: integer
       server:
@@ -3036,6 +3038,9 @@ definitions:
       rf_to_is_dropped:
         description: DroppedOffline is the cumulative count of RF packets dropped because the IS session was offline.
         type: integer
+      rf_to_is_enabled:
+        description: RFToISEnabled is the live RF→IS master switch, independent of connectivity.
+        type: boolean
       rf_to_is_gated:
         description: Gated is the cumulative count of RF packets forwarded to APRS-IS.
         type: integer

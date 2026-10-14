@@ -25,6 +25,8 @@ type StatusDTO struct {
 // Option<Box<_>> wrappers around an external schema. The JSON wire shape
 // is identical to igate.Status.
 type StatusIgateDTO struct {
+	// RFToISEnabled is the live RF→IS master switch, independent of connectivity.
+	RFToISEnabled bool `json:"rf_to_is_enabled"`
 	// Connected is true while an APRS-IS session is established.
 	Connected bool `json:"connected"`
 	// Server is the APRS-IS host:port currently in use (or last attempted).
@@ -94,11 +96,12 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 				DeviceClipping: false,
 			}},
 			Igate: &StatusIgateDTO{
-				Connected:  true,
-				Server:     "rotate.aprs2.net:14580",
-				Callsign:   "NW5W-8",
-				Gated:      c.IgateGated,
-				Downlinked: c.IgateDownlink,
+				RFToISEnabled: true,
+				Connected:     true,
+				Server:        "rotate.aprs2.net:14580",
+				Callsign:      "NW5W-8",
+				Gated:         c.IgateGated,
+				Downlinked:    c.IgateDownlink,
 			},
 		})
 		return
@@ -186,6 +189,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 // Field mapping is 1:1 to preserve JSON compatibility with prior releases.
 func newStatusIgateDTO(s igate.Status) *StatusIgateDTO {
 	return &StatusIgateDTO{
+		RFToISEnabled:  s.RFToISEnabled,
 		Connected:      s.Connected,
 		Server:         s.Server,
 		Callsign:       s.Callsign,

@@ -171,6 +171,7 @@ type Config struct {
 
 // Status is the current state exposed via the REST endpoint.
 type Status struct {
+	RFToISEnabled  bool      `json:"rf_to_is_enabled"`
 	Connected      bool      `json:"connected"`
 	Server         string    `json:"server"`
 	Callsign       string    `json:"callsign"`
@@ -202,6 +203,8 @@ type Igate struct {
 	connected     bool
 	lastConnected time.Time
 	simulation    atomic.Bool
+	// Shared by RF reception and KISS-client TX gating.
+	rfToIsEnabled atomic.Bool
 
 	// txChannel mirrors cfg.TxChannel but is mutable at runtime via
 	// SetTxChannel so an iGate-config save can retarget IS→RF without
@@ -291,6 +294,8 @@ func New(cfg Config) (*Igate, error) {
 	ig.filter.Store(filters.New(cfg.Rules))
 	ig.sessCtx.Store(&sessCtxHolder{ctx: context.Background()})
 	ig.simulation.Store(cfg.SimulationMode)
+	// Preserve the direct-use default; app wiring applies the persisted switch.
+	ig.rfToIsEnabled.Store(true)
 	ig.txChannel.Store(cfg.TxChannel)
 	// Parse the IS→RF via-path once at construction. A malformed value
 	// (validated at save time, so normally unreachable) falls back to
@@ -706,6 +711,7 @@ type GateReason string
 
 const (
 	GateReasonNilPacket   GateReason = "nil-packet"
+	GateReasonDisabled    GateReason = "rf-to-is-disabled"
 	GateReasonThirdParty  GateReason = "third-party"
 	GateReasonPathBlocks  GateReason = "path-blocks"
 	GateReasonSelfMessage GateReason = "self-message"
@@ -732,6 +738,10 @@ func (ig *Igate) gateRFToIS(pkt *aprs.DecodedAPRSPacket) GateReason {
 	// frame yet (no '*' marker in the path).
 	if pkt.Source != "" && pathIsDirect(pkt.Path) {
 		ig.heard.Record(pkt.Source)
+	}
+	// Track direct RF reception even with uplink disabled, for independent IS→RF delivery.
+	if !ig.rfToIsEnabled.Load() {
+		return GateReasonDisabled
 	}
 	// Rule: never gate third-party traffic (already came from the net).
 	if pkt.ThirdParty != nil || pkt.Type == aprs.PacketThirdParty {
@@ -826,6 +836,11 @@ func (ig *Igate) SendLine(line string) error {
 // connection is closed so the supervisor reconnects with the new
 // filter (which is sent at login time). Pass a non-nil governor to
 // enable IS→RF gating, or nil to disable it.
+// SetRFToISEnabled changes uplink policy without stopping reception or IS→RF.
+func (ig *Igate) SetRFToISEnabled(enabled bool) {
+	ig.rfToIsEnabled.Store(enabled)
+}
+
 func (ig *Igate) Reconfigure(serverFilter string, rules []filters.Rule, gov txgovernor.TxSink) {
 	ig.filter.Store(filters.New(rules))
 
@@ -892,6 +907,7 @@ func (ig *Igate) Status() Status {
 	ig.mu.Lock()
 	defer ig.mu.Unlock()
 	return Status{
+		RFToISEnabled:  ig.rfToIsEnabled.Load(),
 		Connected:      ig.connected,
 		Server:         ig.cfg.Server,
 		Callsign:       ig.stationCallsign,

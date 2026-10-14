@@ -254,3 +254,33 @@ func TestIgateToggle_DisableEnableCycle(t *testing.T) {
 	flip(true, true)
 	flip(false, false)
 }
+
+func TestIgateRFToISMasterLoadedAndReloaded(t *testing.T) {
+	h := newToggleHarness(t)
+	defer h.close()
+	cfg, err := h.app.store.GetIGateConfig(h.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Enabled = true
+	cfg.GateRfToIs = false
+	if err := h.app.store.UpsertIGateConfig(h.ctx, cfg); err != nil {
+		t.Fatal(err)
+	}
+	h.app.reloadIgate(h.ctx)
+	h.mock.waitForLogin(t, 5*time.Second)
+	ig := h.app.ig.Load()
+	if ig == nil || ig.Status().RFToISEnabled {
+		t.Fatal("persisted RF→IS off was not loaded")
+	}
+	for _, enabled := range []bool{true, false, true} {
+		cfg.GateRfToIs = enabled
+		if err := h.app.store.UpsertIGateConfig(h.ctx, cfg); err != nil {
+			t.Fatal(err)
+		}
+		h.app.reloadIgate(h.ctx)
+		if h.app.ig.Load() != ig || ig.Status().RFToISEnabled != enabled {
+			t.Fatalf("live RF→IS switch %v was not applied", enabled)
+		}
+	}
+}
