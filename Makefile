@@ -187,9 +187,14 @@ bump-minor:
 	@sed -i.bak 's/pkgver = .*/pkgver = $(NEW)/' packaging/aur/.SRCINFO && rm packaging/aur/.SRCINFO.bak
 	@sed -i.bak 's|source = graywolf-.*\.tar\.gz::.*|source = graywolf-$(NEW).tar.gz::https://github.com/chrissnell/graywolf/archive/v$(NEW).tar.gz|' packaging/aur/.SRCINFO && rm packaging/aur/.SRCINFO.bak
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
+	$(eval VI_MAJ := $(shell echo $(NEW) | cut -d. -f1))
+	$(eval VI_MIN := $(shell echo $(NEW) | cut -d. -f2))
+	$(eval VI_PAT := $(shell echo $(NEW) | cut -d. -f3))
+	@sed -i.bak -e 's/"Major": [0-9]*/"Major": $(VI_MAJ)/g' -e 's/"Minor": [0-9]*/"Minor": $(VI_MIN)/g' -e 's/"Patch": [0-9]*/"Patch": $(VI_PAT)/g' -e 's/"FileVersion": "[0-9.]*"/"FileVersion": "$(NEW)"/g' -e 's/"ProductVersion": "[0-9.]*"/"ProductVersion": "$(NEW)"/g' cmd/graywolf/versioninfo.json && rm cmd/graywolf/versioninfo.json.bak
+	@cd cmd/graywolf && go generate .
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES) cmd/graywolf/versioninfo.json cmd/graywolf/resource_windows.syso
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"
@@ -209,9 +214,14 @@ bump-point:
 	@sed -i.bak 's/pkgver = .*/pkgver = $(NEW)/' packaging/aur/.SRCINFO && rm packaging/aur/.SRCINFO.bak
 	@sed -i.bak 's|source = graywolf-.*\.tar\.gz::.*|source = graywolf-$(NEW).tar.gz::https://github.com/chrissnell/graywolf/archive/v$(NEW).tar.gz|' packaging/aur/.SRCINFO && rm packaging/aur/.SRCINFO.bak
 	@sed -i.bak 's|v[0-9]*\.[0-9]*\.[0-9]*-abc1234|v$(NEW)-abc1234|' docs/handbook/installation.html && rm docs/handbook/installation.html.bak
+	$(eval VI_MAJ := $(shell echo $(NEW) | cut -d. -f1))
+	$(eval VI_MIN := $(shell echo $(NEW) | cut -d. -f2))
+	$(eval VI_PAT := $(shell echo $(NEW) | cut -d. -f3))
+	@sed -i.bak -e 's/"Major": [0-9]*/"Major": $(VI_MAJ)/g' -e 's/"Minor": [0-9]*/"Minor": $(VI_MIN)/g' -e 's/"Patch": [0-9]*/"Patch": $(VI_PAT)/g' -e 's/"FileVersion": "[0-9.]*"/"FileVersion": "$(NEW)"/g' -e 's/"ProductVersion": "[0-9.]*"/"ProductVersion": "$(NEW)"/g' cmd/graywolf/versioninfo.json && rm cmd/graywolf/versioninfo.json.bak
+	@cd cmd/graywolf && go generate .
 	$(CARGO) update $(MANIFEST)
 	@echo "New version: $(NEW)"
-	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES)
+	git add VERSION $(MODEM_DIR)/Cargo.toml Cargo.lock pkg/releasenotes/notes.yaml packaging/aur/PKGBUILD packaging/aur/.SRCINFO docs/handbook/installation.html $(GENERATED_SPEC_FILES) cmd/graywolf/versioninfo.json cmd/graywolf/resource_windows.syso
 	git commit -m "Release v$(NEW)"
 	git tag "v$(NEW)"
 	git push $(GIT_REMOTE) && git push $(GIT_REMOTE) "v$(NEW)"

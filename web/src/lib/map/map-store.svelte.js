@@ -8,10 +8,14 @@
 // one-shot recentering after the data store first reports it.
 
 import { RADAR_REGION_US, RADAR_REGION_WORLD } from './sources/radar-source.js';
+import { parseViewRadiusMiles } from './view-radius-core.js';
 
 // Slightly above the equator so the world view shows more land than ocean.
-const WORLD_CENTER = [20, 0];
-const WORLD_ZOOM = 2;
+// Exported (lat, lon order, like mapState.mapCenter) so LiveMapV2.svelte's
+// "Reset view" button can return to this exact default rather than
+// duplicating the constant.
+export const WORLD_CENTER = [20, 0];
+export const WORLD_ZOOM = 2;
 // Zoom used when LiveMapV2 recenters on the station's "My Position".
 export const MY_POSITION_ZOOM = 10;
 
@@ -51,6 +55,12 @@ export const mapState = (() => {
   ]);
   let mapZoom = $state(loadInt('map-zoom', WORLD_ZOOM));
   let radarRegion = $state(normalizeRadarRegion(localStorage.getItem('gw_radar_region')));
+  // "Reset to default view" (LiveMapV2.svelte) centers on the station's
+  // own position and fits a box this many miles across in each direction
+  // -- operator-configurable since "20 miles" isn't right for everyone
+  // (a mountaintop repeater site vs. a low HT in a valley see very
+  // different real RF ranges).
+  let defaultViewRadiusMiles = $state(parseViewRadiusMiles(localStorage.getItem('map-default-view-radius-miles')));
 
   return {
     get selectedStation() { return selectedStation; },
@@ -86,6 +96,13 @@ export const mapState = (() => {
       const next = normalizeRadarRegion(v);
       radarRegion = next;
       localStorage.setItem('gw_radar_region', next);
+    },
+
+    get defaultViewRadiusMiles() { return defaultViewRadiusMiles; },
+    set defaultViewRadiusMiles(v) {
+      const next = parseViewRadiusMiles(String(v));
+      defaultViewRadiusMiles = next;
+      localStorage.setItem('map-default-view-radius-miles', String(next));
     },
 
     hasSavedView,

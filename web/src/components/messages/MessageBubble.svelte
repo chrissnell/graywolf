@@ -134,12 +134,20 @@
     if (canResend) onResend?.(msg);
   }
 
-  const sourceBadge = $derived.by(() => {
-    if (!source) return null;
-    if (source === 'rf') return { variant: 'success', label: 'RF' };
-    if (source === 'is') return { variant: 'info', label: 'IS' };
-    if (source === 'sim') return { variant: 'warning', label: 'Sim' };
-    return { variant: 'default', label: source };
+  function badgeFor(src) {
+    if (src === 'rf') return { variant: 'success', label: 'RF' };
+    if (src === 'is') return { variant: 'info', label: 'IS' };
+    if (src === 'sim') return { variant: 'warning', label: 'Sim' };
+    return { variant: 'default', label: src };
+  }
+  // Normally one badge. A collapsed IS/RF-echo bubble (see
+  // duplicate-echo-core.js) carries `mergedSources` — the unique set of
+  // paths the same packet was heard on — and renders one badge each.
+  const sourceBadges = $derived.by(() => {
+    const list = Array.isArray(msg?.mergedSources) && msg.mergedSources.length
+      ? msg.mergedSources
+      : (source ? [source] : []);
+    return list.map(badgeFor);
   });
 
   // Extended-length badge: DTO-derived flag set true when body > 67 chars
@@ -322,9 +330,9 @@
     >
       <span class="ts">{timeOfDay(msg?.sent_at || msg?.received_at || msg?.created_at)}</span>
     </button>
-    {#if sourceBadge}
-      <Badge variant={sourceBadge.variant} class="src-badge">{sourceBadge.label}</Badge>
-    {/if}
+    {#each sourceBadges as b (b.label)}
+      <Badge variant={b.variant} class="src-badge">{b.label}</Badge>
+    {/each}
     {#if showExtendedBadge}
       <Badge
         variant="info"

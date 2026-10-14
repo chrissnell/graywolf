@@ -117,6 +117,24 @@
 <PageHeader title="Messaging" subtitle="APRS message sending options" />
 
 <Box title="Messages">
+  <p class="tx-channel-label">Digipeater path</p>
+  <input
+    class="path-input"
+    type="text"
+    placeholder="WIDE1-1,WIDE2-1"
+    value={messagesPreferencesState.defaultPath}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setDefaultPath(e.target.value)}
+  />
+  <p class="messages-hint">
+    The digipeater path used for all outbound APRS traffic from this station --
+    both directed messages and bulletins. This is a station-level setting that
+    reflects your antenna, location, and local network topology, not something
+    that changes per message.
+    <strong>WIDE1-1,WIDE2-1</strong> is the standard for most fixed stations (2 hops).
+    Use <strong>WIDE1-1</strong> for portable/mobile or when near a fill-in digipeater.
+    Leave empty to transmit direct with no digipeating.
+  </p>
   <Toggle
     checked={messagesPreferencesState.allowLong}
     onCheckedChange={(v) => messagesPreferencesState.setAllowLong(v)}
@@ -151,6 +169,37 @@
     Choose APRS-IS only if you have no radio channel configured. The
     default tries RF first and silently falls back to APRS-IS when no
     modem is available.
+  </p>
+</Box>
+
+<Box title="Retry">
+  <p class="tx-channel-label">Max retries</p>
+  <input
+    class="retry-input"
+    type="number"
+    min="1"
+    max="20"
+    value={messagesPreferencesState.retryMaxAttempts}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setRetryMaxAttempts(e.target.value)}
+  />
+  <p class="messages-hint">
+    How many times to retransmit an unacknowledged message before marking it
+    failed. Default is 4 (1 initial send + 3 retries, ~90 seconds total).
+  </p>
+  <p class="tx-channel-label">Retry interval (seconds)</p>
+  <input
+    class="retry-input"
+    type="number"
+    min="10"
+    max="120"
+    value={messagesPreferencesState.retryIntervalSecs}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setRetryIntervalSecs(e.target.value)}
+  />
+  <p class="messages-hint">
+    How long to wait between retries. Default is 30 seconds. Range: 10–120
+    seconds.
   </p>
 </Box>
 
@@ -225,6 +274,33 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--text-default);
+  }
+  .path-input {
+    width: 200px;
+    padding: 6px 8px;
+    font-size: 13px;
+    font-family: monospace;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-default);
+  }
+  .path-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .retry-input {
+    width: 80px;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-default);
+  }
+  .retry-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .block-intro { margin-top: 0; margin-bottom: 16px; }
   .block-intro code {

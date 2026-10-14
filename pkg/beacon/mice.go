@@ -7,13 +7,41 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 )
 
-// MicEMessageOffDuty is the Mic-E message code emitted for every
-// graywolf-originated Mic-E beacon. APRS101 ch 10 table 8 numbers the
-// 3-bit codes by their decimal bit value: ABC = 111 (decimal 7) is
-// M0 = Off Duty (the innocuous "nothing special" code), ABC = 000
-// (decimal 0) is M7 = Emergency. We want Off Duty by default --
-// operator-selectable codes are deferred to a future plan.
+// MicEMessageOffDuty is the Mic-E message code emitted when a beacon's
+// configured message code doesn't resolve to a known value. APRS101 ch
+// 10 table 8 numbers the 3-bit codes by their decimal bit value: ABC =
+// 111 (decimal 7) is M0 = Off Duty (the innocuous "nothing special"
+// code), ABC = 000 (decimal 0) is M7 = Emergency.
 const MicEMessageOffDuty = 7
+
+// micEMessageCodesByName maps the configstore.Beacon.MicEMessageCode
+// string enum to the wire-format 0-7 code (APRS101 ch 10 table 8). A
+// string enum is used at the config layer instead of the raw int
+// specifically because the wire encoding is inverted (0 = Emergency, 7
+// = Off Duty) -- see pkg/aprs/mice.go's miceMessageLabels comment about
+// this exact reversal having bitten the codebase once already. Order
+// mirrors miceMessageLabels there.
+var micEMessageCodesByName = map[string]int{
+	"emergency":  0,
+	"priority":   1,
+	"special":    2,
+	"committed":  3,
+	"returning":  4,
+	"in_service": 5,
+	"en_route":   6,
+	"off_duty":   7,
+}
+
+// MicEMessageCodeFromName resolves a configstore.Beacon.MicEMessageCode
+// string to its wire-format code, falling back to Off Duty for an
+// empty or unrecognized name so a stale/blank config column never
+// produces an Emergency beacon by surprise.
+func MicEMessageCodeFromName(name string) int {
+	if code, ok := micEMessageCodesByName[name]; ok {
+		return code
+	}
+	return MicEMessageOffDuty
+}
 
 // MicEDestination returns the 6-character AX.25 destination callsign
 // for a Mic-E transmission. Ambiguity blanks trailing latitude digits
@@ -25,9 +53,9 @@ const MicEMessageOffDuty = 7
 // per-beacon "did the longitude need the +100 offset?" computation
 // from the scheduler so it doesn't have to duplicate the lat/lon
 // preprocessing the info-field encoder already does.
-func MicEDestination(lat, lon float64, ambiguity int) string {
+func MicEDestination(lat, lon float64, ambiguity int, msgCode int) string {
 	_, offset100, west := micELonFields(lon)
-	return aprs.EncodeMicEDest(lat, MicEMessageOffDuty, offset100, west, ambiguity)
+	return aprs.EncodeMicEDest(lat, msgCode, offset100, west, ambiguity)
 }
 
 // MicEPositionInfo builds an APRS101 ch 10 Mic-E info field for the

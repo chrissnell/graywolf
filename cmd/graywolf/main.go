@@ -4,6 +4,8 @@
 // is a thin dispatch shim responsible for build-time version injection,
 // subcommand routing, and signal handling. The normal-path main() body
 // is app.New(cfg, logger).Run(ctx).
+//
+//go:generate goversioninfo -o resource_windows.syso versioninfo.json
 package main
 
 import (
