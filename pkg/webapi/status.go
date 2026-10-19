@@ -137,7 +137,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			sc.InputDeviceID = *ch.InputDeviceID
 		}
 		haveBridgeStats := false
-		if s.bridge != nil {
+		// Only consult the Rust modem bridge for channels that have an audio
+		// input device (modem-backed). On Android the modem always emits
+		// StatusUpdate for its default channel_id even when no ConfigureChannel
+		// was sent (pure KISS-only setup), which puts a zero-stats entry in the
+		// bridge cache. Consulting the bridge for a KISS-only channel (BLE,
+		// Bluetooth, serial, tcp-client) would set haveBridgeStats=true and
+		// permanently mask the KISS manager's real RX/TX counts.
+		if s.bridge != nil && ch.InputDeviceID != nil {
 			if stats, ok := s.bridge.GetChannelStats(uint32(ch.ID)); ok {
 				haveBridgeStats = true
 				sc.RxFrames = stats.RxFrames
