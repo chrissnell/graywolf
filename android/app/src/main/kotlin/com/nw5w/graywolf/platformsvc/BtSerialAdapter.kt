@@ -41,6 +41,12 @@ class BtSerialAdapter(
     private val scope = CoroutineScope(SupervisorJob() + workerDispatcher)
     private val handles = ConcurrentHashMap<UInt, HandleState>()
 
+    // Handles the Go side closed while their RFCOMM connect was still in
+    // flight (its open timed out). The connect coroutine checks this set
+    // when connect() returns and closes the socket instead of registering
+    // it, so an abandoned open can't keep holding the radio's SPP link.
+    private val abandoned = ConcurrentHashMap.newKeySet<UInt>()
+
     private data class HandleState(
         val mac: String,
         val socket: BluetoothSocket,
@@ -50,12 +56,29 @@ class BtSerialAdapter(
 
     fun handleBondedRequest() {
         scope.launch {
+            // Every request MUST produce exactly one reply. The Go client
+            // blocks (holding its single-request lock) until this response
+            // arrives, so any uncaught failure here spins the KISS
+            // bonded-device picker on "Loading" forever and wedges the
+            // platform request channel. Catch everything — a denied
+            // permission surfaces as SecurityException, but a resetting
+            // Bluetooth stack can throw DeadObjectException / IllegalState —
+            // and always send a (possibly empty) list.
             val devices = try {
                 facade.bondedDevices()
             } catch (sec: SecurityException) {
                 Log.w(tag, "BLUETOOTH_CONNECT permission missing", sec)
                 emptyList()
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                // Never swallow cooperative cancellation (e.g. shutdown()) —
+                // rethrow so the coroutine unwinds instead of sending a stray reply.
+                throw cancel
+            } catch (t: Throwable) {
+                Log.w(tag, "bonded-device enumeration failed; replying empty", t)
+                emptyList()
             }
+            Log.i(tag, "bonded-device request: ${devices.size} device(s): " +
+                devices.joinToString { "${it.name} (${it.mac})" })
             val resp = BondedBtDevicesResponse.newBuilder().apply {
                 devices.forEach {
                     addDevices(
@@ -81,18 +104,43 @@ class BtSerialAdapter(
             sendAck(handle, ok = false, err = "unsupported_kind: ${req.kind}")
             return
         }
-        if (!facade.isBonded(mac)) {
+        // isBonded reads BluetoothAdapter.bondedDevices, which throws
+        // SecurityException without BLUETOOTH_CONNECT. This runs on the
+        // platformsvc connection thread, so an escaped exception would kill
+        // that thread rather than produce an ack.
+        val bonded = try {
+            facade.isBonded(mac)
+        } catch (sec: SecurityException) {
+            Log.w(tag, "BLUETOOTH_CONNECT permission missing", sec)
+            sendAck(handle, ok = false, err = "permission_denied: grant Bluetooth permission to Graywolf")
+            return
+        }
+        if (!bonded) {
             sendAck(handle, ok = false, err = "not_bonded: $mac")
             return
         }
+        Log.i(tag, "serial open handle=$handle mac=$mac: connecting")
         scope.launch {
             val socket = try {
                 facade.connectRfcomm(mac)
             } catch (sec: SecurityException) {
-                sendAck(handle, ok = false, err = "permission_denied")
+                sendAck(handle, ok = false, err = "permission_denied: grant Bluetooth permission to Graywolf")
                 return@launch
-            } catch (e: IOException) {
-                sendAck(handle, ok = false, err = "connect failed: ${e.message ?: "io_error"}")
+            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                throw cancel
+            } catch (e: Throwable) {
+                // Every open MUST produce exactly one ack; the Go side waits
+                // for it. Anything connectRfcomm throws (IOException with the
+                // per-attempt detail, IllegalArgumentException for a bad MAC,
+                // a resetting BT stack) becomes a failed ack.
+                Log.w(tag, "serial open handle=$handle mac=$mac failed", e)
+                abandoned.remove(handle)
+                sendAck(handle, ok = false, err = "connect failed: ${e.message ?: e.javaClass.simpleName}")
+                return@launch
+            }
+            if (abandoned.remove(handle)) {
+                Log.w(tag, "serial open handle=$handle mac=$mac: connected after Go gave up; closing")
+                try { socket.close() } catch (_: Throwable) {}
                 return@launch
             }
             val readJob = scope.launch { readPump(handle, socket) }
@@ -120,7 +168,12 @@ class BtSerialAdapter(
 
     fun handleSerialClose(req: SerialClose) {
         val handle = req.handle.toUInt()
-        val state = handles.remove(handle) ?: return
+        val state = handles.remove(handle)
+        if (state == null) {
+            // No live socket yet: the open may still be connecting.
+            abandoned.add(handle)
+            return
+        }
         scope.launch {
             // socket.close() first: the read pump is blocked in a native JNI
             // inputStream.read() that coroutine cancellation cannot interrupt;
@@ -149,9 +202,14 @@ class BtSerialAdapter(
 
     private suspend fun readPump(handle: UInt, socket: BluetoothSocket) {
         val buf = ByteArray(4096)
+        var firstRead = true
         try {
             while (true) {
                 val n = socket.inputStream.read(buf)
+                if (firstRead && n > 0) {
+                    Log.i(tag, "serial handle=$handle: first $n byte(s) from radio")
+                    firstRead = false
+                }
                 if (n < 0) {
                     sendError(handle, "rfcomm_closed", "EOF")
                     closeQuietly(handle, "rfcomm EOF")
