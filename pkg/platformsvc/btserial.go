@@ -12,7 +12,7 @@ import (
 )
 
 // bondedBtTimeout bounds a single bonded-device enumeration round-trip.
-// The request holds requestMu while it waits, so an unbounded wait on a
+// The request holds reqLine while it waits, so an unbounded wait on a
 // dropped reply would both spin the UI's "Loading" picker forever and
 // wedge every subsequent platform request. A few seconds is generous for
 // a local UDS + BluetoothAdapter query; on expiry the handler surfaces an

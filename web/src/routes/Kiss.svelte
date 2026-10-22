@@ -444,15 +444,28 @@
   // Platform.isAndroid: on desktop the GET returns 501 by design, so
   // we short-circuit with a friendly message instead of letting the
   // operator stare at "HTTP 501".
+  //
+  // Auto-load at most once per modal open. Without this latch an empty
+  // result (nothing paired, or BLUETOOTH_CONNECT not granted) re-satisfies
+  // the gate the moment bondedLoading drops, so the effect refetches in a
+  // tight loop: the picker sits on "Loading…", Refresh stays disabled and
+  // the "Grant Bluetooth permission" button never renders (GH #573).
+  // Plain (non-$state) on purpose: the latch must not retrigger the effect.
+  let bondedAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'bluetooth' || !modalOpen) return;
+    if (!modalOpen) {
+      bondedAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'bluetooth') return;
     if (!Platform.isAndroid) {
       if (!bondedError) {
         bondedError = 'Bluetooth interfaces can only be configured from the Android app.';
       }
       return;
     }
-    if (bondedDevices.length === 0 && !bondedLoading && !bondedError) {
+    if (!bondedAutoLoaded && bondedDevices.length === 0 && !bondedLoading && !bondedError) {
+      bondedAutoLoaded = true;
       loadBondedDevices();
     }
   });

@@ -37,9 +37,13 @@ type clientImpl struct {
 	audioRouteSubs []chan<- *AudioRouteChanged
 
 	// Single in-flight request → response correlation. The platform proto
-	// has no request_id field, so we serialize requests through requestMu.
-	requestMu sync.Mutex
-	respCh    chan *pb.PlatformMessage // re-set per request
+	// has no request_id field, so we serialize requests through reqLine, a
+	// capacity-1 semaphore. Unlike a Mutex, acquiring it honours the
+	// caller's ctx: a request queued behind a wedged one times out (naming
+	// the holder via inflight) instead of blocking forever.
+	reqLine  chan struct{}
+	inflight atomic.Pointer[inflightReq]
+	respCh   chan *pb.PlatformMessage // re-set per request
 
 	// helloSchema records the schema version from the first successful
 	// Hello so the reconnect loop can re-perform the handshake on every
@@ -61,10 +65,17 @@ type clientImpl struct {
 	serialHandleCounter uint32
 }
 
+// inflightReq describes the round-trip currently holding reqLine.
+type inflightReq struct {
+	kind  string
+	since time.Time
+}
+
 func newClient(socketPath string) Client {
 	return &clientImpl{
 		socketPath: socketPath,
 		closeCh:    make(chan struct{}),
+		reqLine:    make(chan struct{}, 1),
 	}
 }
 
@@ -233,7 +244,7 @@ func (c *clientImpl) dispatch(msg *pb.PlatformMessage) {
 		// roundTrip; any other unsolicited message gets logged and
 		// dropped so it can't be misattributed to the in-flight
 		// caller. (No request_id field on the wire; correlation is
-		// strictly by ordering + oneof shape under requestMu.)
+		// strictly by ordering + oneof shape under reqLine.)
 		switch msg.GetBody().(type) {
 		case *pb.PlatformMessage_Hello,
 			*pb.PlatformMessage_UsbListResp,
@@ -316,8 +327,22 @@ func (c *clientImpl) roundTrip(ctx context.Context, req *pb.PlatformMessage) (*p
 	if c.closed.Load() {
 		return nil, ErrClosed
 	}
-	c.requestMu.Lock()
-	defer c.requestMu.Unlock()
+	select {
+	case c.reqLine <- struct{}{}:
+	case <-ctx.Done():
+		if h := c.inflight.Load(); h != nil {
+			return nil, fmt.Errorf("platformsvc: %T gave up waiting behind %s (in flight %s): %w",
+				req.GetBody(), h.kind, time.Since(h.since).Round(time.Second), ctx.Err())
+		}
+		return nil, ctx.Err()
+	case <-c.closeCh:
+		return nil, ErrClosed
+	}
+	c.inflight.Store(&inflightReq{kind: fmt.Sprintf("%T", req.GetBody()), since: time.Now()})
+	defer func() {
+		c.inflight.Store(nil)
+		<-c.reqLine
+	}()
 
 	respCh := make(chan *pb.PlatformMessage, 1)
 	c.mu.Lock()
@@ -522,7 +547,7 @@ func (c *clientImpl) UnkeyPtt(ctx context.Context, method PttMethod, handle *Usb
 const dialTimeout = 10 * time.Second
 
 // reHelloTimeout bounds the re-Hello issued after a reconnect. It holds
-// requestMu for its duration, so an application round-trip that arrives during
+// reqLine for its duration, so an application round-trip that arrives during
 // a reconnect waits behind it — kept comfortably under bondedBtTimeout so the
 // bonded picker still resolves within its own budget.
 const reHelloTimeout = 5 * time.Second
