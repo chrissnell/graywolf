@@ -77,6 +77,63 @@ class BtSerialAdapterTest {
         assertTrue(acks[0].error.contains("not_bonded") || acks[0].error.contains("not bonded"))
     }
 
+    @Test fun serialOpen_isBondedThrowsSecurity_repliesPermissionDenied() = runTest {
+        // isBonded runs on the platformsvc connection thread; a missing
+        // BLUETOOTH_CONNECT grant must become a failed ack, not an escaped
+        // SecurityException.
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val facade = object : BluetoothFacade {
+            override suspend fun bondedDevices(): List<BondedDevice> = emptyList()
+            override fun isBonded(mac: String): Boolean =
+                throw SecurityException("BLUETOOTH_CONNECT not granted")
+            override suspend fun connectRfcomm(mac: String) = error("not used")
+        }
+        val sent = mutableListOf<PlatformMessage>()
+        val adapter = BtSerialAdapter(facade, dispatcher) { sent.add(it) }
+
+        adapter.handleSerialOpen(
+            SerialOpen.newBuilder()
+                .setHandle(7)
+                .setKind(SerialKind.SERIAL_KIND_BLUETOOTH)
+                .setAddress("AA:BB:CC:00:00:01")
+                .build()
+        )
+        advanceUntilIdle()
+
+        val acks = sent.filter { it.hasSerialOpenAck() }.map { it.serialOpenAck }
+        assertEquals(1, acks.size)
+        assertEquals(false, acks[0].ok)
+        assertTrue(acks[0].error.contains("permission_denied"))
+    }
+
+    @Test fun serialOpen_connectThrowsNonIo_stillAcks() = runTest {
+        // connectRfcomm can throw more than IOException (a bad MAC, a
+        // resetting stack). Go waits for exactly one ack per open.
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val facade = object : BluetoothFacade {
+            override suspend fun bondedDevices(): List<BondedDevice> = emptyList()
+            override fun isBonded(mac: String) = true
+            override suspend fun connectRfcomm(mac: String) =
+                throw IllegalStateException("bluetooth stack unavailable")
+        }
+        val sent = mutableListOf<PlatformMessage>()
+        val adapter = BtSerialAdapter(facade, dispatcher) { sent.add(it) }
+
+        adapter.handleSerialOpen(
+            SerialOpen.newBuilder()
+                .setHandle(8)
+                .setKind(SerialKind.SERIAL_KIND_BLUETOOTH)
+                .setAddress("AA:BB:CC:00:00:01")
+                .build()
+        )
+        advanceUntilIdle()
+
+        val acks = sent.filter { it.hasSerialOpenAck() }.map { it.serialOpenAck }
+        assertEquals(1, acks.size)
+        assertEquals(false, acks[0].ok)
+        assertTrue(acks[0].error.contains("bluetooth stack unavailable"))
+    }
+
     @Test fun closeNonexistentHandle_isNoOp() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         // Closing an unknown handle must not crash and must emit nothing.
