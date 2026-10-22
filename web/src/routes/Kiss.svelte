@@ -537,15 +537,23 @@
   // opens the modal with the "usbserial" type selected. Mirrors the
   // bluetooth lazy-loader pattern above. Gated on Platform.isAndroid:
   // desktop returns 501, so we short-circuit with a friendly message.
+  // Latched once per modal open for the same reason as bondedAutoLoaded:
+  // nothing plugged in is a legitimate empty result.
+  let usbAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'usbserial' || !modalOpen) return;
+    if (!modalOpen) {
+      usbAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'usbserial') return;
     if (!Platform.isAndroid) {
       if (!usbError) {
         usbError = 'USB serial interfaces can only be configured from the Android app.';
       }
       return;
     }
-    if (usbDevices.length === 0 && !usbLoading && !usbError) {
+    if (!usbAutoLoaded && usbDevices.length === 0 && !usbLoading && !usbError) {
+      usbAutoLoaded = true;
       loadUsbDevices();
     }
   });
@@ -566,11 +574,18 @@
   // Lazy-load host serial ports the first time the operator opens the modal
   // with the "serial" type selected. Unlike bluetooth/usbserial this works
   // on every desktop platform (the ports are enumerated on the host running
-  // graywolf), so there's no Platform gate. Re-runs only when the gate flips
-  // back to satisfied — the operator can clear an error and click Refresh.
+  // graywolf), so there's no Platform gate. Latched once per modal open
+  // like bondedAutoLoaded (a host with no serial ports is a legitimate
+  // empty result); the operator retries with Refresh.
+  let serialPortsAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'serial' || !modalOpen) return;
-    if (serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+    if (!modalOpen) {
+      serialPortsAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'serial') return;
+    if (!serialPortsAutoLoaded && serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+      serialPortsAutoLoaded = true;
       loadSerialPorts();
     }
   });
