@@ -6,9 +6,18 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	pb "github.com/chrissnell/graywolf/pkg/platformproto"
 )
+
+// bondedBtTimeout bounds a single bonded-device enumeration round-trip.
+// The request holds requestMu while it waits, so an unbounded wait on a
+// dropped reply would both spin the UI's "Loading" picker forever and
+// wedge every subsequent platform request. A few seconds is generous for
+// a local UDS + BluetoothAdapter query; on expiry the handler surfaces an
+// error to the operator instead of hanging.
+const bondedBtTimeout = 8 * time.Second
 
 // BondedBtDevice is the Go-side view of an Android Bluetooth bond entry
 // returned by Client.BondedBtDevices. MAC is the colon-separated uppercase
@@ -25,6 +34,8 @@ func (c *clientImpl) BondedBtDevices(ctx context.Context) ([]BondedBtDevice, err
 	req := &pb.PlatformMessage{Body: &pb.PlatformMessage_BondedBtDevicesRequest{
 		BondedBtDevicesRequest: &pb.BondedBtDevicesRequest{},
 	}}
+	ctx, cancel := context.WithTimeout(ctx, bondedBtTimeout)
+	defer cancel()
 	resp, err := c.roundTrip(ctx, req)
 	if err != nil {
 		return nil, err

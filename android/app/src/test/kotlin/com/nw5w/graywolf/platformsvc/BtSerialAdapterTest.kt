@@ -31,6 +31,30 @@ class BtSerialAdapterTest {
         assertTrue(resp.getDevices(0).mac == "AA:BB:CC:00:00:01")
     }
 
+    @Test fun bondedDevicesRequest_facadeThrows_stillReplies() = runTest {
+        // A resetting Bluetooth stack can throw a non-SecurityException
+        // (e.g. DeadObjectException). The handler must still emit exactly
+        // one reply so the Go client's round-trip completes rather than
+        // spinning the KISS picker on "Loading" forever (GH #573).
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val facade = object : BluetoothFacade {
+            override suspend fun bondedDevices(): List<BondedDevice> =
+                throw IllegalStateException("bluetooth stack unavailable")
+            override fun isBonded(mac: String) = false
+            override suspend fun connectRfcomm(mac: String) =
+                error("not used")
+        }
+        val sent = mutableListOf<PlatformMessage>()
+        val adapter = BtSerialAdapter(facade, dispatcher) { sent.add(it) }
+
+        adapter.handleBondedRequest()
+        advanceUntilIdle()
+
+        assertEquals(1, sent.size)
+        assertTrue(sent[0].hasBondedBtDevicesResponse())
+        assertEquals(0, sent[0].bondedBtDevicesResponse.devicesCount)
+    }
+
     @Test fun serialOpen_notBonded_replies_with_ack_error() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
         val facade = FakeBluetoothFacade(bonded = emptyList())
