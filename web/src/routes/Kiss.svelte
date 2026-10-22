@@ -128,6 +128,10 @@
   // lazy loader. Cleared whenever the operator picks a device or the
   // modal reopens.
   let saveError = $state('');
+  // Server-side failure from the last Create/Save, shown above the modal
+  // buttons. The toast alone is easy to miss on a tablet, where the modal
+  // then just stays open with no visible reason (GH #573).
+  let submitError = $state('');
 
   // Derived <Select> options for the bonded-device picker. chonky-ui's
   // Select doesn't honor `disabled` on individual options (it only
@@ -372,6 +376,7 @@
       form.type = 'bluetooth';
     }
     saveError = '';
+    submitError = '';
     // Default AllowTxFromGovernor=true for new tcp-client rows per
     // plan D4. When the operator flips to tcp-client we pre-check
     // the governor-TX checkbox so the common case (outbound TNC for
@@ -382,6 +387,7 @@
   function openEdit(row) {
     editing = row;
     saveError = '';
+    submitError = '';
     form = {
       ...row,
       tcp_port: String(row.tcp_port ?? ''),
@@ -712,6 +718,7 @@
       await refreshItems();
       refreshChannels();
     } catch (err) {
+      submitError = err.message;
       toasts.error(err.message);
     }
   }
@@ -732,6 +739,7 @@
       return;
     }
     saveError = '';
+    submitError = '';
     // Mode changes on an existing interface take effect the instant the
     // server restarts the per-interface KISS server — connected peers see
     // routing behavior flip under them. Make the operator confirm it.
@@ -1153,7 +1161,13 @@
         <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {/if}
-    <FormField label="Channel" id="kiss-channel">
+    <FormField
+      label="Channel"
+      id="kiss-channel"
+      hint={channels.length === 0
+        ? 'No channels exist yet, so Create will fail. Add one first under Settings → Channels (pick "KISS-TNC only" for a radio\'s built-in TNC), then come back.'
+        : ''}
+    >
       {#if channels.length > 0}
         <ChannelListbox
           id="kiss-channel"
@@ -1236,6 +1250,9 @@
         {/if}
       </div>
     {/if}
+    {#if submitError}
+      <p class="submit-error" role="alert">{submitError}</p>
+    {/if}
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
       <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
@@ -1274,6 +1291,7 @@
   }
 
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .submit-error { color: var(--color-danger, #d32f2f); margin: 16px 0 0; font-size: 13px; }
   .checkbox-field {
     display: flex;
     flex-direction: column;
