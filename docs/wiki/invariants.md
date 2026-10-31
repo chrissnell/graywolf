@@ -2118,3 +2118,24 @@ Source: [`../../web/src/components/messages/MessageThread.svelte`](../../web/src
 [`../../web/src/lib/messagesStore.svelte.js`](../../web/src/lib/messagesStore.svelte.js)
 (`adjustUnread`),
 [`../../web/src/lib/unread-batch-core.js`](../../web/src/lib/unread-batch-core.js).
+
+### 71. A beacon created with `enabled=false` stays disabled
+
+`Beacon.Enabled` keeps its gorm `default:true` (the DDL stays unchanged,
+as for KISS), and with that tag gorm sends `true` for a Go `false` on
+INSERT. `CreateBeacon` captures the requested value and re-asserts
+`false` after the insert (the `CreateKissInterface` pattern), with the
+insert and the re-assert in one transaction, so a failed re-assert
+leaves no enabled row. `BeaconRequest.Enabled` is a `*bool`: an omitted
+key still creates an enabled beacon (the KISS/channel rule).
+
+*Why:* the scheduler skips only disabled beacons (`buildHeap`), so a
+beacon stored enabled against the request transmits on its schedule.
+
+Source: [`../../pkg/configstore/store.go`](../../pkg/configstore/store.go)
+(`CreateBeacon`), [`../../pkg/webapi/dto/beacon.go`](../../pkg/webapi/dto/beacon.go)
+(`BeaconRequest`);
+[`../../pkg/webapi/beacons_test.go`](../../pkg/webapi/beacons_test.go)
+(`TestBeaconCreate_EnabledFlag`),
+[`../../pkg/configstore/beacon_create_test.go`](../../pkg/configstore/beacon_create_test.go)
+(`TestCreateBeacon_DisabledIsAtomic`).
