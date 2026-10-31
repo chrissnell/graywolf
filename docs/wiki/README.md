@@ -11,6 +11,7 @@ roles.
 | Where pieces connect, what runs where, what to touch when changing X | This wiki |
 | Operator-facing setup, configuration, hardware, REST API reference | [`../handbook/`](../handbook/) (HTML, also at chrissnell.com/software/graywolf/) |
 | Feature overview, performance numbers, project pitch | [`../../README.md`](../../README.md) |
+| Dev environment setup, Makefile targets, PR rules, issue labels, AI-agent policy, code of conduct | [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) |
 | Why a subsystem was built that way (design rationale) | `.context/*.md` plan files |
 | The Go<->Rust IPC wire format | [`../../proto/graywolf.proto`](../../proto/graywolf.proto) |
 | What a single function does | The code |

@@ -415,9 +415,10 @@ volumes:
 
         <ul>
           <li>Rust toolchain (stable, via <a href="https://rustup.rs">rustup</a>)</li>
-          <li>Go 1.22+</li>
+          <li>Go 1.26+ (the exact minimum is the <code>go</code> directive in <code>go.mod</code>)</li>
           <li>Node.js 22+ and npm (for the web UI)</li>
           <li>GNU Make</li>
+          <li><code>protoc</code>, the Protocol Buffers compiler (<code>protobuf-compiler</code> on Debian/Ubuntu, <code>protobuf</code> on Arch and Homebrew). The Rust modem's build script compiles <code>proto/graywolf.proto</code> on every build.</li>
           <li>ALSA development headers (<code>libasound2-dev</code> on Debian/Ubuntu, <code>alsa-lib</code> on Arch)</li>
         </ul>
 
