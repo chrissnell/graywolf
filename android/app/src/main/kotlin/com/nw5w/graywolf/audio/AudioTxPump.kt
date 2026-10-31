@@ -6,6 +6,7 @@ import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.util.Log
 import com.nw5w.graywolf.jni.AudioTxCallback
@@ -27,6 +28,13 @@ class AudioTxPump(
 
     @Volatile private var track: AudioTrack? = null
     @Volatile private var routedDevice: String = "<none>"
+    // Cumulative frames (not shorts: one stereo frame = 2 shorts) handed to
+    // AudioTrack.write on the current track — the ceiling for
+    // presentedFrames() so getTimestamp extrapolation can't over-report.
+    // Reset whenever a new track is built.
+    @Volatile private var framesWritten: Long = 0L
+    // Reused across drain polls; getTimestamp fills it in place.
+    private val timestamp = AudioTimestamp()
 
     // Digirig Lite tone-PTT state. When `stereo` is true the output track is
     // CHANNEL_OUT_STEREO and each mono AFSK sample becomes a frame
@@ -80,6 +88,9 @@ class AudioTxPump(
         if (track != null) return
         this.sampleRate = sampleRate
         if (stereo && osc == null) osc = ToneOscillator(sampleRate)
+        // New track → playback head restarts at 0, so the presentedFrames
+        // ceiling must too.
+        framesWritten = 0L
 
         val t = buildTrack(stereo)
         routeToUsb(t)
@@ -193,13 +204,19 @@ class AudioTxPump(
         routeToUsb(t)
         t.play()
         track = t
+        // New track → playback head restarts at 0, so the presentedFrames
+        // ceiling must too.
+        framesWritten = 0L
         Log.i(TAG, "AudioTxPump rebuilt stereo=$wantStereo routed=$routedDevice")
     }
 
     /**
      * Called from Rust modem via JNI on every TX PCM frame.
      * Blocking write — Rust modem TX thread is OK to block while audio drains.
-     * Returns -1 if the pump is stopped.
+     * Returns the number of mono input samples (= output frames) written, in
+     * both mono and stereo layouts, so the Rust drain watermark and
+     * [presentedFrames] share a unit; negative AudioTrack error codes pass
+     * through. Returns -1 if the pump is stopped.
      *
      * `@Synchronized` on the same monitor as [setTone]/[rebuildTrack]/[stop]:
      * key/unkey and pushSamples already serialise on the single TX-worker
@@ -215,7 +232,9 @@ class AudioTxPump(
     override fun pushSamples(samples: ShortArray, count: Int): Int {
         val t = track ?: return -1
         if (!stereo) {
-            return t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+            val written = t.write(samples, 0, count, AudioTrack.WRITE_BLOCKING)
+            if (written > 0) framesWritten += written
+            return written
         }
         // Stereo (Digirig Lite tone PTT): L = AFSK, R = keying tone (while
         // active) or silence (idle). The radio keys on the right channel.
@@ -226,7 +245,49 @@ class AudioTxPump(
             stereoScratch[i * 2] = samples[i]
             stereoScratch[i * 2 + 1] = if (emitTone) o!!.nextI16() else 0
         }
-        return t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
+        val written = t.write(stereoScratch, 0, count * 2, AudioTrack.WRITE_BLOCKING)
+        if (written < 0) return written
+        // write() counts shorts (2 per stereo frame); report frames so the
+        // Rust drain watermark is in the same unit as presentedFrames().
+        val frames = written / 2
+        framesWritten += frames
+        return frames
+    }
+
+    /**
+     * Frames physically presented at the output. Primary source is
+     * AudioTrack.getTimestamp (its framePosition/nanoTime reference the output,
+     * so extrapolating to now accounts for the full HAL→USB latency). When the
+     * timestamp is unavailable (common right after play() and on some USB
+     * stacks) we fall back to the mixer playback head, which excludes that
+     * latency but never over-reports. The result is clamped to framesWritten so
+     * a stale timestamp during an inter-transmission underrun can't extrapolate
+     * past what we actually wrote and make the Rust drain loop unkey early.
+     *
+     * `@Synchronized` with [pushSamples]/[setTone]/[rebuildTrack]/[stop] so a
+     * cross-thread tone pre-warm can't release the track mid-query. Any
+     * Throwable is swallowed and reported as 0: an exception escaping into the
+     * JNI downcall would be left pending on the Rust TX thread, and 0 only
+     * makes the drain loop hold PTT longer (bounded by its timeout).
+     */
+    @Synchronized
+    override fun presentedFrames(): Long {
+        val t = track ?: return 0L
+        return try {
+            val written = framesWritten
+            val raw: Long = if (t.getTimestamp(timestamp)) {
+                val elapsedNs = System.nanoTime() - timestamp.nanoTime
+                val extra = if (elapsedNs > 0) elapsedNs * sampleRate / 1_000_000_000L else 0L
+                timestamp.framePosition + extra
+            } else {
+                // Int frame counter; mask to unsigned 32-bit for the wrap boundary.
+                t.playbackHeadPosition.toLong() and 0xFFFF_FFFFL
+            }
+            minOf(raw, written)
+        } catch (e: Throwable) {
+            Log.w(TAG, "presentedFrames failed: $e")
+            0L
+        }
     }
 
     @Synchronized
