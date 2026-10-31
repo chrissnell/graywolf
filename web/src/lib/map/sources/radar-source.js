@@ -10,19 +10,81 @@
 // Nothing else in the client changes -- radar.js and LiveMapV2 consume the
 // descriptor returned by radarProvider() and are backend-agnostic.
 
-// RainViewer "Universal Blue" reflectivity color ramp, keyed by the dBZ lower
+// Reflectivity color ramp for liquid precipitation, keyed by the dBZ lower
 // bound of each band. Used by the vector backend's fill-color expression and by
-// any legend UI. Values are RainViewer's published rain palette taken at each
-// band's lower bound; per-band alpha is dropped (opacity is the global
-// fill-opacity slider's job, and the test contract requires 6-digit hex). The
-// two lightest bands (5/10) sit below RainViewer's visible threshold -- where
-// the source palette is a near-transparent haze -- so we continue the cyan ramp
-// downward to keep light returns reading as faint blue, matching the reference.
+// any legend UI; per-band alpha is dropped (opacity is the global fill-opacity
+// slider's job, and the test contract requires 6-digit hex).
+//
+// WHY THE WEAK BANDS ARE GREEN. This used to be RainViewer's "Universal Blue"
+// ramp, which spends its six weakest bands (5-30) on cyan and blue. Winter
+// precipitation lives almost entirely in that same 10-30 dBZ window, and snow
+// is blue on every radar product anyone recognizes -- so blue cannot mean both
+// "light rain" and "snow". Liquid moved to the classic NWS green/yellow/red
+// progression and blue became snow's alone (see PTYPE_COLORS).
+//
+// The extreme end (65+) keeps the conventional magenta/purple/white, which
+// overlaps the deepest sleet pinks. That is deliberate and harmless: sleet
+// above 35 dBZ essentially does not occur, so the two never draw together.
 export const DBZ_BANDS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 65, 70, 75];
 export const DBZ_COLORS = {
-  5: '#c5f0f7', 10: '#a8e6f0', 15: '#88ddee', 20: '#00a3e0', 25: '#0077aa',
-  30: '#005588', 35: '#ffee00', 40: '#ffaa00', 45: '#ff4400', 50: '#c10000',
-  55: '#ffaaff', 60: '#ff77ff', 65: '#ffffff', 70: '#ffffff', 75: '#00ff00',
+  5: '#cdfccd', 10: '#9bf79b', 15: '#5fe85f', 20: '#22cc22', 25: '#11a011',
+  30: '#0a7a0a', 35: '#ffee00', 40: '#ffaa00', 45: '#ff4400', 50: '#e60000',
+  55: '#c10000', 60: '#9a0000', 65: '#f800fd', 70: '#9854c6', 75: '#ffffff',
+};
+
+// Surface precipitation type codes carried on the `ptype` MVT attribute. This
+// is a cross-repo contract with the generator (`radar-contour/src/ptype.rs`);
+// never renumber. 0 means the generator had no type information (no model data,
+// or a source with no polarimetric moments) and renders on the liquid ramp.
+export const PTYPE_NONE = 0;
+export const PTYPE_RAIN = 1;
+export const PTYPE_SNOW = 2;
+export const PTYPE_SLEET = 3;
+export const PTYPE_FREEZING_RAIN = 4;
+export const PTYPE_MIXED = 5;
+
+// Per-type ramps for frozen and mixed precipitation. Hues follow NWS hazard
+// convention so they read correctly to anyone who has seen a winter-weather
+// graphic: snow blue, sleet pink, freezing rain violet, mixed neutral.
+//
+// These stop at 40 dBZ on purpose. Frozen precipitation is a weak scatterer and
+// lives in the 5-40 window; a `step` with no stops above 40 holds the darkest
+// color for anything stronger, which is the right answer for the rare very
+// heavy wet snow rather than running off the end of a ramp nobody can read.
+export const PTYPE_BANDS = [5, 10, 15, 20, 25, 30, 35, 40];
+//
+// The light ends carry more chroma than a first pass at these ramps did: at
+// 5-10 dBZ a pale blue and a pale violet are the same near-white, which would
+// have made snow and freezing rain indistinguishable in light precipitation.
+// `radar-source.test.js` pins the separation numerically so a later tweak by
+// eye cannot quietly undo it.
+export const PTYPE_COLORS = {
+  [PTYPE_SNOW]: {
+    5: '#cfe6ff', 10: '#a9d2fb', 15: '#7fb8f5', 20: '#5a9ce8',
+    25: '#3a7bd5', 30: '#2560b4', 35: '#17458e', 40: '#0e3269',
+  },
+  [PTYPE_SLEET]: {
+    5: '#ffd6ec', 10: '#ffb3dc', 15: '#fb8cc8', 20: '#ee64b0',
+    25: '#d94293', 30: '#ba2575', 35: '#951558', 40: '#700d3f',
+  },
+  [PTYPE_FREEZING_RAIN]: {
+    5: '#e4d4ff', 10: '#cdb3ff', 15: '#b391fb', 20: '#9770ee',
+    25: '#7c51d9', 30: '#6135ba', 35: '#482195', 40: '#341570',
+  },
+  [PTYPE_MIXED]: {
+    5: '#e8e0dc', 10: '#d2c6c0', 15: '#b8a9a1', 20: '#9c8d84',
+    25: '#7f7168', 30: '#63574f', 35: '#4a4039', 40: '#342c27',
+  },
+};
+
+// Human labels for a legend / popup.
+export const PTYPE_LABELS = {
+  [PTYPE_NONE]: 'Precipitation',
+  [PTYPE_RAIN]: 'Rain',
+  [PTYPE_SNOW]: 'Snow',
+  [PTYPE_SLEET]: 'Sleet',
+  [PTYPE_FREEZING_RAIN]: 'Freezing rain',
+  [PTYPE_MIXED]: 'Mixed',
 };
 
 export const RADAR_BACKEND_RASTER = 'raster';
@@ -61,16 +123,45 @@ export function radarTileUrl(product, ext) {
   return `${RADAR_TILE_BASE}/radar/${product}/{z}/{x}/{y}.${ext}`;
 }
 
-// MapLibre `step` expression mapping a polygon's `dbz` property to the NWS
-// ramp. Output below the first stop is the lowest band's color.
-export function buildDbzFillColor() {
+// MapLibre `step` expression over a polygon's `dbz` property. Output below the
+// first stop is the lowest band's color.
+function buildStep(bands, colors) {
   // Base output is the lowest band's color (a dbz==first-band polygon falls
   // below the first stop and takes it); stops begin at the second band.
-  const expr = ['step', ['get', 'dbz'], DBZ_COLORS[DBZ_BANDS[0]]];
-  for (let i = 1; i < DBZ_BANDS.length; i++) {
-    expr.push(DBZ_BANDS[i], DBZ_COLORS[DBZ_BANDS[i]]);
+  const expr = ['step', ['get', 'dbz'], colors[bands[0]]];
+  for (let i = 1; i < bands.length; i++) {
+    expr.push(bands[i], colors[bands[i]]);
   }
   return expr;
+}
+
+// The liquid-precipitation intensity ramp. Still exported on its own because a
+// legend wants the plain ramp, and because `ptype` 0/1 both resolve to it.
+export function buildDbzFillColor() {
+  return buildStep(DBZ_BANDS, DBZ_COLORS);
+}
+
+// The intensity ramp for one frozen/mixed type.
+export function buildPtypeFillColor(ptype) {
+  const colors = PTYPE_COLORS[ptype];
+  if (!colors) return buildDbzFillColor();
+  return buildStep(PTYPE_BANDS, colors);
+}
+
+// Full fill-color expression: switch palette on the surface precipitation type,
+// then ramp on intensity within it. Rain and "no type information" share the
+// default branch, so a tile generated before `ptype` existed -- or by a source
+// with no polarimetric moments -- renders exactly as it always did.
+export function buildRadarFillColor() {
+  return [
+    'match',
+    ['get', 'ptype'],
+    PTYPE_SNOW, buildPtypeFillColor(PTYPE_SNOW),
+    PTYPE_SLEET, buildPtypeFillColor(PTYPE_SLEET),
+    PTYPE_FREEZING_RAIN, buildPtypeFillColor(PTYPE_FREEZING_RAIN),
+    PTYPE_MIXED, buildPtypeFillColor(PTYPE_MIXED),
+    buildDbzFillColor(),
+  ];
 }
 
 // Uniform descriptor consumed by radar.js. `layers` is ordered; `opacity`
@@ -129,7 +220,7 @@ export function radarProvider(backend = ACTIVE_RADAR_BACKEND) {
           // feathered edge between two adjacent bands leaks the basemap through
           // as a hairline seam (even though the generator's band geometry is
           // coincident). false => hard edges that tile cleanly, no seams.
-          paint: { 'fill-color': buildDbzFillColor(), 'fill-antialias': false },
+          paint: { 'fill-color': buildRadarFillColor(), 'fill-antialias': false },
         },
       ],
       opacity: { property: 'fill-opacity', layerIds: ['radar-fill'] },

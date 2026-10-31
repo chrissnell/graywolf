@@ -52,7 +52,7 @@ test('radarTileUrl builds an XYZ raster template under the base', () => {
   assert.ok(url.endsWith('/nexrad-n0q/{z}/{x}/{y}.png'));
 });
 
-import { buildDbzFillColor } from './radar-source.js';
+import { buildDbzFillColor, buildRadarFillColor } from './radar-source.js';
 
 test('buildDbzFillColor is a step expression over the dbz property', () => {
   const expr = buildDbzFillColor();
@@ -75,7 +75,7 @@ test('vector provider yields a fill layer driven by fill-opacity', () => {
   assert.equal(p.layers.length, 1);
   assert.equal(p.layers[0].type, 'fill');
   assert.equal(p.layers[0]['source-layer'], 'radar');
-  assert.deepEqual(p.layers[0].paint['fill-color'], buildDbzFillColor());
+  assert.deepEqual(p.layers[0].paint['fill-color'], buildRadarFillColor());
   assert.equal(p.opacity.property, 'fill-opacity');
   assert.deepEqual(p.opacity.layerIds, ['radar-fill']);
 });
@@ -254,4 +254,193 @@ test('radarProviderForRegion: US delegates to the backend, world is per-frame Ra
   assert.equal(world.source.type, 'raster');
   assert.equal(world.perFrame, true);
   assert.match(world.frameTiles(1700000000)[0], /\/radar\/rainviewer\/1700000000\//);
+});
+
+// --- surface precipitation type palette -------------------------------------
+
+import {
+  PTYPE_BANDS,
+  PTYPE_COLORS,
+  PTYPE_FREEZING_RAIN,
+  PTYPE_LABELS,
+  PTYPE_MIXED,
+  PTYPE_NONE,
+  PTYPE_RAIN,
+  PTYPE_SLEET,
+  PTYPE_SNOW,
+  buildPtypeFillColor,
+} from './radar-source.js';
+
+test('ptype codes match the generator contract and are never renumbered', () => {
+  // Mirrors radar-contour/src/ptype.rs. Changing these silently remaps colors
+  // on every tile already in R2.
+  assert.equal(PTYPE_NONE, 0);
+  assert.equal(PTYPE_RAIN, 1);
+  assert.equal(PTYPE_SNOW, 2);
+  assert.equal(PTYPE_SLEET, 3);
+  assert.equal(PTYPE_FREEZING_RAIN, 4);
+  assert.equal(PTYPE_MIXED, 5);
+});
+
+test('every frozen/mixed type has a full hex ramp', () => {
+  for (const ptype of [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN, PTYPE_MIXED]) {
+    const ramp = PTYPE_COLORS[ptype];
+    assert.ok(ramp, `ptype ${ptype} needs a ramp`);
+    for (const dbz of PTYPE_BANDS) {
+      assert.match(ramp[dbz], /^#[0-9a-fA-F]{6}$/, `ptype ${ptype} band ${dbz} needs a hex color`);
+    }
+  }
+});
+
+test('every type has a label for the legend', () => {
+  for (const ptype of [PTYPE_NONE, PTYPE_RAIN, PTYPE_SNOW, PTYPE_SLEET,
+                       PTYPE_FREEZING_RAIN, PTYPE_MIXED]) {
+    assert.equal(typeof PTYPE_LABELS[ptype], 'string');
+    assert.ok(PTYPE_LABELS[ptype].length > 0);
+  }
+});
+
+test('snow keeps the blue family and liquid gives it up', () => {
+  // The whole point of the repaint: at the weak reflectivities where winter
+  // precip lives, snow must be bluer than rain, or the two are indistinguishable.
+  const blueness = (hex) => {
+    const b = parseInt(hex.slice(5, 7), 16);
+    const r = parseInt(hex.slice(1, 3), 16);
+    return b - r;
+  };
+  for (const dbz of [10, 15, 20, 25, 30]) {
+    assert.ok(blueness(PTYPE_COLORS[PTYPE_SNOW][dbz]) > 40,
+      `snow at ${dbz} dBZ should read blue, got ${PTYPE_COLORS[PTYPE_SNOW][dbz]}`);
+    assert.ok(blueness(DBZ_COLORS[dbz]) < 10,
+      `liquid at ${dbz} dBZ must not be blue, got ${DBZ_COLORS[dbz]}`);
+  }
+});
+
+// Small color helpers so the palette contract is checked numerically rather
+// than by eye. Hue and chroma are what actually make two map areas tell apart;
+// raw RGB distance alone is misleading near white.
+const rgbOf = (hex) =>
+  [0, 1, 2].map((i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255);
+const lumOf = (hex) => {
+  const [r, g, b] = rgbOf(hex);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+const chromaOf = (hex) => {
+  const c = rgbOf(hex);
+  return Math.max(...c) - Math.min(...c);
+};
+const hueOf = (hex) => {
+  const [r, g, b] = rgbOf(hex);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  if (d === 0) return 0;
+  let h;
+  if (max === r) h = ((g - b) / d) % 6;
+  else if (max === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return (h * 60 + 360) % 360;
+};
+const hueGap = (a, b) => {
+  const d = Math.abs(hueOf(a) - hueOf(b)) % 360;
+  return Math.min(d, 360 - d);
+};
+const rgbGap = (a, b) => {
+  const [x, y] = [rgbOf(a), rgbOf(b)];
+  return (Math.abs(x[0] - y[0]) + Math.abs(x[1] - y[1]) + Math.abs(x[2] - y[2])) * 255;
+};
+
+const WINTER_TYPES = [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN, PTYPE_MIXED];
+const HUED_TYPES = [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN];
+
+test('every winter ramp darkens monotonically with intensity', () => {
+  // Intensity has to read within a type, not only between types.
+  for (const ptype of WINTER_TYPES) {
+    let prev = Infinity;
+    for (const dbz of PTYPE_BANDS) {
+      const l = lumOf(PTYPE_COLORS[ptype][dbz]);
+      assert.ok(l < prev, `ptype ${ptype} must darken at ${dbz} dBZ (${l} vs ${prev})`);
+      prev = l;
+    }
+  }
+});
+
+test('mixed is the only desaturated ramp, so it never reads as a hue', () => {
+  // Mixed is deliberately neutral and the other three deliberately are not.
+  // That contrast is what separates mixed from all of them at once.
+  for (const dbz of PTYPE_BANDS) {
+    assert.ok(chromaOf(PTYPE_COLORS[PTYPE_MIXED][dbz]) < 0.12,
+      `mixed at ${dbz} dBZ must stay neutral`);
+    for (const ptype of HUED_TYPES) {
+      assert.ok(chromaOf(PTYPE_COLORS[ptype][dbz]) > 0.15,
+        `ptype ${ptype} at ${dbz} dBZ needs enough chroma to read as a hue`);
+    }
+  }
+});
+
+test('snow, sleet and freezing rain are separated in hue at every band', () => {
+  // This is the check that caught a pale-blue snow and a pale-violet freezing
+  // rain collapsing to the same near-white at the lightest bands.
+  for (const dbz of PTYPE_BANDS) {
+    for (let i = 0; i < HUED_TYPES.length; i++) {
+      for (let j = i + 1; j < HUED_TYPES.length; j++) {
+        const a = PTYPE_COLORS[HUED_TYPES[i]][dbz];
+        const b = PTYPE_COLORS[HUED_TYPES[j]][dbz];
+        assert.ok(hueGap(a, b) > 30,
+          `ptype ${HUED_TYPES[i]} and ${HUED_TYPES[j]} share a hue at ${dbz} dBZ `
+          + `(${a} vs ${b}, gap ${hueGap(a, b).toFixed(0)} deg)`);
+      }
+    }
+  }
+});
+
+test('winter ramps are far apart in the bands that actually publish', () => {
+  // The generator runs with a 20 dBZ floor, so these are the bands a reader
+  // ever sees side by side. Below the floor the ramps may converge.
+  for (const dbz of PTYPE_BANDS.filter((d) => d >= 20)) {
+    for (let i = 0; i < WINTER_TYPES.length; i++) {
+      for (let j = i + 1; j < WINTER_TYPES.length; j++) {
+        const a = PTYPE_COLORS[WINTER_TYPES[i]][dbz];
+        const b = PTYPE_COLORS[WINTER_TYPES[j]][dbz];
+        assert.ok(rgbGap(a, b) > 60,
+          `ptype ${WINTER_TYPES[i]} and ${WINTER_TYPES[j]} too close at ${dbz} dBZ `
+          + `(${a} vs ${b}, gap ${rgbGap(a, b).toFixed(0)})`);
+      }
+    }
+  }
+});
+
+test('buildPtypeFillColor ramps on dbz within a type and holds above 40', () => {
+  const expr = buildPtypeFillColor(PTYPE_SNOW);
+  assert.equal(expr[0], 'step');
+  assert.deepEqual(expr[1], ['get', 'dbz']);
+  assert.equal(expr[2], PTYPE_COLORS[PTYPE_SNOW][PTYPE_BANDS[0]]);
+  // No stop above the last winter band, so stronger echo keeps the darkest color.
+  const stops = [];
+  for (let i = 3; i < expr.length; i += 2) stops.push(expr[i]);
+  assert.deepEqual(stops, PTYPE_BANDS.slice(1));
+  assert.equal(expr[expr.length - 1], PTYPE_COLORS[PTYPE_SNOW][40]);
+});
+
+test('buildPtypeFillColor falls back to the liquid ramp for an unknown type', () => {
+  assert.deepEqual(buildPtypeFillColor(PTYPE_RAIN), buildDbzFillColor());
+  assert.deepEqual(buildPtypeFillColor(PTYPE_NONE), buildDbzFillColor());
+  assert.deepEqual(buildPtypeFillColor(99), buildDbzFillColor());
+});
+
+test('buildRadarFillColor matches on ptype with liquid as the default branch', () => {
+  const expr = buildRadarFillColor();
+  assert.equal(expr[0], 'match');
+  assert.deepEqual(expr[1], ['get', 'ptype']);
+  // Trailing element is the fallback, which must be the liquid ramp so that
+  // ptype 0 (unknown) and 1 (rain) both render as plain precipitation.
+  assert.deepEqual(expr[expr.length - 1], buildDbzFillColor());
+  // Each frozen/mixed type has its own branch with its own ramp.
+  for (const ptype of [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN, PTYPE_MIXED]) {
+    const at = expr.indexOf(ptype, 2);
+    assert.ok(at > 0, `ptype ${ptype} needs a match branch`);
+    assert.deepEqual(expr[at + 1], buildPtypeFillColor(ptype));
+  }
+  // Rain is NOT its own branch -- it shares the default, so an old tile with no
+  // ptype attribute at all cannot fall through to nothing.
+  assert.equal(expr.indexOf(PTYPE_RAIN, 2), -1);
 });
