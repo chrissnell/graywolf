@@ -321,8 +321,11 @@ test('snow keeps the blue family and liquid gives it up', () => {
 // raw RGB distance alone is misleading near white.
 const rgbOf = (hex) =>
   [0, 1, 2].map((i) => parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16) / 255);
+// Relative luminance. Must linearize first: a weighted sum of gamma-encoded
+// channels is not luminance and understates lightness differences in the darks.
 const lumOf = (hex) => {
-  const [r, g, b] = rgbOf(hex);
+  const [r, g, b] = rgbOf(hex).map((c) =>
+    c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 };
 const chromaOf = (hex) => {
@@ -352,6 +355,31 @@ const rgbGap = (a, b) => {
 const WINTER_TYPES = [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN, PTYPE_MIXED];
 const HUED_TYPES = [PTYPE_SNOW, PTYPE_SLEET, PTYPE_FREEZING_RAIN];
 
+test('the liquid ramp has no duplicate colors', () => {
+  // Two bands shared #ffffff before this palette pass (65 and 70 dBZ), which
+  // made the top of the scale unreadable. Nothing stopped that from coming back.
+  const unique = new Set(Object.values(DBZ_COLORS));
+  assert.equal(unique.size, DBZ_BANDS.length,
+    `${DBZ_BANDS.length - unique.size} duplicate color(s) in the liquid ramp`);
+});
+
+test('the liquid ramp is brightest at its top band, not green', () => {
+  // The 75 dBZ band used to jump back to #00ff00, colliding with the weak-echo
+  // greens 70 dB lower down. The extreme end must read as off-the-scale.
+  const top = DBZ_COLORS[DBZ_BANDS[DBZ_BANDS.length - 1]];
+  assert.ok(chromaOf(top) < 0.1, `top band ${top} should be near-neutral`);
+  assert.ok(lumOf(top) > 0.9, `top band ${top} should be the brightest`);
+});
+
+test('the liquid ramp leaves blue to snow at the weak bands', () => {
+  // The structural fix: winter precipitation lives at 10-30 dBZ, so liquid
+  // cannot also own blue there.
+  for (const dbz of [5, 10, 15, 20, 25, 30]) {
+    assert.ok(hueOf(DBZ_COLORS[dbz]) > 70 && hueOf(DBZ_COLORS[dbz]) < 170,
+      `liquid at ${dbz} dBZ should be green, got ${DBZ_COLORS[dbz]}`);
+  }
+});
+
 test('every winter ramp darkens monotonically with intensity', () => {
   // Intensity has to read within a type, not only between types.
   for (const ptype of WINTER_TYPES) {
@@ -366,10 +394,15 @@ test('every winter ramp darkens monotonically with intensity', () => {
 
 test('mixed is the only desaturated ramp, so it never reads as a hue', () => {
   // Mixed is deliberately neutral and the other three deliberately are not.
-  // That contrast is what separates mixed from all of them at once.
+  // That chroma contrast is what keeps mixed apart from snow and freezing rain
+  // even for a dichromat, for whom lightness alone would not do it.
   for (const dbz of PTYPE_BANDS) {
     assert.ok(chromaOf(PTYPE_COLORS[PTYPE_MIXED][dbz]) < 0.12,
       `mixed at ${dbz} dBZ must stay neutral`);
+  }
+  // Only over the bands that publish: below the 20 dBZ floor the hued ramps
+  // approach white, where chroma necessarily falls away.
+  for (const dbz of PTYPE_BANDS.filter((d) => d >= 20)) {
     for (const ptype of HUED_TYPES) {
       assert.ok(chromaOf(PTYPE_COLORS[ptype][dbz]) > 0.15,
         `ptype ${ptype} at ${dbz} dBZ needs enough chroma to read as a hue`);
@@ -377,35 +410,98 @@ test('mixed is the only desaturated ramp, so it never reads as a hue', () => {
   }
 });
 
-test('snow, sleet and freezing rain are separated in hue at every band', () => {
-  // This is the check that caught a pale-blue snow and a pale-violet freezing
-  // rain collapsing to the same near-white at the lightest bands.
-  for (const dbz of PTYPE_BANDS) {
-    for (let i = 0; i < HUED_TYPES.length; i++) {
-      for (let j = i + 1; j < HUED_TYPES.length; j++) {
-        const a = PTYPE_COLORS[HUED_TYPES[i]][dbz];
-        const b = PTYPE_COLORS[HUED_TYPES[j]][dbz];
-        assert.ok(hueGap(a, b) > 30,
-          `ptype ${HUED_TYPES[i]} and ${HUED_TYPES[j]} share a hue at ${dbz} dBZ `
-          + `(${a} vs ${b}, gap ${hueGap(a, b).toFixed(0)} deg)`);
+// --- color-vision math ------------------------------------------------------
+// The palette's whole correctness claim is "a reader can tell these apart",
+// including readers with red-green color blindness. That is not something you
+// can eyeball, so it is computed: sRGB -> linear -> LMS, collapse the lost
+// channel (Vienot et al. 1999), back to sRGB, then compare in CIE L*a*b* with
+// CIE76 deltaE. deltaE under ~5 is "the same color" to a human.
+const toLinear = (c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const linOf = (hex) => rgbOf(hex).map(toLinear);
+const matMul = (m, v) => m.map((row) => row[0] * v[0] + row[1] * v[1] + row[2] * v[2]);
+const RGB_TO_LMS = [
+  [0.31399022, 0.63951294, 0.04649755],
+  [0.15537241, 0.75789446, 0.08670142],
+  [0.01775239, 0.10944209, 0.87256922],
+];
+const LMS_TO_RGB = [
+  [5.47221206, -4.6419601, 0.16963708],
+  [-1.1252419, 2.29317094, -0.1678952],
+  [0.02980165, -0.19318073, 1.16364789],
+];
+// Deuteranopia drops the M cone; protanopia drops L. Each is reconstructed as a
+// linear combination of the two the viewer retains.
+const DEUTERANOPIA = [[1, 0, 0], [0.9513092, 0, 0.04866992], [0, 0, 1]];
+const PROTANOPIA = [[0, 1.05118294, -0.05116099], [0, 1, 0], [0, 0, 1]];
+// Returns LINEAR rgb, clamped to the displayable gamut, because `labOf` takes
+// linear input. Handing it gamma-encoded values silently compresses every
+// deltaE and the whole check goes soft.
+const simulate = (hex, collapse) => {
+  const lms = matMul(RGB_TO_LMS, linOf(hex));
+  return matMul(LMS_TO_RGB, matMul(collapse, lms))
+    .map((c) => Math.max(0, Math.min(1, c)));
+};
+const labOf = (lin) => {
+  const [r, g, b] = lin;
+  const xyz = [
+    (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047,
+    0.2126 * r + 0.7152 * g + 0.0722 * b,
+    (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883,
+  ];
+  const f = (t) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const [fx, fy, fz] = xyz.map(f);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+};
+const deltaE = (linA, linB) => {
+  const [a, b] = [labOf(linA), labOf(linB)];
+  return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+};
+
+const VISION = [
+  ['normal vision', (hex) => linOf(hex)],
+  ['deuteranopia', (hex) => simulate(hex, DEUTERANOPIA)],
+  ['protanopia', (hex) => simulate(hex, PROTANOPIA)],
+];
+
+test('no two precipitation types look alike, including to dichromats', () => {
+  // This replaced a hue-separation test, which passed on a palette where snow
+  // and freezing rain were 1-10 deltaE apart under simulated red-green color
+  // blindness -- hue is precisely the channel those readers lose, so a hue test
+  // is structurally blind to the failure it was meant to prevent. Snow vs
+  // freezing rain is also the pair that matters most: one is a benign
+  // inconvenience, the other brings down power lines.
+  //
+  // Restricted to the bands that publish (the generator runs a 20 dBZ floor);
+  // below it the ramps are allowed to converge toward white.
+  const published = PTYPE_BANDS.filter((d) => d >= 20);
+  for (const [vision, project] of VISION) {
+    for (const dbz of published) {
+      for (let i = 0; i < WINTER_TYPES.length; i++) {
+        for (let j = i + 1; j < WINTER_TYPES.length; j++) {
+          const a = PTYPE_COLORS[WINTER_TYPES[i]][dbz];
+          const b = PTYPE_COLORS[WINTER_TYPES[j]][dbz];
+          const d = deltaE(project(a), project(b));
+          assert.ok(d > 15,
+            `ptype ${WINTER_TYPES[i]} vs ${WINTER_TYPES[j]} at ${dbz} dBZ under `
+            + `${vision}: deltaE ${d.toFixed(1)} (${a} vs ${b}) -- too close to tell apart`);
+        }
       }
     }
   }
 });
 
-test('winter ramps are far apart in the bands that actually publish', () => {
-  // The generator runs with a 20 dBZ floor, so these are the bands a reader
-  // ever sees side by side. Below the floor the ramps may converge.
-  for (const dbz of PTYPE_BANDS.filter((d) => d >= 20)) {
-    for (let i = 0; i < WINTER_TYPES.length; i++) {
-      for (let j = i + 1; j < WINTER_TYPES.length; j++) {
-        const a = PTYPE_COLORS[WINTER_TYPES[i]][dbz];
-        const b = PTYPE_COLORS[WINTER_TYPES[j]][dbz];
-        assert.ok(rgbGap(a, b) > 60,
-          `ptype ${WINTER_TYPES[i]} and ${WINTER_TYPES[j]} too close at ${dbz} dBZ `
-          + `(${a} vs ${b}, gap ${rgbGap(a, b).toFixed(0)})`);
-      }
-    }
+test('the two pairs that collapse under dichromacy are split in lightness', () => {
+  // The structural reason the test above passes: snow/freezing rain are both
+  // blue and sleet/mixed both go near-neutral, so within each pair lightness is
+  // the only channel left. Asserting it directly means a future edit that
+  // re-equalizes those lightnesses fails here with a clear reason, rather than
+  // failing opaquely in the deltaE sweep.
+  for (const dbz of PTYPE_BANDS) {
+    const gap = (a, b) => lumOf(PTYPE_COLORS[a][dbz]) - lumOf(PTYPE_COLORS[b][dbz]);
+    assert.ok(gap(PTYPE_SNOW, PTYPE_FREEZING_RAIN) > 0.1,
+      `snow must stay clearly lighter than freezing rain at ${dbz} dBZ`);
+    assert.ok(gap(PTYPE_SLEET, PTYPE_MIXED) > 0.1,
+      `sleet must stay clearly lighter than mixed at ${dbz} dBZ`);
   }
 });
 

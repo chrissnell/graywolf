@@ -51,33 +51,51 @@ export const PTYPE_MIXED = 5;
 // lives in the 5-40 window; a `step` with no stops above 40 holds the darkest
 // color for anything stronger, which is the right answer for the rare very
 // heavy wet snow rather than running off the end of a ramp nobody can read.
-export const PTYPE_BANDS = [5, 10, 15, 20, 25, 30, 35, 40];
 //
-// The light ends carry more chroma than a first pass at these ramps did: at
-// 5-10 dBZ a pale blue and a pale violet are the same near-white, which would
-// have made snow and freezing rain indistinguishable in light precipitation.
-// `radar-source.test.js` pins the separation numerically so a later tweak by
-// eye cannot quietly undo it.
+// WHY EACH TYPE HAS ITS OWN LIGHTNESS RANGE, not just its own hue. Red-green
+// dichromats (roughly 8 percent of men) keep lightness and blue-yellow but lose
+// red-green, so hue-only separation collapses for them. Two pairs collapse
+// specifically: the two blues (snow and freezing rain) and the two
+// near-neutrals (sleet, which desaturates toward yellow, and mixed). Each of
+// those PAIRS is therefore split in lightness -- snow light / freezing rain
+// dark, sleet light / mixed dark -- while the two pairs stay far apart in
+// chroma, so their lightness ranges are free to overlap.
+//
+// An earlier draft separated all four by hue alone and measured 1-10 deltaE
+// between snow and freezing rain under simulated deuteranopia and protanopia,
+// i.e. indistinguishable, on exactly the pair where confusion matters most:
+// freezing rain is the hazard that brings down power lines, snow is the benign
+// case. Every pair is now >= 21 deltaE in every band that publishes, under
+// normal vision and both dichromacies.
+//
+// The consequence to know about: lightness now encodes type as well as
+// intensity, so a light snow and a dark freezing rain at the same dBZ no longer
+// look equally strong. Intensity still reads monotonically *within* a type,
+// which is what a reader actually compares. `radar-source.test.js` pins all of
+// this, dichromacy simulation included, so it cannot be undone by eye.
+export const PTYPE_BANDS = [5, 10, 15, 20, 25, 30, 35, 40];
 export const PTYPE_COLORS = {
   [PTYPE_SNOW]: {
-    5: '#cfe6ff', 10: '#a9d2fb', 15: '#7fb8f5', 20: '#5a9ce8',
-    25: '#3a7bd5', 30: '#2560b4', 35: '#17458e', 40: '#0e3269',
+    5: '#e4f0fe', 10: '#cde3fe', 15: '#b1d5fd', 20: '#97c6fc',
+    25: '#7ab6fc', 30: '#5ea7fb', 35: '#3f96fa', 40: '#2085f9',
   },
   [PTYPE_SLEET]: {
-    5: '#ffd6ec', 10: '#ffb3dc', 15: '#fb8cc8', 20: '#ee64b0',
-    25: '#d94293', 30: '#ba2575', 35: '#951558', 40: '#700d3f',
+    5: '#fedcec', 10: '#fec9e1', 15: '#fdb4d6', 20: '#fc9dc9',
+    25: '#fc84bc', 30: '#fb6bae', 35: '#fa4d9e', 40: '#f9117d',
   },
   [PTYPE_FREEZING_RAIN]: {
-    5: '#e4d4ff', 10: '#cdb3ff', 15: '#b391fb', 20: '#9770ee',
-    25: '#7c51d9', 30: '#6135ba', 35: '#482195', 40: '#341570',
+    5: '#b179fc', 10: '#a767fb', 15: '#9c54fb', 20: '#9040fa',
+    25: '#8226f9', 30: '#6e06f5', 35: '#6006d7', 40: '#5305ba',
   },
   [PTYPE_MIXED]: {
-    5: '#e8e0dc', 10: '#d2c6c0', 15: '#b8a9a1', 20: '#9c8d84',
-    25: '#7f7168', 30: '#63574f', 35: '#4a4039', 40: '#342c27',
+    5: '#988881', 10: '#8d7c74', 15: '#81716a', 20: '#74665f',
+    25: '#675a54', 30: '#5c504b', 35: '#4f4540', 40: '#433a36',
   },
 };
 
-// Human labels for a legend / popup.
+// Human labels, ready for a legend. No legend UI exists yet -- color encoded one
+// dimension (intensity) before this and was self-evident; it now encodes two
+// (type x intensity), so a key is a genuine follow-up, not polish.
 export const PTYPE_LABELS = {
   [PTYPE_NONE]: 'Precipitation',
   [PTYPE_RAIN]: 'Rain',
@@ -105,6 +123,15 @@ export const ACTIVE_RADAR_BACKEND = RADAR_BACKEND_VECTOR;
 // radarTileUrl: https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0
 export const RADAR_TILE_BASE = 'https://maps.nw5w.com';
 
+// PALETTE PARITY WITH THE WORLD OVERLAY IS DELIBERATELY DROPPED. The weak bands
+// used to continue a cyan ramp downward to match the RainViewer global
+// composite, which is what `worldRadarProvider` still serves -- RainViewer's own
+// baked-in Universal Blue PNGs, which we cannot recolor client-side. Now that
+// blue means snow in US mode, blue still means light rain in world mode, and the
+// operator can switch regions at will. Parity was worth less than telling snow
+// from rain: the US overlay is the high-fidelity product and the one where
+// winter type information exists at all. Revisit only if the world composite
+// ever gains a recolorable vector form.
 const RADAR_ATTRIBUTION = 'NEXRAD via NWS / Iowa State Mesonet';
 const RAINVIEWER_ATTRIBUTION = 'Radar © RainViewer';
 const RADAR_SOURCE_ID = 'radar-tiles';
