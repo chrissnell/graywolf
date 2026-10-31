@@ -47,7 +47,7 @@ func Open(path string) (*Store, error) {
 
 // OpenMemory opens an isolated in-memory database (one per call).
 func OpenMemory() (*Store, error) {
-	return openDSN("file::memory:?cache=shared")
+	return openDSN("file::memory:")
 }
 
 func openDSN(dsn string) (*Store, error) {
