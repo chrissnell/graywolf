@@ -111,10 +111,11 @@
       <div class="callout-body">
         <p>
           Putting the radio or TNC into KISS mode is the operator's
-          responsibility. Graywolf opens the connection and begins
-          speaking KISS immediately; it does not send any AT commands or
-          mode-switching sequences. Consult your device's manual for the
-          procedure to enter KISS mode before connecting it in graywolf.
+          responsibility when using the default <strong>Native KISS</strong>
+          profile. For a Kenwood TM-D700/TM-D710 connected through a USB serial
+          adapter, select its exact model under <strong>TNC initialization</strong> to
+          enter KISS automatically. See
+          <a href="kiss-serial.html">KISS over Serial</a> for the procedure.
         </p>
       </div>
     </div>
@@ -267,7 +268,7 @@
       <span class="callout-icon">!</span>
       <div class="callout-body">
         <p>
-          Make sure the device is already in KISS mode before saving
+          With the default Native KISS profile, make sure the device is already in KISS mode before saving
           the interface in graywolf. Graywolf does not issue any
           mode-switch commands; it assumes the connection is already
           speaking KISS when it opens it.

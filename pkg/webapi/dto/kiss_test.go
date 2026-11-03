@@ -7,6 +7,61 @@ import (
 	"github.com/chrissnell/graywolf/pkg/configstore"
 )
 
+func TestKenwoodInitializationProfile(t *testing.T) {
+	for _, profile := range []string{"kenwood", "kenwood-tm-d700", "kenwood-tm-d710"} {
+		t.Run(profile, func(t *testing.T) {
+			for _, transport := range []string{"serial", "usbserial"} {
+				req := KissRequest{Type: transport, SerialDevice: "/dev/ttyUSB0", BaudRate: 9600, InitProfile: profile}
+				if err := req.Validate(); err != nil {
+					t.Fatal(err)
+				}
+				model := req.ToModel()
+				if model.InitProfile != profile || KissFromModel(model).InitProfile != profile {
+					t.Fatalf("lost model profile: %+v", model)
+				}
+			}
+		})
+	}
+	req := KissRequest{Type: "serial", SerialDevice: "/dev/ttyUSB0", BaudRate: 9600, InitProfile: "kenwood"}
+	if err := req.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	model := req.ToModel()
+	if model.InitProfile != "kenwood" || model.Mode != "tnc" || KissFromModel(model).InitProfile != "kenwood" {
+		t.Fatalf("profile not preserved: %+v", model)
+	}
+	for _, change := range []func(*KissRequest){
+		func(r *KissRequest) { r.InitProfile = "unknown" },
+		func(r *KissRequest) { r.Type = "tcp"; r.TcpPort = 8001 },
+		func(r *KissRequest) { r.Mode = "modem" },
+	} {
+		invalid := req
+		change(&invalid)
+		if err := invalid.Validate(); err == nil {
+			t.Fatalf("invalid profile accepted: %+v", invalid)
+		}
+	}
+}
+
+func TestRadioPacketBaudValidation(t *testing.T) {
+	for _, profile := range []string{"", "kenwood", "kenwood-tm-d700", "kenwood-tm-d710"} {
+		for _, rate := range []uint32{0, 1200, 9600, 4800} {
+			req := KissRequest{Type: "serial", SerialDevice: "/dev/test", BaudRate: 19200, InitProfile: profile, RadioBaudRate: rate, Mode: "tnc"}
+			want := rate == 0 || ((profile == "kenwood-tm-d700" || profile == "kenwood-tm-d710") && (rate == 1200 || rate == 9600))
+			if valid := req.Validate() == nil; valid != want {
+				t.Errorf("profile %s rate %d valid=%v", profile, rate, valid)
+			}
+			if want {
+				model := req.ToModel()
+				out := KissFromModel(model)
+				if model.RadioBaudRate != rate || out.RadioBaudRate != rate || out.BaudRate != 19200 {
+					t.Fatalf("radio/serial rates confused: %+v", out)
+				}
+			}
+		}
+	}
+}
+
 func TestKissRequest_Validate_AllowTxFromGovernor(t *testing.T) {
 	tests := []struct {
 		name    string

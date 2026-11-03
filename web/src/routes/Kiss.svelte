@@ -31,6 +31,17 @@
   const TNC_INGRESS_RATE_DEFAULT = '50';
   const TNC_INGRESS_BURST_DEFAULT = '100';
   const BAUD_RATE_DEFAULT = '9600';
+  const initProfileOptions = [
+    { value: 'native', label: 'Native KISS (no initialization)' },
+    { value: 'kenwood-tm-d700', label: 'Kenwood TM-D700' },
+    { value: 'kenwood-tm-d710', label: 'Kenwood TM-D710 / TM-D710G' },
+    { value: 'kenwood', label: 'Kenwood legacy (select your model)' },
+  ];
+  const radioBaudOptions = [
+    { value: '0', label: 'Preserve radio setting / Conserver' },
+    { value: '1200', label: '1200 baud' },
+    { value: '9600', label: '9600 baud' },
+  ];
   // Standard serial line speeds offered in the Baud Rate dropdown. Covers
   // the rates real KISS TNCs use (1200 for classic AFSK packet, 9600 for
   // G3RUH and most USB TNCs, up to 115200 for high-speed links). A free-form
@@ -293,6 +304,8 @@
       reconnect_max_ms: String(RECONNECT_MAX_DEFAULT_MS),
       serial_device: '',
       baud_rate: BAUD_RATE_DEFAULT,
+      init_profile: 'native',
+      radio_baud_rate: '0',
       channel: '1',
       mode: 'modem',
       tnc_ingress_rate_hz: TNC_INGRESS_RATE_DEFAULT,
@@ -391,6 +404,8 @@
       reconnect_init_ms: String(row.reconnect_init_ms || RECONNECT_INIT_DEFAULT_MS),
       reconnect_max_ms: String(row.reconnect_max_ms || RECONNECT_MAX_DEFAULT_MS),
       baud_rate: String(row.baud_rate),
+      init_profile: row.init_profile || 'native',
+      radio_baud_rate: String(row.radio_baud_rate || 0),
       channel: String(row.channel || 1),
       mode: row.mode || 'modem',
       tnc_ingress_rate_hz: String(row.tnc_ingress_rate_hz || 50),
@@ -663,6 +678,12 @@
       // silently re-enables a disabled interface (the backend defaults a
       // missing flag to true). Default true for new rows.
       enabled: form.enabled !== false,
+      init_profile: (form.type === 'serial' || form.type === 'usbserial') && form.mode === 'tnc'
+        ? form.init_profile === 'native' ? '' : form.init_profile
+        : '',
+      radio_baud_rate: (form.type === 'serial' || form.type === 'usbserial') && form.mode === 'tnc'
+        && ['kenwood-tm-d700', 'kenwood-tm-d710'].includes(form.init_profile)
+        ? Number(form.radio_baud_rate) : 0,
     };
     switch (form.type) {
       case 'tcp':
@@ -917,12 +938,8 @@
 
 {#snippet statusCell(_value, row)}
   {@const disabled = row.enabled === false}
-  <!-- Only tcp-client rows carry live connection diagnostics worth an
-       expandable panel (peer, reconnect count, backoff, last error,
-       Retry now). For server / serial / disabled rows the status is a
-       plain badge — the old expand popped a gray box that just echoed
-       the Endpoint column and buried the disable action (GRA-85). -->
-  {@const expandable = !disabled && row.type === 'tcp-client'}
+  {@const serialTransport = ['serial', 'usbserial', 'bluetooth'].includes(row.type)}
+  {@const expandable = !disabled && (row.type === 'tcp-client' || serialTransport)}
   <div class="status-cell" data-tick={clockTick}>
     <!-- clockTick is in data-tick so any change triggers snippet
          re-render; that propagates to the countdownText call below. -->
@@ -947,18 +964,21 @@
     {:else}
       <span class="status-static">{@render liveStatus(row)}</span>
     {/if}
+    {#if !expandable && !disabled && row.last_error}
+      <div class="detail-err serial-init-error" role="status">{row.last_error}</div>
+    {/if}
     {#if expandable && expandedId === row.id}
       <div id={`status-detail-${row.id}`} class="status-detail" role="region" aria-label="Status detail">
-        <div class="detail-row"><span class="detail-label">Peer:</span> <span>{row.peer_addr || `${row.remote_host}:${row.remote_port}`}</span></div>
+        <div class="detail-row"><span class="detail-label">Peer:</span> <span>{row.peer_addr || (serialTransport ? endpointText(row) : `${row.remote_host}:${row.remote_port}`)}</span></div>
         <div class="detail-row"><span class="detail-label">Connected since:</span> <span>{formatLocalTime(row.connected_since) || '—'}</span></div>
         <div class="detail-row"><span class="detail-label">Reconnect count:</span> <span>{row.reconnect_count || 0}</span></div>
         <div class="detail-row"><span class="detail-label">Backoff:</span> <span>{row.backoff_seconds || 0}s</span></div>
         {#if row.last_error}
           <div class="detail-row detail-err"><span class="detail-label">Last error:</span> <span>{row.last_error}</span></div>
         {/if}
-        {#if canRetryNow(row.state)}
+        {#if canRetryNow(row.state) || serialTransport}
           <div class="detail-actions">
-            <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>Retry now</Button>
+            <Button variant="primary" onclick={(e) => { e.stopPropagation?.(); handleRetryNow(row); }}>{serialTransport ? 'Reconnect' : 'Retry now'}</Button>
           </div>
         {/if}
       </div>
@@ -1140,6 +1160,18 @@
         <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {/if}
+    {#if (form.type === 'serial' || form.type === 'usbserial') && form.mode === 'tnc'}
+      <FormField label="TNC initialization" id="kiss-init-profile"
+        hint="Select your exact Kenwood model. Model profiles select PACKET then KISS; the D710 keeps its configured data band. Use the TNC computer port and matching serial speed. Frequency is not configured. Legacy requires PACKET mode first.">
+        <Select id="kiss-init-profile" bind:value={form.init_profile} options={initProfileOptions} />
+      </FormField>
+      {#if ['kenwood-tm-d700', 'kenwood-tm-d710'].includes(form.init_profile)}
+        <FormField label="Radio packet speed" id="kiss-radio-baud"
+          hint="RF speed (HBAUD), separate from the PC serial Baud Rate above. Applied and checked after mode stabilization, before KISS. Preserve sends no HBAUD command and leaves the firmware's restored setting in place.">
+          <Select id="kiss-radio-baud" bind:value={form.radio_baud_rate} options={radioBaudOptions} />
+        </FormField>
+      {/if}
+    {/if}
     <FormField label="Channel" id="kiss-channel">
       {#if channels.length > 0}
         <ChannelListbox
@@ -1247,6 +1279,7 @@
 />
 
 <style>
+  .serial-init-error { max-width: 360px; margin-top: 5px; font-size: 11px; white-space: normal; }
   .poll-stale-pill {
     display: inline-flex;
     align-items: center;

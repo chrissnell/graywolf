@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +19,68 @@ import (
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
+
+func TestKissKenwoodProfilePersistence(t *testing.T) {
+	for _, profile := range []string{"kenwood", "kenwood-tm-d700", "kenwood-tm-d710"} {
+		t.Run(profile, func(t *testing.T) {
+			srv, _ := newTestServer(t)
+			mux := http.NewServeMux()
+			srv.RegisterRoutes(mux)
+			rate := uint32(0)
+			if profile != "kenwood" {
+				rate = 9600
+			}
+			body := fmt.Sprintf(`{"type":"serial","serial_device":"/dev/kenwood-test","baud_rate":9600,"channel":1,"mode":"tnc","init_profile":%q,"radio_baud_rate":%d,"enabled":false}`, profile, rate)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/kiss", strings.NewReader(body)))
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("create: %d: %s", rec.Code, rec.Body.String())
+			}
+			var created dto.KissResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+				t.Fatal(err)
+			}
+			rows, err := srv.store.ListKissInterfaces(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rows) != 1 || rows[0].InitProfile != profile || created.InitProfile != profile || rows[0].RadioBaudRate != rate || created.RadioBaudRate != rate {
+				t.Fatalf("initialization profile not persisted: %+v", rows)
+			}
+			if profile != "kenwood" {
+				for _, nextRate := range []uint32{1200, 9600, 0} {
+					payload := dto.KissRequest{Type: "serial", SerialDevice: "/dev/kenwood-test", BaudRate: 9600, Channel: 1, Mode: "tnc", InitProfile: profile, RadioBaudRate: nextRate}
+					data, err := json.Marshal(payload)
+					if err != nil {
+						t.Fatal(err)
+					}
+					rec := httptest.NewRecorder()
+					mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, fmt.Sprintf("/api/kiss/%d", created.ID), bytes.NewReader(data)))
+					if rec.Code != http.StatusOK {
+						t.Fatalf("speed update %d: %d %s", nextRate, rec.Code, rec.Body.String())
+					}
+					var saved dto.KissResponse
+					if err := json.Unmarshal(rec.Body.Bytes(), &saved); err != nil {
+						t.Fatal(err)
+					}
+					row, err := srv.store.GetKissInterface(context.Background(), created.ID)
+					if err != nil || row.RadioBaudRate != nextRate || saved.RadioBaudRate != nextRate {
+						t.Fatalf("speed not persisted: %+v %v", row, err)
+					}
+				}
+			}
+			// Switching back to native KISS must clear the nonzero field on update.
+			updated := dto.KissRequest{Type: "serial", SerialDevice: "/dev/kenwood-test", BaudRate: 9600, Mode: "tnc"}.ToUpdate(created.ID)
+			if err := srv.store.UpdateKissInterface(context.Background(), &updated); err != nil {
+				t.Fatal(err)
+			}
+			row, err := srv.store.GetKissInterface(context.Background(), created.ID)
+			if err != nil || row.InitProfile != "" || row.RadioBaudRate != 0 {
+				t.Fatalf("native profile did not clear Kenwood setting: %+v, %v", row, err)
+			}
+		})
+	}
+}
 
 // TestCreateKissInterfaceMode pins the API contract for the new Mode
 // field: the decoder accepts missing/valid values (rounding the empty
@@ -808,4 +872,77 @@ func fetchList(t *testing.T, mux *http.ServeMux) []dto.KissResponse {
 		t.Fatalf("decode list: %v", err)
 	}
 	return list
+}
+
+func TestKissReconnectSerialEndpoint(t *testing.T) {
+	for _, kind := range []string{configstore.KissTypeSerial, configstore.KissTypeUsbSerial, configstore.KissTypeBluetooth} {
+		t.Run(kind, func(t *testing.T) {
+			srv, _ := newTestServer(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			mgr := kiss.NewManager(kiss.ManagerConfig{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+			srv.kissManager = mgr
+			defer mgr.StopAll()
+			defer cancel()
+			row := configstore.KissInterface{Name: "test", InterfaceType: kind, Enabled: true, Device: "test", BaudRate: 9600, Channel: 1, Mode: configstore.KissModeModem}
+			if err := srv.store.CreateKissInterface(ctx, &row); err != nil {
+				t.Fatal(err)
+			}
+			mgr.StartSerial(ctx, row.ID, kiss.SerialConfig{Name: "test", Device: "test", BaudRate: 9600, OpenFunc: func(string, uint32) (io.ReadWriteCloser, error) {
+				port, peer := net.Pipe()
+				go func() { defer peer.Close(); _, _ = io.Copy(io.Discard, peer) }()
+				return port, nil
+			}})
+			deadline := time.Now().Add(time.Second)
+			for mgr.Status()[row.ID].State != kiss.StateConnected && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			mux := http.NewServeMux()
+			srv.RegisterRoutes(mux)
+			rec := doPost(mux, "/api/kiss/"+itoa(row.ID)+"/reconnect", nil)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("reconnect %s: %d %s", kind, rec.Code, rec.Body.String())
+			}
+			deadline = time.Now().Add(time.Second)
+			for mgr.Status()[row.ID].ReconnectCount < 2 && time.Now().Before(deadline) {
+				time.Sleep(time.Millisecond)
+			}
+			if mgr.Status()[row.ID].ReconnectCount < 2 {
+				t.Fatal("serial API accepted but did not reopen the port")
+			}
+		})
+	}
+}
+
+func TestKissUpdatePortPreservesNameAcrossSavedProfiles(t *testing.T) {
+	srv, _ := newTestServer(t)
+	ctx := context.Background()
+	path := "/dev/serial/by-id/usb-test"
+	saved := configstore.KissInterface{Name: "kiss-serial-" + path, InterfaceType: configstore.KissTypeSerial, Device: path, BaudRate: 9600, Channel: 1, Mode: configstore.KissModeModem, Enabled: false}
+	current := configstore.KissInterface{Name: "kiss-serial-/dev/ttyUSB0", InterfaceType: configstore.KissTypeSerial, Device: "/dev/ttyUSB0", BaudRate: 9600, Channel: 1, Mode: configstore.KissModeModem, Enabled: false}
+	for _, row := range []*configstore.KissInterface{&saved, &current} {
+		if err := srv.store.CreateKissInterface(ctx, row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	body, err := json.Marshal(map[string]any{"type": "serial", "serial_device": path, "baud_rate": 9600, "channel": 1, "mode": "modem", "enabled": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPut, "/api/kiss/"+itoa(current.ID), bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("port update: %d %s", rec.Code, rec.Body.String())
+	}
+	updated, err := srv.store.GetKissInterface(ctx, current.ID)
+	if err != nil || updated.Name != current.Name || updated.Device != path || updated.Enabled || !updated.CreatedAt.Equal(current.CreatedAt) {
+		t.Fatalf("changed identity or config: %+v %v", updated, err)
+	}
+	other, err := srv.store.GetKissInterface(ctx, saved.ID)
+	if err != nil || other.Name != saved.Name || other.Enabled || other.Device != path {
+		t.Fatalf("modified saved profile: %+v %v", other, err)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/chrissnell/graywolf/pkg/tncprofile"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -1082,6 +1083,16 @@ func normalizeKissInterface(k *KissInterface) error {
 	}
 	if !ValidKissMode(k.Mode) {
 		return fmt.Errorf("kiss interface: invalid mode %q: must be %q or %q", k.Mode, KissModeModem, KissModeTnc)
+	}
+	if !tncprofile.Valid(k.InitProfile) {
+		return fmt.Errorf("kiss interface: invalid initialization profile %q", k.InitProfile)
+	}
+	if err := tncprofile.ValidateRadioBaud(k.InitProfile, k.RadioBaudRate); err != nil {
+		return err
+	}
+	if k.InitProfile != tncprofile.Native &&
+		((k.InterfaceType != KissTypeSerial && k.InterfaceType != KissTypeUsbSerial) || k.Mode != KissModeTnc) {
+		return fmt.Errorf("kiss interface: initialization profile requires a serial TNC interface")
 	}
 	if k.TncIngressRateHz == 0 {
 		k.TncIngressRateHz = DefaultTncIngressRateHz

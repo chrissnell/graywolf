@@ -705,8 +705,8 @@ func (m *Manager) stopManaged(ms *managedServer) {
 	}
 }
 
-// Reconnect short-circuits the current backoff wait on a tcp-client or
-// serial supervisor under id. Returns nil on success; returns a non-nil
+// Reconnect wakes TCP client backoff or interrupts a serial session,
+// initialization or backoff under id. Returns nil on success; returns a non-nil
 // error when id is not registered or is not reconnectable.
 func (m *Manager) Reconnect(id uint32) error {
 	m.mu.Lock()

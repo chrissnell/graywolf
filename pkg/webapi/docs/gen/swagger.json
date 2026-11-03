@@ -10395,12 +10395,20 @@
                     "description": "GateTxToIs opts a Mode=modem KISS interface in to gating frames\nsubmitted by connected KISS clients to APRS-IS, after the TX\ngovernor has accepted them. The iGate's own filter chain still\nruns, so this only opens the gate — it does not bypass NOGATE /\nRFONLY / TCPIP markers or the operator's filter rules. Default\nfalse on all migrated rows; meaningless in Mode=tnc (which\nalready feeds the iGate via the RX fanout) and silently ignored\nthere by the server.",
                     "type": "boolean"
                 },
+                "init_profile": {
+                    "description": "InitProfile is empty for native KISS; model profiles are kenwood-tm-d700\nand kenwood-tm-d710. The old kenwood value retains legacy behavior.",
+                    "type": "string"
+                },
                 "local_only": {
                     "description": "LocalOnly, when set on a tcp (server-listen) interface, binds the\nKISS listener to loopback (127.0.0.1) instead of all interfaces\n(0.0.0.0). The intended use is an on-device iGate client (a KISS\napp on the same phone/host) dialing in over loopback without\nexposing the port to the LAN. Ignored for non-tcp types. Stored\nin the existing ListenAddr host -- no schema change.",
                     "type": "boolean"
                 },
                 "mode": {
                     "type": "string"
+                },
+                "radio_baud_rate": {
+                    "description": "RadioBaudRate is the RF packet speed: 0 preserves the radio setting;\n1200 or 9600 requires an explicit Kenwood model profile. Not serial baud.",
+                    "type": "integer"
                 },
                 "reconnect_init_ms": {
                     "type": "integer"
@@ -10463,6 +10471,10 @@
                 "id": {
                     "type": "integer"
                 },
+                "init_profile": {
+                    "description": "InitProfile identifies native KISS (empty), kenwood-tm-d700,\nkenwood-tm-d710, or the unchanged legacy kenwood profile.",
+                    "type": "string"
+                },
                 "last_error": {
                     "type": "string"
                 },
@@ -10478,6 +10490,10 @@
                 },
                 "peer_addr": {
                     "type": "string"
+                },
+                "radio_baud_rate": {
+                    "description": "RadioBaudRate is 0 (preserve), 1200 or 9600 RF packet baud, not serial baud.",
+                    "type": "integer"
                 },
                 "reconnect_count": {
                     "type": "integer"
