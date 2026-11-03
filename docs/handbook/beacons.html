@@ -394,6 +394,14 @@
       (A&ndash;Z or 0&ndash;9) that is drawn on top of the icon on maps:
     </p>
 
+    <p>
+      With compressed positions, numeric overlays 0&ndash;9 are encoded on air
+      as a&ndash;j, as required by APRS101 chapter 9 (for example, overlay 9
+      is sent as <code>j</code>). Keep the digit in the beacon settings;
+      Graywolf performs the conversion and restores the numeric overlay when
+      decoding received compressed reports. Uncompressed reports retain the digit.
+    </p>
+
     <div class="screenshot">
       <img src="img/beacons-symbol-picker.png" alt="Select APRS Symbol modal showing the Alternate table with a Digipeater green star symbol selected and S as the overlay character" />
       <div class="caption">Picking the Digipeater (green star) symbol with an <code>S</code> overlay</div>

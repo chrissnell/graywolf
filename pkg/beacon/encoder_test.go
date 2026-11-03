@@ -254,3 +254,33 @@ func TestPositionInfo_Ambiguity_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestCompressedNumericOverlays(t *testing.T) {
+	const wireOverlays = "abcdefghij"
+	for digit := byte('0'); digit <= '9'; digit++ {
+		t.Run(string(digit), func(t *testing.T) {
+			info := CompressedPositionInfo(42.9935, 1.287, 0, 0, 520, digit, 'c', false, "", "Graywolf/0.14.14")
+			if info[1] != wireOverlays[digit-'0'] {
+				t.Fatalf("wire overlay: %q", info)
+			}
+			pkt, err := aprs.ParseInfo([]byte(info))
+			if err != nil || pkt.Position == nil {
+				t.Fatalf("cannot decode %q: %v", info, err)
+			}
+			pos := pkt.Position
+			if !pos.Compressed || pos.Symbol.Table != digit || pos.Symbol.Code != 'c' || math.Abs(pos.Latitude-42.9935) > 1e-4 || math.Abs(pos.Longitude-1.287) > 1e-4 || !pos.HasAlt || math.Abs(pos.Altitude-520) > 0.5 || pkt.Comment != "Graywolf/0.14.14" {
+				t.Fatalf("round-trip failed: %+v comment=%q", pos, pkt.Comment)
+			}
+			uncompressed := PositionInfo(42.9935, 1.287, 0, 0, 0, digit, 'c', false, "", "", 0)
+			if uncompressed[9] != digit {
+				t.Fatalf("uncompressed overlay changed: %q", uncompressed)
+			}
+		})
+	}
+	for _, table := range []byte{'/', '\\', 'A', 'Z'} {
+		info := CompressedPositionInfo(42.9935, 1.287, 0, 0, 0, table, 'c', false, "", "")
+		if info[1] != table {
+			t.Fatalf("non-numeric table changed: %q", info)
+		}
+	}
+}

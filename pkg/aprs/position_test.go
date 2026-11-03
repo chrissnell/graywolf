@@ -201,3 +201,16 @@ func TestApplyLatLonAmbiguity(t *testing.T) {
 		t.Errorf("negative: got lat=%q lon=%q", gotLat, gotLon)
 	}
 }
+
+func TestParseCompressedNumericOverlayOnAirVector(t *testing.T) {
+	// RF report from the Kenwood tests, with the numeric overlay corrected
+	// to the APRS101 a-j representation. Do not construct it with our encoder.
+	pkt, err := ParseInfo([]byte("!j8f<4NkW_c  C/A=001706Graywolf/0.14.14"))
+	if err != nil || pkt.Position == nil {
+		t.Fatalf("decode: %v", err)
+	}
+	pos := pkt.Position
+	if !pos.Compressed || pos.Symbol.Table != '9' || pos.Symbol.Code != 'c' || math.Abs(pos.Latitude-42.9935) > 1e-4 || math.Abs(pos.Longitude-1.287) > 1e-4 || !pos.HasAlt || math.Abs(pos.Altitude-520) > 0.5 || pkt.Comment != "Graywolf/0.14.14" {
+		t.Fatalf("decoded vector: %+v comment=%q", pos, pkt.Comment)
+	}
+}
