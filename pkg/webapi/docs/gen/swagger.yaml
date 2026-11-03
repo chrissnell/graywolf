@@ -1601,6 +1601,11 @@ definitions:
           already feeds the iGate via the RX fanout) and silently ignored
           there by the server.
         type: boolean
+      init_profile:
+        description: |-
+          InitProfile is empty for native KISS; model profiles are kenwood-tm-d700
+          and kenwood-tm-d710. The old kenwood value retains legacy behavior.
+        type: string
       local_only:
         description: |-
           LocalOnly, when set on a tcp (server-listen) interface, binds the
@@ -1612,6 +1617,11 @@ definitions:
         type: boolean
       mode:
         type: string
+      radio_baud_rate:
+        description: |-
+          RadioBaudRate is the RF packet speed: 0 preserves the radio setting;
+          1200 or 9600 requires an explicit Kenwood model profile. Not serial baud.
+        type: integer
       reconnect_init_ms:
         type: integer
       reconnect_max_ms:
@@ -1661,6 +1671,11 @@ definitions:
         type: boolean
       id:
         type: integer
+      init_profile:
+        description: |-
+          InitProfile identifies native KISS (empty), kenwood-tm-d700,
+          kenwood-tm-d710, or the unchanged legacy kenwood profile.
+        type: string
       last_error:
         type: string
       local_only:
@@ -1674,6 +1689,9 @@ definitions:
         type: boolean
       peer_addr:
         type: string
+      radio_baud_rate:
+        description: RadioBaudRate is 0 (preserve), 1200 or 9600 RF packet baud, not serial baud.
+        type: integer
       reconnect_count:
         type: integer
       reconnect_init_ms:

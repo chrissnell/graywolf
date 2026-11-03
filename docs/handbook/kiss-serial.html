@@ -101,11 +101,10 @@
       <span class="callout-icon">i</span>
       <div class="callout-body">
         <p>
-          Putting the radio or TNC into KISS mode is the operator's
-          responsibility. Graywolf opens the serial port and begins
-          speaking KISS immediately; it does not send any AT commands or
-          mode-switching sequences. Consult your device's manual for the
-          procedure to enter KISS mode before connecting it in graywolf.
+          With the default <strong>Native KISS</strong> initialization profile,
+          the radio or TNC must already be in KISS mode. Graywolf leaves that
+          transport unchanged. For a Kenwood TM-D700 or TM-D710, select the
+          dedicated initialization profile described below.
         </p>
       </div>
     </div>
@@ -249,6 +248,15 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{seria
       <li>Set <strong>Mode</strong> to <strong>TNC</strong>. In TNC
         mode the interface is treated as a radio, not a software
         client. This also reveals the transmit opt-in checkbox.</li>
+      <li>In <strong>TNC initialization</strong>, leave <strong>Native KISS</strong>
+        selected for a device already speaking KISS, or choose
+        <strong>Kenwood TM-D700</strong> or <strong>Kenwood TM-D710 / TM-D710G</strong>
+        for the corresponding radio to switch its
+        TNC into KISS automatically.</li>
+      <li>For an explicit Kenwood model profile, choose <strong>Radio packet
+        speed</strong>: preserve the firmware setting (default), 1200, or 9600.
+        This RF speed is independent of the serial <strong>Baud Rate</strong>
+        used by the computer.</li>
       <li>Check the box labeled <strong>Allow digipeater/beacon/iGate
         to transmit on this interface</strong> to allow graywolf's
         TX pipeline to send frames to the device. Without this
@@ -264,13 +272,114 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6015", ATTRS{seria
       <span class="callout-icon">!</span>
       <div class="callout-body">
         <p>
-          Make sure the device is already in KISS mode before saving
-          the interface in graywolf. Graywolf does not issue any
-          mode-switch commands; it assumes the port is already
-          speaking KISS when it opens it.
+          Select the profile matching your radio model. Only the legacy
+          profile requires <strong>PACKET</strong> mode in advance.
+          The serial baud rate must match its
+          computer port. Close any other terminal application before enabling
+          the interface in Graywolf.
         </p>
       </div>
     </div>
+
+    <h2>Kenwood TM-D700 / TM-D710 Initialization</h2>
+
+    <p>
+      Select the appropriate data band, frequency and radio packet speed on
+      the radio, and connect its TNC computer port. On a TM-D710/G, this is the
+      COM port behind the operation panel, not the PC port on the radio body.
+      Select <strong>Kenwood TM-D700</strong> or
+      <strong>Kenwood TM-D710 / TM-D710G</strong> under
+      <strong>TNC initialization</strong> on a Serial or USB Serial interface
+      in TNC mode. Model profiles select PACKET mode then KISS, taking over
+      from the radio's internal APRS application. They do not configure the
+      radio frequency, callsign, serial speed, or Graywolf's transmit opt-in
+      setting. The separate <strong>Radio packet speed</strong> setting defaults
+      to <strong>Preserve radio setting / Conserver</strong>: no HBAUD command
+      is sent, so the firmware's restored packet-speed setting remains in use.
+      Select 1200 or 9600 to explicitly set and verify HBAUD after stabilization.
+    </p>
+
+    <table>
+      <thead><tr><th>Profile</th><th>Radio-control sequence</th></tr></thead>
+      <tbody>
+        <tr><td>TM-D700</td><td>Synchronize, send the initial <code>AI 1</code>, then request <code>TC 1</code> and require its distinct <code>TS 1</code> reply (verified on the real D700). Repeat and verify <code>AI 1</code> in radio-control mode before verifying <code>ID TM-D700</code>. Send <code>TNC 2</code>, wait for mode stabilization, select operating band A with <code>BC 0,0</code> and data band A with <code>DTB 0</code>, then send <code>TC 0</code>, pause briefly and send CR to obtain <code>cmd:</code>. This follows the supplied UI-View <code>TM-D700.CMD</code> sequence while keeping frequency and shift configured on the radio; the sample file's fixed 144.800 MHz command is not sent.</td></tr>
+        <tr><td>TM-D710 / G</td><td>Synchronize, require <code>TS 1</code> after <code>TC 1</code>, verify <code>ID TM-D710</code> (including A, E, P and G/GA/GE replies), for the <code>ID TM-D710P</code> reply send <code>TN 2,0</code> directly (PACKET on band A, following the supplied UI-View initialization file; this firmware rejects a bare <code>TN</code> query). Other variants query <code>TN</code>, then send <code>TN 2,&lt;band&gt;</code> preserving the reported band selection (A, B or split TX/RX). Wait for <code>cmd:</code>.</td></tr>
+      </tbody>
+    </table>
+
+    <p>
+      On every open or reconnect, synchronization uses three Ctrl-C characters,
+      the binary KISS return sequence <code>C0 FF C0</code>, a short pause,
+      then three Ctrl-C characters and CR. On both models, the control-mode request <code>TC 1</code> is retried up to three times with 1.5-second reply deadlines if the radio misses the first request during KISS exit. A single reader preserves replies across these waits. The model-specific sequence above
+      follows. After the first PACKET prompt, Graywolf drains delayed startup
+      replies until a 200 ms quiet interval (at most one second) before setting
+      HBAUD or ECHO; startup errors are not used as replies to later commands. After the mode-selection acknowledgement (<code>TNC 2</code> or
+      <code>TN 2,&lt;band&gt;</code>), Graywolf waits four seconds before continuing,
+      even if an early <code>cmd:</code> is already present. Some firmware
+      restores saved state and speed during this interval. When an RF speed is
+      selected, Graywolf sets <code>HBAUD 1200</code> or <code>HBAUD 9600</code>,
+      waits for its setting response, queries <code>HBAUD</code> and verifies the
+      current value. A mismatch or rejected command fails initialization.
+      It first disables command echo with <code>ECHO OFF</code> and requires the setting reply and prompt. Finally it sends <code>KISS ON</code>, checks the
+      response and prompt, sends <code>RESTART</code> and waits five seconds.
+      During this wait, it continues reading: an explicit rejection or a
+      serial disconnection fails initialization instead of showing Connected.
+      Startup traffic is buffered (up to 256 KiB) and delivered unchanged to
+      the KISS decoder; error-looking text inside KISS frames is treated as
+      payload, not as a command rejection.
+      The interface stays <strong>Connecting</strong> until this finishes;
+      initialization has a 30-second deadline and failures use normal reconnect
+      backoff. Startup bytes are preserved for the KISS decoder.
+    </p>
+
+    <p>
+      For Serial, USB Serial and Bluetooth interfaces, expand the connection
+      status to inspect diagnostics and use <strong>Reconnect</strong>.
+      This closes an active serial session or interrupts initialization and
+      reopens the port immediately; it also bypasses a pending retry delay.
+      With a Kenwood model profile, Graywolf automatically reinitializes the
+      radio if it receives a new command prompt, the Kenwood startup banner, an ASCII TNC2 monitor header outside KISS,
+      or the exact altered echo of a recently sent KISS frame with its AX.25
+      Ctrl-C byte consumed by command mode. Valid binary APRS payload is not
+      interpreted as a prompt. A powered USB adapter alone cannot reveal a
+      completely silent radio reset, and radio silence does not trigger resets.
+    </p>
+
+    <p>
+      Stopping the interface closes the serial port and leaves the radio in
+      KISS mode; the profile will synchronize it again when reopened. A failed
+      initialization may leave the radio in command/control mode; check the
+      displayed error and restore the desired mode manually when necessary. To use
+      a command terminal manually, disable the Graywolf interface first and
+      send the binary return sequence from the terminal. KISS provides no
+      mandatory startup acknowledgement: Connected means the serial session
+      is ready, not that a radio exchange succeeded. Protocol simulations
+      cover different startup states, fragmented responses, command rejection,
+      model mismatch, band preservation, retry and cable-drop reconnection.
+      Linux virtual-serial-port (PTY) checks also exercise Graywolf's real
+      serial driver, restart rejection/retry and closing a blocked reader.
+      A successful simulation does not validate the commands against a real
+      firmware; TM-D700 initialization and APRS reception were validated on 3 November 2026: Connected at 17:26:49 after a clean radio start, and F1ZXR-3 decoded at 17:27:08. D700 RF transmission was confirmed by operator-provided APRS-IS reception records matching F6DEV-7&gt;APGRWO, including 17:27:14 and 18:03:55 on 3 November 2026 via F1ZCP-3 and other relays. Automatic D700 power-cycle recovery was validated at 17:52:12 (command-mode return detected) and 17:52:25 (KISS reconnected), with valid KISS reception resumed. D700 USB removal/replug was validated at 17:59:25 (removal detected) and 18:00:09 (automatic reconnect), with the by-id path remapping from ttyUSB1 to ttyUSB0 and valid KISS reception resumed. D700 manual Reconnect was validated at 18:03:00, with decoded APRS reception immediately resumed. A Graywolf service restart at 18:03:20 reconnected the powered-on D700 at 18:03:30 with immediate APRS reception. On 3 November 2026, the operator validated TM-D710P initialization, APRS reception and beacon transmission with copies received back via F5ZQC-3 and F1ZCP-3. On the same TM-D710P, a power-cycle test detected command-mode return at 16:46:29 and reconnected automatically at 16:46:40 with KISS reception resumed, without operator action. USB cable-drop recovery was also validated on 3 November 2026: removal was detected at 16:50:17, the same by-id path returned pointing to ttyUSB1 instead of ttyUSB0, and Graywolf reconnected automatically at 16:51:03. Valid KISS reception was confirmed on the reopened device. The manual Reconnect action was validated at 17:02:38 on the same day, with decoded APRS packets received from 17:02:40 onward. A Graywolf service restart at 17:04:33 reconnected the unchanged, powered-on D710P at 17:04:43 and immediately resumed APRS reception.
+    </p>
+
+    <p>
+      Existing <code>kenwood</code> configurations retain the previous sequence
+      under <strong>Kenwood legacy (select your model)</strong>. They still
+      require PACKET mode in advance and use the previous ten-second deadline
+      and 1.5-second restart delay. No model is inferred automatically. Edit
+      the interface and explicitly select the correct model to use the new
+      sequence. Native KISS remains unchanged.
+    </p>
+
+    <p>
+      Protocol references:
+      <a href="https://www.kenwood.com/i/products/info/amateur/pdf/TM-D710AE_IDM_R1.pdf">Kenwood TM-D710 in-depth manual, section 5.1.3</a>,
+      <a href="https://www.kenwood.com/usa/Support/pdf/TM-D710G_English.pdf">TM-D710G instruction manual, PACKET</a>,
+      <a href="https://www.on7lds.net/auto/tmd700a.htm">N0RMO's TM-D700 mode-control experiments</a>, and
+      <a href="https://github.com/LA3QMA/TM-V71_TM-D710-Kenwood/blob/master/commands/TN.md">LA3QMA's TN command reference</a>.
+      The mode-stabilization delay also follows the firmware behavior recorded
+      in <a href="https://github.com/fmarier/tmd710_tncsetup/blob/1d0014b27fde81196621e2222bddd7e7ea6dce89/tmd710_tncsetup.c">tmd710_tncsetup</a>.
+    </p>
 
     <h2>Reconnect Behavior</h2>
 

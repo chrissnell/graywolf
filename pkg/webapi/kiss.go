@@ -160,7 +160,16 @@ func (s *Server) updateKiss(w http.ResponseWriter, r *http.Request) {
 			if err := dto.ValidateChannelRef(ctx, s.store, "channel", req.Channel); err != nil {
 				return configstore.KissInterface{}, validationError(err)
 			}
+			existing, err := s.store.GetKissInterface(ctx, id)
+			if err != nil {
+				return configstore.KissInterface{}, err
+			}
 			m := req.ToUpdate(id)
+			// Name is an internal creation-time identifier, not a request
+			// field. Changing an endpoint must not rename the interface to
+			// another saved profile's name (including a disabled profile).
+			m.Name = existing.Name
+			m.CreatedAt = existing.CreatedAt
 			// When the operator reassigns a valid channel, clear the
 			// cascade-set NeedsReconfig flag so the "reconfigure me"
 			// banner drops off the row (D12). Zero stays flagged until
@@ -339,6 +348,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			Name:                ki.Name,
 			Device:              ki.Device,
 			BaudRate:            ki.BaudRate,
+			InitProfile:         ki.InitProfile,
+			RadioBaudRate:       ki.RadioBaudRate,
 			Mode:                mode,
 			ChannelMap:          map[uint8]uint32{0: ch},
 			ReconnectInitMs:     ki.ReconnectInitMs,
@@ -390,6 +401,8 @@ func (s *Server) notifyKissManager(ki configstore.KissInterface) {
 			Name:                ki.Name,
 			Device:              ki.Device,
 			BaudRate:            ki.BaudRate,
+			InitProfile:         ki.InitProfile,
+			RadioBaudRate:       ki.RadioBaudRate,
 			Mode:                mode,
 			ChannelMap:          map[uint8]uint32{0: ch},
 			ReconnectInitMs:     ki.ReconnectInitMs,
@@ -434,16 +447,15 @@ func (s *Server) reconnectKiss(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "kiss manager unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	// Verify the row is actually a tcp-client before asking the
-	// manager — a server-listen row would hit the "not a tcp-client"
-	// branch inside the manager and we'd still want to return 409.
+	// Server-listen rows cannot reconnect; serial transports can.
+
 	ki, err := s.store.GetKissInterface(r.Context(), id)
 	if err != nil || ki == nil {
 		notFound(w)
 		return
 	}
-	if ki.InterfaceType != configstore.KissTypeTCPClient {
-		http.Error(w, "interface is not a tcp-client", http.StatusConflict)
+	if ki.InterfaceType != configstore.KissTypeTCPClient && ki.InterfaceType != configstore.KissTypeSerial && ki.InterfaceType != configstore.KissTypeUsbSerial && ki.InterfaceType != configstore.KissTypeBluetooth {
+		http.Error(w, "interface is not reconnectable", http.StatusConflict)
 		return
 	}
 	if err := s.kissManager.Reconnect(id); err != nil {

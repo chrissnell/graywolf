@@ -2930,6 +2930,11 @@ export interface components {
              */
             gate_tx_to_is?: boolean;
             /**
+             * @description InitProfile is empty for native KISS; model profiles are kenwood-tm-d700
+             *     and kenwood-tm-d710. The old kenwood value retains legacy behavior.
+             */
+            init_profile?: string;
+            /**
              * @description LocalOnly, when set on a tcp (server-listen) interface, binds the
              *     KISS listener to loopback (127.0.0.1) instead of all interfaces
              *     (0.0.0.0). The intended use is an on-device iGate client (a KISS
@@ -2939,6 +2944,11 @@ export interface components {
              */
             local_only?: boolean;
             mode?: string;
+            /**
+             * @description RadioBaudRate is the RF packet speed: 0 preserves the radio setting;
+             *     1200 or 9600 requires an explicit Kenwood model profile. Not serial baud.
+             */
+            radio_baud_rate?: number;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;
             /**
@@ -2971,6 +2981,11 @@ export interface components {
             enabled?: boolean;
             gate_tx_to_is?: boolean;
             id?: number;
+            /**
+             * @description InitProfile identifies native KISS (empty), kenwood-tm-d700,
+             *     kenwood-tm-d710, or the unchanged legacy kenwood profile.
+             */
+            init_profile?: string;
             last_error?: string;
             /**
              * @description LocalOnly mirrors KissRequest.LocalOnly: true when a tcp interface
@@ -2980,6 +2995,8 @@ export interface components {
             mode?: string;
             needs_reconfig?: boolean;
             peer_addr?: string;
+            /** @description RadioBaudRate is 0 (preserve), 1200 or 9600 RF packet baud, not serial baud. */
+            radio_baud_rate?: number;
             reconnect_count?: number;
             reconnect_init_ms?: number;
             reconnect_max_ms?: number;

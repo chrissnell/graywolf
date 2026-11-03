@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/internal/backoff"
+	"github.com/chrissnell/graywolf/pkg/tncprofile"
 	"go.bug.st/serial"
 )
 
@@ -37,6 +38,8 @@ type SerialConfig struct {
 	Name                string
 	Device              string
 	BaudRate            uint32
+	InitProfile         string
+	RadioBaudRate       uint32
 	Mode                Mode
 	ChannelMap          map[uint8]uint32
 	ReconnectInitMs     uint32
@@ -99,6 +102,7 @@ type SerialSupervisor struct {
 	reconnectCount uint64
 	backoffSeconds uint32
 	cancel         context.CancelFunc
+	sessionCancel  context.CancelFunc
 
 	wakeBackoff chan struct{}
 	done        chan struct{}
@@ -172,9 +176,16 @@ func (s *SerialSupervisor) sleepWithWake(ctx context.Context, d time.Duration) b
 	}
 }
 
-// Reconnect short-circuits the current backoff wait. Safe to call
-// concurrently; coalesces (buffered size-1, non-blocking send).
+// Reconnect interrupts initialization or an open serial session, or wakes
+// backoff. An open USB adapter does not prove that its radio stayed in KISS.
 func (s *SerialSupervisor) Reconnect() {
+	s.mu.Lock()
+	if s.sessionCancel != nil {
+		s.sessionCancel()
+		s.mu.Unlock()
+		return
+	}
+	s.mu.Unlock()
 	select {
 	case s.wakeBackoff <- struct{}{}:
 	default:
@@ -233,18 +244,44 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		}
 		s.setState(StateConnecting, "", 0)
 
+		sessionCtx, sessionCancel := context.WithCancel(ctx)
+		s.mu.Lock()
+		s.sessionCancel = sessionCancel
+		s.mu.Unlock()
+		finishSession := func() bool {
+			s.mu.Lock()
+			requested := sessionCtx.Err() != nil
+			s.sessionCancel = nil
+			s.mu.Unlock()
+			sessionCancel()
+			return requested
+		}
 		port, err := s.open(s.cfg.Device, s.cfg.BaudRate)
+		if err == nil {
+			initialized, initErr := tncprofile.InitializeWithRadioBaud(sessionCtx, port, s.cfg.InitProfile, s.cfg.RadioBaudRate)
+			if initErr != nil {
+				_ = port.Close()
+				err = initErr
+			} else {
+				port = initialized
+			}
+		}
 		if err != nil {
+			requested := finishSession()
 			if ctx.Err() != nil {
 				s.setState(StateStopped, "", 0)
 				return
+			}
+			if requested {
+				bo.Reset()
+				continue
 			}
 			delay := bo.Next()
 			s.mu.Lock()
 			s.backoffSeconds = uint32((delay + time.Second - 1) / time.Second)
 			s.mu.Unlock()
 			s.setState(StateBackoff, err.Error(), time.Now().Add(delay).UnixMilli())
-			s.logger.Warn("kiss serial open failed",
+			s.logger.Warn("kiss serial open or initialization failed",
 				"device", s.cfg.Device, "err", err,
 				"retry_in", delay.Round(time.Millisecond))
 			if !s.sleepWithWake(ctx, delay) {
@@ -267,7 +304,8 @@ func (s *SerialSupervisor) run(parent context.Context) {
 		s.logger.Info("kiss serial supervisor: connected",
 			"device", s.cfg.Device, "baud", s.cfg.BaudRate)
 
-		serveErr := s.srv.ServeTransport(ctx, port)
+		serveErr := s.srv.ServeTransport(sessionCtx, port)
+		requested := finishSession()
 		s.mu.Lock()
 		s.connectedSince = 0
 		s.mu.Unlock()
@@ -277,6 +315,10 @@ func (s *SerialSupervisor) run(parent context.Context) {
 			return
 		}
 
+		if requested {
+			bo.Reset()
+			continue
+		}
 		errStr := "device closed"
 		if serveErr == nil {
 			// Clean EOF (e.g. USB removal). Surface disconnected then
