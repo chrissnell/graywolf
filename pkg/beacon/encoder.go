@@ -98,6 +98,11 @@ func CompressedPositionInfo(lat, lon float64, course int, speedKt float64, altM 
 	if symbolTable == 0 {
 		symbolTable = '/'
 	}
+	// APRS101 ch 9: a leading digit denotes an uncompressed latitude.
+	// Compressed numeric overlays therefore use a-j for the digits 0-9.
+	if symbolTable >= '0' && symbolTable <= '9' {
+		symbolTable = 'a' + (symbolTable - '0')
+	}
 	if symbolCode == 0 {
 		symbolCode = '-'
 	}

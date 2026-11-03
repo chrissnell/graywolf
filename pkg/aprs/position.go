@@ -133,6 +133,11 @@ func parseCompressedPosition(pkt *DecodedAPRSPacket, body []byte) error {
 		return errors.New("aprs: compressed position too short")
 	}
 	table := body[0]
+	// Compressed numeric overlays use a-j on air; expose the same digit
+	// as an uncompressed report to station caches and map renderers.
+	if table >= 'a' && table <= 'j' {
+		table = '0' + (table - 'a')
+	}
 	lat := 90.0 - float64(base91Decode4(body[1:5]))/380926.0
 	lon := -180.0 + float64(base91Decode4(body[5:9]))/190463.0
 	code := body[9]
