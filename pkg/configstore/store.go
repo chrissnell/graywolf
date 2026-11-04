@@ -165,6 +165,8 @@ func (s *Store) Migrate() error {
 		&ConversationPrefs{},
 		&TacticalCallsign{},
 		&BlockedCallsign{},
+		&FavoriteStation{},
+		&ExcludedStation{},
 		&StationConfig{},
 		&UpdatesConfig{},
 		&UnitsConfig{},

@@ -31,6 +31,7 @@
     DEFAULT_MAX_MESSAGE_TEXT,
   } from '../../lib/settings/messages-preferences-store.svelte.js';
   import { dayHeader, dayKey } from './time.js';
+  import { collapseDuplicateEchoes } from '../../lib/duplicate-echo-core.js';
   import { messages as store } from '../../lib/messagesStore.svelte.js';
   import { countByThread } from '../../lib/unread-batch-core.js';
   import {
@@ -141,6 +142,14 @@
     return arr;
   });
 
+  // Same physical packet heard on multiple paths (RF direct + APRS-IS
+  // gate) collapses into one bubble with merged source badges — see
+  // duplicate-echo-core.js for why this can't be dedup'd server-side
+  // for no-ack senders like WXBOT. Every render list below (clustering,
+  // day separators, the {#each}, dwell/read-marking) works off this
+  // collapsed list, not the raw `allBubbles`.
+  const displayBubbles = $derived.by(() => collapseDuplicateEchoes(allBubbles));
+
   // Apply cluster rules to each bubble for sender-label / stripe-monogram rendering.
   // Cluster break: same sender + incoming + within 120s + no day-sep +
   // no intervening other-sender or outgoing bubble. Repeat label every
@@ -151,8 +160,8 @@
     let clusterCount = 0;
     let lastTs = 0;
     let lastDay = '';
-    for (let i = 0; i < allBubbles.length; i++) {
-      const m = allBubbles[i];
+    for (let i = 0; i < displayBubbles.length; i++) {
+      const m = displayBubbles[i];
       const inc = m.direction === 'in';
       const sender = m.from_call || '';
       const t = Date.parse(m.sent_at || m.received_at || m.created_at || 0) || 0;
@@ -185,8 +194,8 @@
   const daySeps = $derived.by(() => {
     const seps = new Set();
     let lastDay = '';
-    for (let i = 0; i < allBubbles.length; i++) {
-      const m = allBubbles[i];
+    for (let i = 0; i < displayBubbles.length; i++) {
+      const m = displayBubbles[i];
       const key = dayKey(m.sent_at || m.received_at || m.created_at);
       if (key !== lastDay) {
         seps.add(i);
@@ -210,11 +219,25 @@
 
   // Observe near-bottom on new bubble to auto-scroll when user is pinned.
   $effect(() => {
-    void allBubbles.length;
+    void displayBubbles.length;
     if (!scrollEl) return;
     if (!scrolledUp) {
       tick().then(() => scrollToBottom(true));
     }
+  });
+
+  // Rebuild the read-tracking IntersectionObserver from scratch whenever
+  // the rendered bubble set changes (new message OR a thread switch via
+  // deep link, e.g. clicking a notification — no full component remount
+  // happens there, so individual per-bubble observe() calls are the only
+  // other trigger and can race with the DOM not having settled yet).
+  // Deferred a tick so it runs after Svelte has actually mounted/unmounted
+  // the new bubble set and every registerRef(el, mounted) call has landed.
+  $effect(() => {
+    void displayBubbles.length;
+    void threadId;
+    if (!scrollEl) return;
+    tick().then(() => rebuildIO());
   });
 
   // --- IntersectionObserver: mark inbound messages as read on dwell.
@@ -270,11 +293,21 @@
           setTimeout(() => {
             if (!dwellStart.has(m.id)) return;
             if (Date.now() - started < 500) return;
-            batchedIds.set(m.id, { kind: m.thread_kind, key: m.thread_key, msg: m });
-            // msgs is loaded once per thread visit, so clear the flag here or
-            // scrolling back over this row (or a tab-switch rebuildIO) would
-            // batch it again and lower the count a second time.
-            m.unread = false;
+            // A collapsed IS/RF-echo bubble represents multiple server
+            // rows (one per path) — mark every one of them read, not
+            // just the primary, or the thread's unread count never
+            // reaches zero for the hidden duplicates.
+            const ids = Array.isArray(m.mergedIds) && m.mergedIds.length ? m.mergedIds : [m.id];
+            // msgs is loaded once per thread visit, so clear each row's
+            // `unread` flag here (on the msgs rows, not the collapsed copy,
+            // which is rebuilt on every recompute) or scrolling back over
+            // the bubble, or a tab-switch rebuildIO, would batch it again
+            // and lower the count a second time.
+            for (const id of ids) {
+              const row = msgs.find((r) => r.id === id);
+              batchedIds.set(id, { kind: m.thread_kind, key: m.thread_key, msg: row });
+              if (row) row.unread = false;
+            }
             dwellStart.delete(m.id);
             scheduleFlush();
           }, 520);
@@ -413,7 +446,7 @@
         data-scroll-viewport
         onscroll={onScroll}
       >
-        {#if allBubbles.length === 0 && !loading}
+        {#if displayBubbles.length === 0 && !loading}
           {#if isTactical}
             <div class="thread-empty" data-testid="tactical-empty-state">
               <EmptyState>
@@ -425,7 +458,7 @@
           {/if}
         {:else}
           <div class="bubbles">
-            {#each allBubbles as m, i (bubbleKey(m, i))}
+            {#each displayBubbles as m, i (bubbleKey(m, i))}
               {#if daySeps.has(i)}
                 <div class="day-sep" role="separator">
                   <span>{dayHeader(m.sent_at || m.received_at || m.created_at)}</span>

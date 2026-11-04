@@ -20,7 +20,7 @@ import (
 // would have caught the bug.
 func TestMicEPositionInfo_MessageCode_IsOffDuty(t *testing.T) {
 	info := MicEPositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, 0, "")
-	destCall := MicEDestination(37.4092, -122.1404, 0)
+	destCall := MicEDestination(37.4092, -122.1404, 0, MicEMessageOffDuty)
 	destAddr, err := ax25.ParseAddress(destCall)
 	if err != nil {
 		t.Fatalf("ParseAddress(%q): %v", destCall, err)
@@ -42,6 +42,79 @@ func TestMicEPositionInfo_MessageCode_IsOffDuty(t *testing.T) {
 	}
 	if p.MicE.MessageText != "Off Duty" {
 		t.Errorf("MessageText = %q, want %q", p.MicE.MessageText, "Off Duty")
+	}
+}
+
+// TestMicEMessageCodeFromName locks in the name<->wire-code mapping
+// used to resolve configstore.Beacon.MicEMessageCode. An empty or
+// unrecognized name must fall back to Off Duty (never Emergency, which
+// is wire code 0 and would otherwise collide with a zero-value/typo
+// string).
+func TestMicEMessageCodeFromName(t *testing.T) {
+	cases := []struct {
+		name string
+		want int
+	}{
+		{"emergency", 0},
+		{"priority", 1},
+		{"special", 2},
+		{"committed", 3},
+		{"returning", 4},
+		{"in_service", 5},
+		{"en_route", 6},
+		{"off_duty", 7},
+		{"", 7},
+		{"bogus", 7},
+	}
+	for _, tc := range cases {
+		if got := MicEMessageCodeFromName(tc.name); got != tc.want {
+			t.Errorf("MicEMessageCodeFromName(%q) = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestMicEPositionInfo_OperatorSelectedMessageCode confirms a
+// non-default message code (e.g. an operator setting their beacon to
+// Emergency) actually reaches the wire: encode via MicEDestination
+// with a resolved code, parse back through aprs.Parse, and check
+// MessageCode/MessageText match.
+func TestMicEPositionInfo_OperatorSelectedMessageCode(t *testing.T) {
+	cases := []struct {
+		name        string
+		want        int
+		wantText    string
+	}{
+		{"emergency", 0, "Emergency"},
+		{"priority", 1, "Priority"},
+		{"special", 2, "Special"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			info := MicEPositionInfo(37.4092, -122.1404, 0, 0, 0, '/', '>', false, 0, "")
+			destCall := MicEDestination(37.4092, -122.1404, 0, MicEMessageCodeFromName(tc.name))
+			destAddr, err := ax25.ParseAddress(destCall)
+			if err != nil {
+				t.Fatalf("ParseAddress(%q): %v", destCall, err)
+			}
+			srcAddr, _ := ax25.ParseAddress("N0CALL")
+			frame, err := ax25.NewUIFrame(srcAddr, destAddr, nil, []byte(info))
+			if err != nil {
+				t.Fatalf("NewUIFrame: %v", err)
+			}
+			p, err := aprs.Parse(frame)
+			if err != nil {
+				t.Fatalf("aprs.Parse: %v", err)
+			}
+			if p.MicE == nil {
+				t.Fatalf("no Mic-E parsed: %+v", p)
+			}
+			if p.MicE.MessageCode != tc.want {
+				t.Errorf("MessageCode = %d, want %d", p.MicE.MessageCode, tc.want)
+			}
+			if p.MicE.MessageText != tc.wantText {
+				t.Errorf("MessageText = %q, want %q", p.MicE.MessageText, tc.wantText)
+			}
+		})
 	}
 }
 
@@ -73,7 +146,7 @@ func TestMicEPositionInfo_RoundTrip(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			info := MicEPositionInfo(tc.lat, tc.lon, tc.course, tc.speedKt, tc.altM, tc.symTable, tc.symCode, tc.messaging, 0, tc.comment)
-			destCall := MicEDestination(tc.lat, tc.lon, 0)
+			destCall := MicEDestination(tc.lat, tc.lon, 0, MicEMessageOffDuty)
 			destAddr, err := ax25.ParseAddress(destCall)
 			if err != nil {
 				t.Fatalf("ax25.ParseAddress(%q): %v", destCall, err)
@@ -144,7 +217,7 @@ func TestMicELongitudeDegreeEncoding(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dest := MicEDestination(tc.lat, tc.lon, 0)
+			dest := MicEDestination(tc.lat, tc.lon, 0, MicEMessageOffDuty)
 			if dest != tc.wantDest {
 				t.Fatalf("MicEDestination() = %q, want %q", dest, tc.wantDest)
 			}
@@ -206,7 +279,7 @@ func TestMicELongitudeBoundariesAndCarry(t *testing.T) {
 		for _, sign := range []float64{1, -1} {
 			t.Run(fmt.Sprintf("lon=%+.5f", sign*tc.lon), func(t *testing.T) {
 				lon := sign * tc.lon
-				dest := MicEDestination(42.9606, lon, 0)
+				dest := MicEDestination(42.9606, lon, 0, MicEMessageOffDuty)
 				wantDest := "TRUW63"
 				if tc.offset {
 					wantDest = "TRUWV3"
@@ -272,7 +345,7 @@ func TestMicELongitudeRoundTripFullRange(t *testing.T) {
 				lon = d + 0.99995 + r.Float64()*0.00005
 			}
 		}
-		dest := MicEDestination(42.9606, lon, 0)
+		dest := MicEDestination(42.9606, lon, 0, MicEMessageOffDuty)
 		info := []byte(MicEPositionInfo(42.9606, lon, 0, 0, 0, '/', '>', false, 0, ""))
 		dst, err := ax25.ParseAddress(dest)
 		if err != nil {
@@ -335,7 +408,7 @@ func TestMicEPositionInfo_AmbiguityRoundTrip(t *testing.T) {
 				t.Errorf("level %d: info byte %d is ASCII space (per APRS101 ch 10 these bytes are value-only)", level, i)
 			}
 		}
-		destCall := MicEDestination(lat, lon, level)
+		destCall := MicEDestination(lat, lon, level, MicEMessageOffDuty)
 		destAddr, err := ax25.ParseAddress(destCall)
 		if err != nil {
 			t.Fatalf("level %d: ParseAddress(%q): %v", level, destCall, err)

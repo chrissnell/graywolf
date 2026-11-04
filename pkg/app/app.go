@@ -15,6 +15,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25conn"
 	"github.com/chrissnell/graywolf/pkg/beacon"
+	"github.com/chrissnell/graywolf/pkg/bulletins"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/digipeater"
 	"github.com/chrissnell/graywolf/pkg/gps"
@@ -157,6 +158,14 @@ type App struct {
 	msgSvc       *messages.Service
 	msgStore     *messages.Store
 	msgLocalRing *messages.LocalTxRing
+
+	// --- Bulletins service -------------------------------------------------
+	// bulletinSvc receives inbound BLN* packets from the messages router,
+	// persists them, and schedules retransmit of outbound bulletins per the
+	// APRS spec (BLN0-9: 20-min/4-hour; BLNA-Z: 1-hour/4-day).
+	// nil until wireBulletins runs; the router BulletinSink and webapi
+	// handler both tolerate nil gracefully.
+	bulletinSvc *bulletins.Service
 
 	// --- Actions service ---------------------------------------------------
 	// actions is the inbound classifier + per-Action runner that diverts

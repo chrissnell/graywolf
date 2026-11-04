@@ -37,6 +37,10 @@ type BeaconRequest struct {
 	Symbol        string  `json:"symbol"`
 	Overlay       string  `json:"overlay"`
 	PositionFormat string  `json:"position_format"`
+	// MicEMessageCode is the Mic-E status/message code, only meaningful
+	// when position_format is mic_e. One of off_duty (default), en_route,
+	// in_service, returning, committed, special, priority, emergency.
+	MicEMessageCode string  `json:"mic_e_message_code"`
 	Messaging      bool    `json:"messaging"`
 	Comment        string  `json:"comment"`
 	CommentCmd     string  `json:"comment_cmd"`
@@ -127,6 +131,11 @@ func (r BeaconRequest) Validate() error {
 			return fmt.Errorf("ambiguity must be 0..4 (got %d)", r.Ambiguity)
 		}
 	}
+	switch r.MicEMessageCode {
+	case "", "off_duty", "en_route", "in_service", "returning", "committed", "special", "priority", "emergency":
+	default:
+		return fmt.Errorf("mic_e_message_code must be one of off_duty, en_route, in_service, returning, committed, special, priority, emergency (got %q)", r.MicEMessageCode)
+	}
 	return nil
 }
 
@@ -153,6 +162,23 @@ func (r BeaconRequest) normalizedFormat() string {
 		return r.PositionFormat
 	default:
 		return "compressed"
+	}
+}
+
+// normalizedMicEMessageCode returns the mic_e_message_code value to
+// persist: empty or unknown becomes "off_duty" so the DB column never
+// holds a surprise string (and specifically never a blank that some
+// other reader might misinterpret as the Emergency wire code, which is
+// 0/"emergency" in this scheme, not the empty string -- but keeping the
+// column always populated with a named value avoids relying on that
+// distinction downstream). Validate() rejects unknown non-empty values
+// up front, mirroring normalizedFormat() above.
+func (r BeaconRequest) normalizedMicEMessageCode() string {
+	switch r.MicEMessageCode {
+	case "off_duty", "en_route", "in_service", "returning", "committed", "special", "priority", "emergency":
+		return r.MicEMessageCode
+	default:
+		return "off_duty"
 	}
 }
 
@@ -183,6 +209,7 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		Symbol:        r.Symbol,
 		Overlay:       r.Overlay,
 		PositionFormat: r.normalizedFormat(),
+		MicEMessageCode: r.normalizedMicEMessageCode(),
 		Messaging:     r.Messaging,
 		Comment:       r.Comment,
 		CommentCmd:    r.CommentCmd,
@@ -242,6 +269,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 		Symbol:        r.Symbol,
 		Overlay:       r.Overlay,
 		PositionFormat: r.normalizedFormat(),
+		MicEMessageCode: r.normalizedMicEMessageCode(),
 		Messaging:     r.Messaging,
 		Comment:       r.Comment,
 		CommentCmd:    r.CommentCmd,
@@ -289,6 +317,7 @@ type BeaconResponse struct {
 	Symbol        string  `json:"symbol"`
 	Overlay       string  `json:"overlay"`
 	PositionFormat string  `json:"position_format"`
+	MicEMessageCode string  `json:"mic_e_message_code"`
 	Messaging      bool    `json:"messaging"`
 	Comment       string  `json:"comment"`
 	CommentCmd    string  `json:"comment_cmd"`
@@ -333,6 +362,7 @@ func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 		Symbol:        m.Symbol,
 		Overlay:       m.Overlay,
 		PositionFormat: m.PositionFormat,
+		MicEMessageCode: m.MicEMessageCode,
 		Messaging:     m.Messaging,
 		Comment:       m.Comment,
 		CommentCmd:    m.CommentCmd,
