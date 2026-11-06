@@ -99,7 +99,7 @@
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
-    smart_beacon: false,
+    smart_beacon: false, comment_cmd: '',
   });
 
   let callsignError = $state('');
@@ -315,6 +315,7 @@
     altInput = '';
     altError = '';
     form.comment = defaultComment;
+    form.comment_cmd = '';
     form.interval = '600';
     form.slot = '';
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
@@ -706,6 +707,12 @@
               <span class="detail-value detail-comment">{b.comment}</span>
             </div>
           {/if}
+          {#if b.comment_cmd}
+            <div class="detail-row">
+              <span class="detail-label">Comment Command</span>
+              <span class="detail-value detail-comment">{b.comment_cmd}</span>
+            </div>
+          {/if}
         </div>
 
         <div class="beacon-actions">
@@ -931,6 +938,10 @@
       <FormField label="Comment" id="bcn-comment"
         hint={"Tip: use {{version}} to insert the running graywolf version."}>
         <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
+      </FormField>
+      <FormField label="Comment Command" id="bcn-comment-cmd"
+        hint={"This command will be executed during beaconing. The standard output will be appended to the comment specified above."}>
+        <Input id="bcn-comment-cmd" bind:value={form.comment_cmd} />
       </FormField>
     </div>
 
