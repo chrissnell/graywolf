@@ -895,6 +895,7 @@ func (a *App) buildIgateInstance(ctx context.Context, igCfg *configstore.IGateCo
 	ig, err := igate.New(igate.Config{
 		Server:          serverAddr,
 		StationCallsign: stationCall,
+		RFToISBlocklist: igCfg.RFToISBlocklist,
 		ServerFilter:    composedFilter,
 		SoftwareName:    igCfg.SoftwareName,
 		SoftwareVersion: igCfg.SoftwareVersion,
@@ -2955,6 +2956,7 @@ func (a *App) reloadIgate(ctx context.Context) {
 	}
 
 	// enabled → enabled (TX channel + via-path + filter / rules push-through).
+	cur.SetRFToISBlocklist(igCfg.RFToISBlocklist)
 	cur.SetTxChannel(a.resolveTxChannel(ctx, igCfg.TxChannel))
 	cur.SetIsTxVia(igCfg.IsTxVia)
 	rfFilters, _ := a.store.ListIGateRfFilters(ctx)

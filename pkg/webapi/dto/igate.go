@@ -6,6 +6,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	"github.com/chrissnell/graywolf/pkg/igate"
 )
 
 // First-run defaults seeded into the response DTO when the source model
@@ -44,6 +45,7 @@ type IGateConfigRequest struct {
 	Server          string `json:"server"`
 	Port            uint32 `json:"port"`
 	ServerFilter    string `json:"server_filter"`
+	RFToISBlocklist string `json:"rf_to_is_blocklist"`
 	SimulationMode  bool   `json:"simulation_mode"`
 	GateRfToIs      bool   `json:"gate_rf_to_is"`
 	GateIsToRf      bool   `json:"gate_is_to_rf"`
@@ -84,12 +86,19 @@ func (r IGateConfigRequest) ValidateIsTxVia() error {
 	return nil
 }
 
+// ValidateRFToISBlocklist rejects malformed station identifiers without
+// affecting the APRS-IS server filter or the independent IS→RF rules.
+func (r IGateConfigRequest) ValidateRFToISBlocklist() (string, error) {
+	return igate.ParseRFToISBlocklist(r.RFToISBlocklist)
+}
+
 func (r IGateConfigRequest) ToModel() configstore.IGateConfig {
 	return configstore.IGateConfig{
 		Enabled:         r.Enabled,
 		Server:          r.Server,
 		Port:            r.Port,
 		ServerFilter:    r.ServerFilter,
+		RFToISBlocklist: r.RFToISBlocklist,
 		SimulationMode:  r.SimulationMode,
 		GateRfToIs:      r.GateRfToIs,
 		GateIsToRf:      r.GateIsToRf,
@@ -130,6 +139,7 @@ func IGateConfigFromModel(m configstore.IGateConfig) IGateConfigResponse {
 			Server:          server,
 			Port:            port,
 			ServerFilter:    m.ServerFilter,
+			RFToISBlocklist: m.RFToISBlocklist,
 			SimulationMode:  m.SimulationMode,
 			GateRfToIs:      m.GateRfToIs,
 			GateIsToRf:      m.GateIsToRf,

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { Button, Input, Toggle, Select, Box, Icon, Badge } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
+  import { validateRFToISBlocklist } from '../lib/igateBlocklist.js';
   import { toasts } from '../lib/stores.js';
   import PageHeader from '../components/PageHeader.svelte';
   import FormField from '../components/FormField.svelte';
@@ -23,7 +24,7 @@
   // DisallowUnknownFields so sending them triggers a 400.
   let form = $state({
     enabled: true, server: 'rotate.aprs2.net', port: '14580',
-    server_filter: '', tx_channel: 0,
+    server_filter: '', rf_to_is_blocklist: '', tx_channel: 0,
     simulation_mode: false, gate_rf_to_is: true, gate_is_to_rf: false,
     rf_channel: 0, is_tx_via: '', software_name: 'graywolf', software_version: '0.1',
   });
@@ -109,6 +110,8 @@
       ? 'The `|` character is not valid APRS-IS filter syntax. Separate clauses with spaces.'
       : ''
   );
+
+  let rfToISBlocklistError = $derived(validateRFToISBlocklist(form.rf_to_is_blocklist));
 
   // Client mirror of ax25.ParseVia (pkg/ax25/address.go). The IS→RF
   // via-path is a comma-separated list of AX.25 addresses; empty means
@@ -379,6 +382,7 @@
           server: data.server,
           port: String(data.port),
           server_filter: data.server_filter ?? '',
+          rf_to_is_blocklist: data.rf_to_is_blocklist ?? '',
           tx_channel: data.tx_channel ?? 0,
           simulation_mode: data.simulation_mode ?? false,
           gate_rf_to_is: data.gate_rf_to_is ?? true,
@@ -417,6 +421,7 @@
       toasts.error(serverFilterError);
       return false;
     }
+    if (rfToISBlocklistError) { activeTab = 'filters'; toasts.error(rfToISBlocklistError); return false; }
     if (isTxViaError) {
       toasts.error(isTxViaError);
       return false;
@@ -435,6 +440,7 @@
       server: form.server,
       port: parseInt(form.port),
       server_filter: form.server_filter,
+      rf_to_is_blocklist: form.rf_to_is_blocklist,
       tx_channel: parseInt(form.tx_channel),
       simulation_mode: form.simulation_mode,
       gate_rf_to_is: form.gate_rf_to_is,
@@ -819,6 +825,24 @@
           <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
         {/snippet}
       </FormField>
+      <FormField
+        label="RF→APRS-IS callsign exclusions"
+        id="ig-rf-to-is-blocklist"
+        error={rfToISBlocklistError}
+        hint="One callsign per line. K1ABC blocks all K1ABC SSIDs; K1ABC-2 blocks only SSID 2. Empty means no callsigns excluded. Only RF→APRS-IS uploads are blocked; RF reception and the APRS-IS server filter are unchanged."
+      >
+        {#snippet children(describedBy)}
+          <textarea
+            id="ig-rf-to-is-blocklist"
+            class="blocklist-textarea"
+            bind:value={form.rf_to_is_blocklist}
+            rows="4"
+            spellcheck="false"
+            placeholder="One callsign per line"
+            aria-describedby={describedBy}
+          ></textarea>
+        {/snippet}
+      </FormField>
       <p class="field-note">
         Filter syntax reference:
         <a href="https://www.aprs-is.net/javAPRSFilter.aspx" target="_blank" rel="noopener noreferrer">
@@ -976,6 +1000,23 @@
 />
 
 <style>
+  .blocklist-textarea {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100px;
+    padding: 10px 12px;
+    color: var(--text-primary);
+    background: var(--color-surface, var(--bg-surface, transparent));
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+  .blocklist-textarea:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 1px;
+  }
   .status-row {
     display: flex;
     align-items: center;
