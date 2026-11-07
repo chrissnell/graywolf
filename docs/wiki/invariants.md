@@ -2118,3 +2118,28 @@ Source: [`../../web/src/components/messages/MessageThread.svelte`](../../web/src
 [`../../web/src/lib/messagesStore.svelte.js`](../../web/src/lib/messagesStore.svelte.js)
 (`adjustUnread`),
 [`../../web/src/lib/unread-batch-core.js`](../../web/src/lib/unread-batch-core.js).
+
+### 71. Same-packet RF+IS echoes are collapsed in the message thread UI, not deduped server-side
+
+`messages.Router`'s inbound dedup (`Preflight.CheckDedup`) keys on
+`(from, msgid, text_hash)` and only runs when the packet carries a
+message ID. No-ack bots (WXBOT and friends) send unnumbered messages, so
+a reply heard on both RF and APRS-IS is stored as two rows, one per
+path. `MessageThread.svelte` passes the sorted bubbles through
+`collapseDuplicateEchoes` (`duplicate-echo-core.js`), which merges
+*adjacent* inbound rows with the same sender and text within 10s into one
+bubble carrying `mergedIds` and `mergedSources`; `MessageBubble` renders
+one source badge per path.
+
+Anything that acts on a bubble must act on every row in `mergedIds`. The
+dwell/mark-read batching does this: miss a hidden row and the thread's
+unread count never reaches zero. The server still holds one row per path,
+so storage, the API and auto-ACK are unchanged.
+
+*Why:* display-only keeps the fix contained to the web UI. A router-side
+dedup of unnumbered messages would risk swallowing a bot's intentionally
+repeated text inside the window (see GH #610).
+
+Source: [`../../web/src/lib/duplicate-echo-core.js`](../../web/src/lib/duplicate-echo-core.js),
+[`../../web/src/components/messages/MessageThread.svelte`](../../web/src/components/messages/MessageThread.svelte),
+[`../../web/src/components/messages/MessageBubble.svelte`](../../web/src/components/messages/MessageBubble.svelte).
