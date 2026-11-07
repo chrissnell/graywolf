@@ -19,6 +19,9 @@ test('desktopDeviceSource.list returns devices from /api/ptt/available filtered 
   const serial = await src.list({ wire: { method: 'serial_rts' } });
   assert.deepEqual(serial.map(d => d.path), ['/dev/ttyUSB0']);
 
+  const dual = await src.list({ wire: { method: 'serial_rts_dtr' } });
+  assert.deepEqual(dual.map(d => d.path), ['/dev/ttyUSB0']);
+
   const gpio = await src.list({ wire: { method: 'gpio' } });
   assert.deepEqual(gpio.map(d => d.path), ['/dev/gpiochip0']);
 

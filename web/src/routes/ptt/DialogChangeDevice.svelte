@@ -14,6 +14,7 @@
     initialDevicePath,
     initialGpioLine,     // for gpio method
     initialGpioPin,      // for cm108 method
+    initialDtrInvert,
     initialInvert,       // any keying method
     allowManualEntry = true, // desktop: let the operator type a udev path (GH #511)
     onSave,              // (payload) => void; payload: { device, gpio_line?, gpio_pin?, invert }
@@ -30,6 +31,7 @@
   let gpioLineSel = $state('0');
   let gpioPinSel = $state('3');
   let invert = $state(false);
+  let dtrInvert = $state(false);
 
   // Manual free-form device path (GH #511): udev-renamed devices such as
   // /dev/aioc-aprs-ptt never appear in enumeration, so the operator needs
@@ -62,6 +64,7 @@
       gpioLineSel = String(initialGpioLine ?? 0);
       gpioPinSel = String(initialGpioPin ?? 3);
       invert = !!initialInvert;
+      dtrInvert = !!initialDtrInvert;
       wasOpen = true;
       initializing = true;
       void refresh();
@@ -163,6 +166,7 @@
       gpio_line: isGpio ? Number(gpioLineSel) : undefined,
       gpio_pin: isCm108 ? Number(gpioPinSel) : undefined,
       invert,
+      dtr_invert: wireMethod === 'serial_rts_dtr' && dtrInvert,
     };
   }
 
@@ -252,8 +256,15 @@
   {/if}
 
   {#if wireMethod !== 'none' && wireMethod !== 'rigctld'}
-    <FormField label="Invert Polarity" id="dlg-invert">
+    <FormField label={wireMethod === 'serial_rts_dtr' ? 'RTS Polarity' : 'Invert Polarity'} id="dlg-invert">
       <Toggle bind:checked={invert} label="Key radio on LOW instead of HIGH" />
+    </FormField>
+  {/if}
+
+  {#if wireMethod === 'serial_rts_dtr'}
+    <FormField label="DTR Polarity" id="dlg-dtr-invert"
+      hint="Each line reverses on receive. For Dire Wolf RTS -DTR: RTS toggle off, DTR toggle on.">
+      <Toggle bind:checked={dtrInvert} label="Key DTR on LOW instead of HIGH" />
     </FormField>
   {/if}
 

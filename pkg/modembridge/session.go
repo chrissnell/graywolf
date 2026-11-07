@@ -281,6 +281,7 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			Method:     ptt.Method,
 			Device:     ptt.Device,
 			Invert:     ptt.Invert,
+			DtrInvert:  ptt.DtrInvert,
 			TxdelayMs:  txDelayMs,
 			TxtailMs:   txTailMs,
 			SlottimeMs: ptt.SlotTimeMs,
