@@ -253,6 +253,12 @@ func TestMessagePreferencesRequestValidate(t *testing.T) {
 		{"empty_policy_allowed", MessagePreferencesRequest{RetryMaxAttempts: 5}, false},
 		{"bad_policy", MessagePreferencesRequest{FallbackPolicy: "nope"}, true},
 		{"retry_cap", MessagePreferencesRequest{FallbackPolicy: "rf_only", RetryMaxAttempts: 9999}, true},
+		// retry_interval_secs: 0 = default; 10..120 accepted; outside rejected.
+		{"interval_zero_ok", MessagePreferencesRequest{RetryIntervalSecs: 0}, false},
+		{"interval_min_ok", MessagePreferencesRequest{RetryIntervalSecs: 10}, false},
+		{"interval_max_ok", MessagePreferencesRequest{RetryIntervalSecs: 120}, false},
+		{"interval_too_low", MessagePreferencesRequest{RetryIntervalSecs: 9}, true},
+		{"interval_too_high", MessagePreferencesRequest{RetryIntervalSecs: 121}, true},
 		// max_message_text_override: 0 is fine (default); below-default
 		// and above-ceiling are rejected; in-range is accepted.
 		{"override_zero_ok", MessagePreferencesRequest{MaxMessageTextOverride: 0}, false},

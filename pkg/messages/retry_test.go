@@ -135,6 +135,39 @@ func TestRetry_BackoffLadder(t *testing.T) {
 	}
 }
 
+// TestRetry_ConfiguredInterval proves the operator's retry interval
+// replaces the default ladder, applies to every attempt, and is read
+// live: changing preferences changes the very next backoff.
+func TestRetry_ConfiguredInterval(t *testing.T) {
+	rig := buildRetry(t, FallbackPolicyRFOnly)
+	defer rig.close()
+	setInterval := func(secs uint32) {
+		rig.prefs.current.Store(&configstore.MessagePreferences{
+			FallbackPolicy:    FallbackPolicyRFOnly,
+			RetryMaxAttempts:  4,
+			RetryIntervalSecs: secs,
+		})
+	}
+	within := func(d, base time.Duration) bool {
+		return d >= time.Duration(float64(base)*0.9) && d <= time.Duration(float64(base)*1.1)
+	}
+	setInterval(90)
+	for _, attempt := range []int{1, 3, 99} {
+		if d := rig.mgr.backoffFor(attempt); !within(d, 90*time.Second) {
+			t.Errorf("interval=90 attempt %d backoff = %v, want 81-99s", attempt, d)
+		}
+	}
+	setInterval(10)
+	if d := rig.mgr.backoffFor(1); !within(d, 10*time.Second) {
+		t.Errorf("interval=10 backoff = %v, want 9-11s", d)
+	}
+	// 0 = unset: falls back to the 30s ladder.
+	setInterval(0)
+	if d := rig.mgr.backoffFor(1); !within(d, 30*time.Second) {
+		t.Errorf("interval=0 backoff = %v, want 27-33s", d)
+	}
+}
+
 func TestRetry_JitterBounds(t *testing.T) {
 	rig := buildRetry(t, FallbackPolicyRFOnly)
 	defer rig.close()

@@ -156,7 +156,9 @@
       initial plus 3 retries) at 30-second spacing with &plusmn;10%
       jitter &mdash; aligned with Xastir / UI-View32 / APRSdroid norms so
       graywolf isn&rsquo;t noticeably more chatty than other stations
-      sharing 144.39. Operators who need to tune this can do so via the
+      sharing 144.39. The spacing between retries can be changed on the
+      Messaging settings page (<em>Retry interval</em>, 10 to 120
+      seconds). Other values can be tuned via the
       <a href="api.html">REST API</a>
       (<code>GET/PUT /api/messages/preferences</code>).
     </p>
@@ -311,7 +313,7 @@
             <tr>
               <td>Retry spacing</td>
               <td>30 seconds</td>
-              <td>Time between retries. A single value means constant spacing; a list of values defines a ladder.</td>
+              <td>Time between retries, 10 to 120 seconds. Set it on the Messaging settings page (<em>Retry interval</em>); a change applies to the next retry without a restart.</td>
             </tr>
             <tr>
               <td>APRS-IS fallback</td>

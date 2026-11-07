@@ -3041,6 +3041,11 @@ export interface components {
              */
             max_message_text_override?: number;
             retention_days?: number;
+            /**
+             * @description RetryIntervalSecs is the delay between DM retries. 0 (or absent)
+             *     means "use the default 30s"; otherwise it must be 10..120.
+             */
+            retry_interval_secs?: number;
             retry_max_attempts?: number;
         };
         "dto.MessagePreferencesResponse": {
@@ -3055,6 +3060,7 @@ export interface components {
              */
             max_message_text_override?: number;
             retention_days?: number;
+            retry_interval_secs?: number;
             retry_max_attempts?: number;
         };
         "dto.MessageResponse": {

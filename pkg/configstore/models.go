@@ -885,6 +885,9 @@ type MessagePreferences struct {
 	FallbackPolicy   string    `gorm:"size:16;not null;default:'is_fallback'" json:"fallback_policy"` // rf_only | is_fallback | is_only | both
 	DefaultPath      string    `gorm:"size:64;not null;default:'WIDE1-1,WIDE2-1'" json:"default_path"`
 	RetryMaxAttempts uint32    `gorm:"not null;default:4" json:"retry_max_attempts"`
+	// RetryIntervalSecs is the base delay between DM retries, in seconds.
+	// 0 means "use the default" (30); the webapi validator accepts 10..120.
+	RetryIntervalSecs uint32 `gorm:"not null;default:30" json:"retry_interval_secs"`
 	RetentionDays    uint32    `gorm:"not null;default:0" json:"retention_days"` // 0 = forever
 	// MaxMessageTextOverride raises the default 67-char cap on
 	// addressee-line direct messages up to 200. 0 (the column default,

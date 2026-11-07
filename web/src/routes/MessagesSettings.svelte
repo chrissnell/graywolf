@@ -154,6 +154,26 @@
   </p>
 </Box>
 
+<Box title="Retry">
+  <p class="tx-channel-label">Retry interval (seconds)</p>
+  <input
+    class="retry-input"
+    type="number"
+    min="10"
+    max="120"
+    value={messagesPreferencesState.retryIntervalSecs}
+    disabled={!messagesPreferencesState.loaded || messagesPreferencesState.saving}
+    onchange={(e) => messagesPreferencesState.setRetryIntervalSecs(e.target.value)}
+    aria-label="Retry interval in seconds"
+  />
+  <p class="messages-hint">
+    How long to wait between retries of an unacknowledged message.
+    Default is 30 seconds; allowed range is 10 to 120. Use a longer
+    interval on a busy RF channel or through a long digipeater chain.
+    A change applies to the next retry without a restart.
+  </p>
+</Box>
+
 <Box title="Blocked call signs">
   <p class="messages-hint block-intro">
     Messages from a blocked call sign are dropped before they reach your
@@ -225,6 +245,19 @@
     font-size: 13px;
     font-weight: 500;
     color: var(--text-default);
+  }
+  .retry-input {
+    width: 80px;
+    padding: 6px 8px;
+    font-size: 13px;
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    background: var(--bg-input, var(--bg-surface));
+    color: var(--text-default);
+  }
+  .retry-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
   .block-intro { margin-top: 0; margin-bottom: 16px; }
   .block-intro code {

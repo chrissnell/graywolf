@@ -57,10 +57,11 @@ func (s *Store) seedMessagePreferences(ctx context.Context) error {
 		return nil
 	}
 	seed := &MessagePreferences{
-		FallbackPolicy:   "is_fallback",
-		DefaultPath:      "WIDE1-1,WIDE2-1",
-		RetryMaxAttempts: 4,
-		RetentionDays:    0,
+		FallbackPolicy:    "is_fallback",
+		DefaultPath:       "WIDE1-1,WIDE2-1",
+		RetryMaxAttempts:  4,
+		RetryIntervalSecs: 30,
+		RetentionDays:     0,
 	}
 	return s.db.WithContext(ctx).Create(seed).Error
 }
