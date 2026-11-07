@@ -119,6 +119,22 @@ func (e *Engine) Allow(pkt *aprs.DecodedAPRSPacket) bool {
 	return false
 }
 
+// ExplicitSourceAllow permits an otherwise non-owned non-message source only
+// when the FIRST matching rule is an exact callsign allow. Broad prefix,
+// packet-type and object rules never grant this ownership exception.
+// The normal Allow check still runs in the iGate transmit pipeline.
+func (e *Engine) ExplicitSourceAllow(pkt *aprs.DecodedAPRSPacket) bool {
+	if pkt == nil || strings.TrimSpace(pkt.Source) == "" {
+		return false
+	}
+	for _, r := range e.rules {
+		if matches(r, pkt) {
+			return r.Type == TypeCallsign && r.Action == Allow
+		}
+	}
+	return false
+}
+
 func matches(r Rule, pkt *aprs.DecodedAPRSPacket) bool {
 	switch r.Type {
 	case TypeCallsign:
