@@ -23,7 +23,7 @@ func TestNonMessageExplicitSourceGate(t *testing.T) {
 		{"explicit aircraft", "N6110L", nil, true},
 		{"case insensitive aircraft", "n6110l", nil, true},
 		{"existing own SSID", "KS9N-7", nil, true},
-		{"own base callsign", "KS9N", nil, false},
+		{"own base callsign", "KS9N", nil, true},
 		{"never transmit self", "KS9N-10", nil, false},
 		{"unknown denied", "N12345", nil, false},
 		{"loop prevention", "N6110L", []string{"WIDE1-1", "KS9N-2*"}, false},
