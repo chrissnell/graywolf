@@ -20,8 +20,10 @@ type PttRequest struct {
 	PttMethod uint32 `json:"ptt_method"`
 	// GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
 	// method. Ignored for every other method.
-	GpioLine   uint32 `json:"gpio_line"`
-	Invert     bool   `json:"invert"`
+	GpioLine uint32 `json:"gpio_line"`
+	Invert   bool   `json:"invert"`
+	// DtrInvert controls DTR only for serial_rts_dtr; Invert controls RTS.
+	DtrInvert  bool   `json:"dtr_invert"`
 	SlotTimeMs uint32 `json:"slot_time_ms"`
 	Persist    uint32 `json:"persist"`
 	DwaitMs    uint32 `json:"dwait_ms"`
@@ -60,6 +62,7 @@ func (r PttRequest) ToModel() configstore.PttConfig {
 		GpioPin:    r.GpioPin,
 		GpioLine:   r.GpioLine,
 		Invert:     r.Invert,
+		DtrInvert:  r.DtrInvert,
 		SlotTimeMs: r.SlotTimeMs,
 		Persist:    r.Persist,
 		DwaitMs:    r.DwaitMs,
@@ -94,6 +97,7 @@ func PttFromModel(m configstore.PttConfig) PttResponse {
 			GpioPin:    m.GpioPin,
 			GpioLine:   m.GpioLine,
 			Invert:     m.Invert,
+			DtrInvert:  m.DtrInvert,
 			SlotTimeMs: m.SlotTimeMs,
 			Persist:    m.Persist,
 			DwaitMs:    m.DwaitMs,

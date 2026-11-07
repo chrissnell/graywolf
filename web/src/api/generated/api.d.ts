@@ -3166,6 +3166,8 @@ export interface components {
         "dto.PttRequest": {
             channel_id?: number;
             device_path?: string;
+            /** @description DtrInvert controls DTR only for serial_rts_dtr; Invert controls RTS. */
+            dtr_invert?: boolean;
             dwait_ms?: number;
             /**
              * @description GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`
@@ -3190,6 +3192,8 @@ export interface components {
         "dto.PttResponse": {
             channel_id?: number;
             device_path?: string;
+            /** @description DtrInvert controls DTR only for serial_rts_dtr; Invert controls RTS. */
+            dtr_invert?: boolean;
             dwait_ms?: number;
             /**
              * @description GpioLine is the gpiochip v2 line offset (0-indexed) used by the `gpio`

@@ -49,6 +49,7 @@
     digirig_tone: 'Digirig Lite Tone PTT',
     serial_rts: 'Serial RTS',
     serial_dtr: 'Serial DTR',
+    serial_rts_dtr: 'Serial RTS + DTR',
     gpio: 'GPIO',
     cm108: 'CM108',
     rigctld: 'Hamlib rigctld (CAT)',
@@ -280,6 +281,7 @@
       gpio_pin: payload?.gpio_pin ?? 0,
       gpio_line: payload?.gpio_line ?? 0,
       invert: !!payload?.invert,
+      dtr_invert: !!payload?.dtr_invert,
     };
     if (m.wire.ptt_method != null) body.ptt_method = m.wire.ptt_method;
     try {
@@ -482,6 +484,7 @@
   initialGpioLine={dialogContext?.item?.gpio_line ?? 0}
   initialGpioPin={dialogContext?.item?.gpio_pin ?? 3}
   initialInvert={dialogContext?.item?.invert || false}
+  initialDtrInvert={dialogContext?.item?.dtr_invert || false}
   onSave={handleDeviceSave}
   onBack={handleDeviceBack}
   onCancel={() => { dialogDeviceOpen = false; dialogContext = null; }}

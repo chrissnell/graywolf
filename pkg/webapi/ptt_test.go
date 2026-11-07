@@ -514,3 +514,51 @@ func keys(m map[string]any) []string {
 	}
 	return out
 }
+
+func TestPttSerialRtsDtrRoundTrip(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	ctx := context.Background()
+	dev := &configstore.AudioDevice{
+		Name: "serial-test-input", Direction: "input", SourceType: "flac",
+		SourcePath: "/tmp/unused.flac", SampleRate: 44100, Channels: 1, Format: "s16le",
+	}
+	if err := srv.store.CreateAudioDevice(ctx, dev); err != nil {
+		t.Fatal(err)
+	}
+	ch := &configstore.Channel{Name: "serial-test", InputDeviceID: configstore.U32Ptr(dev.ID)}
+	if err := srv.store.CreateChannel(ctx, ch); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/ptt/" + strconv.FormatUint(uint64(ch.ID), 10)
+	for _, method := range []string{"serial_rts_dtr", "serial_rts", "serial_dtr"} {
+		for _, invert := range []bool{true, false} {
+			for _, dtrInvert := range []bool{true, false} {
+				body := map[string]any{
+					"channel_id": ch.ID, "method": method, "device_path": "/dev/ttyUSB0",
+					"invert": invert, "dtr_invert": dtrInvert,
+				}
+				buf, err := json.Marshal(body)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPut, path, bytes.NewReader(buf)))
+				if rec.Code != http.StatusOK {
+					t.Fatalf("PUT: %d %s", rec.Code, rec.Body.String())
+				}
+				rec = httptest.NewRecorder()
+				mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+				var got map[string]any
+				if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+					t.Fatal(err)
+				}
+				if rec.Code != http.StatusOK || got["method"] != method ||
+					got["invert"] != invert || got["dtr_invert"] != dtrInvert {
+					t.Fatalf("round trip: %d %s", rec.Code, rec.Body.String())
+				}
+			}
+		}
+	}
+}

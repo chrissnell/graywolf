@@ -59,6 +59,19 @@ impl UnixSerialLines {
 }
 
 impl ModemControlLines for UnixSerialLines {
+    fn write_lines(&mut self, rts: Option<bool>, dtr: Option<bool>) -> Result<(), String> {
+        let mut set = 0;
+        let mut clear = 0;
+        for (level, bit) in [(rts, libc::TIOCM_RTS), (dtr, libc::TIOCM_DTR)] {
+            match level {
+                Some(true) => set |= bit,
+                Some(false) => clear |= bit,
+                None => {}
+            }
+        }
+        self.update(set, clear)
+    }
+
     fn write_rts(&mut self, level: bool) -> Result<(), String> {
         if level {
             self.update(libc::TIOCM_RTS, 0)

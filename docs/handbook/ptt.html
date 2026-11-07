@@ -165,6 +165,11 @@
               <td>USB-to-serial adapter</td>
             </tr>
             <tr>
+              <td><code>serial_rts_dtr</code></td>
+              <td>Drive RTS and DTR together with independent polarities</td>
+              <td>USB-to-serial adapter</td>
+            </tr>
+            <tr>
               <td><code>gpio</code></td>
               <td>Linux GPIO pin via gpiochip character device</td>
               <td>Raspberry Pi GPIO header</td>
@@ -361,6 +366,29 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
         </p>
       </div>
     </div>
+
+    <h3>RTS and DTR together</h3>
+    <p>Select <strong>Serial RTS + DTR</strong> to drive both lines on one
+      device. Set each polarity separately in the device dialog. With the RTS
+      toggle off and the DTR toggle on, this matches Dire Wolf
+      <code>PTT /dev/ttyUSB0 RTS -DTR</code>:</p>
+    <table><thead><tr><th>State</th><th>RTS</th><th>DTR</th></tr></thead>
+      <tbody><tr><td>TX</td><td>HIGH</td><td>LOW</td></tr>
+      <tr><td>RX</td><td>LOW</td><td>HIGH</td></tr></tbody></table>
+    <p>The API configuration is <code>method: "serial_rts_dtr"</code>,
+      <code>invert: false</code> (RTS), and <code>dtr_invert: true</code>.
+      Both flags default to false (active high). Existing
+      <code>serial_rts</code> and <code>serial_dtr</code> configurations
+      keep their existing <code>invert</code> behavior and leave the other
+      line alone.</p>
+    <p>Graywolf drives enabled lines to RX on startup and normal driver
+      disposal, and attempts RX again after a line-control error. Unix
+      changes both bits in one operation; Windows changes them sequentially.
+      Hardware or driver failures, forced process termination, and the
+      adapter's behavior during open/close can still prevent unkeying.
+      Verify startup, transmit, receive, and shutdown levels with your
+      actual adapter before connecting the radio's PTT input. Do not assign
+      another channel or program to either line used by this method.</p>
 
     <h2>GPIO PTT (Raspberry Pi)</h2>
 
