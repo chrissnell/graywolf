@@ -597,7 +597,10 @@ func (ig *Igate) shouldForwardISToRF(pkt *aprs.DecodedAPRSPacket) bool {
 		return false
 	}
 	if pkt.Type != aprs.PacketMessage {
-		return ig.sourceIsOwnSSID(pkt.Source)
+		if strings.EqualFold(strings.TrimSpace(pkt.Source), strings.TrimSpace(ig.stationCallsign)) {
+			return false // never echo the iGate's own transmitting callsign
+		}
+		return ig.sourceIsOwnSSID(pkt.Source) || ig.filter.Load().ExplicitSourceAllow(pkt)
 	}
 	if pkt.Message == nil {
 		return false
