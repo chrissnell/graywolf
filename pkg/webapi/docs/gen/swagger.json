@@ -9256,6 +9256,9 @@
                 "interval": {
                     "type": "integer"
                 },
+                "label": {
+                    "type": "string"
+                },
                 "latitude": {
                     "type": "number"
                 },
@@ -9386,6 +9389,9 @@
                 },
                 "interval": {
                     "type": "integer"
+                },
+                "label": {
+                    "type": "string"
                 },
                 "latitude": {
                     "type": "number"

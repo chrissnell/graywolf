@@ -92,7 +92,7 @@
   // openEdit's Object.assign still covers the full form snapshot and
   // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
-    type: 'position', object_name: '',
+    type: 'position', object_name: '', label: '',
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
@@ -288,6 +288,7 @@
   function openCreate() {
     editing = null;
     form.type = 'position';
+    form.label = '';
     form.object_name = '';
     // A radioless (APRS-IS-only) station has no channels at all. Rather
     // than block beacon creation, default to an APRS-IS-only beacon so
@@ -335,6 +336,7 @@
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
       type: row.type || 'position',
+      label: row.label || '',
       object_name: row.object_name || '',
       channel: String(row.channel),
       callsign: rowCall,
@@ -445,6 +447,7 @@
     }
     const data = {
       ...form,
+      label: form.label.trim(),
       callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
@@ -616,6 +619,10 @@
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
+            {#if b.label?.trim()}
+              <span class="beacon-callsign">{b.label.trim()}</span>
+              <span class="beacon-callsign-inherited">({b.type === 'object' && b.object_name ? b.object_name : (b.callsign || stationCallsign || 'unset')})</span>
+            {:else}
             <span
               class="symbol-swatch"
               style="background-image: url({SPRITE_URLS[b.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(b.symbol || '-', CELL_PX)};"
@@ -635,6 +642,7 @@
               <span class="beacon-callsign-inherited">(inherited)</span>
             {:else}
               <a href="#/callsign" class="beacon-callsign beacon-callsign-unset">(Callsign not set)</a>
+            {/if}
             {/if}
           </div>
           <div class="beacon-badges">
@@ -787,6 +795,10 @@
       <div style="margin-bottom: 12px;">
         <Toggle bind:checked={form.enabled} label="Enabled" />
       </div>
+      <FormField label="Display label (optional)" id="bcn-label"
+        hint="An internal name to distinguish beacons. Not transmitted in APRS packets.">
+        <Input id="bcn-label" bind:value={form.label} placeholder="e.g. RF Direct / 10 minutes" maxlength="80" />
+      </FormField>
       <FormField label="Type" id="bcn-type">
         <RadioGroup bind:value={form.type}>
           <div class="pos-source-row">

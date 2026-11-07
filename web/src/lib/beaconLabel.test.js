@@ -30,3 +30,11 @@ test('beaconLabel: tolerates a null/undefined row', () => {
   assert.equal(beaconLabel(null, 'N0CAL'), 'N0CAL');
   assert.equal(beaconLabel(undefined), '(unset)');
 });
+
+test('beaconLabel: optional display label takes precedence', () => {
+  assert.equal(beaconLabel({ label: 'RF Direct / 10 minutes', callsign: 'KS9N-10' }), 'RF Direct / 10 minutes');
+});
+
+test('beaconLabel: whitespace label falls back to existing behavior', () => {
+  assert.equal(beaconLabel({ label: '  ', callsign: 'KS9N-10' }), 'KS9N-10');
+});
