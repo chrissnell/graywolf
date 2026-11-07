@@ -10,6 +10,7 @@
 //   fallback_policy?: string
 //   retention_days?: number
 //   retry_max_attempts?: number
+//   retry_interval_secs?: number
 //   max_message_text_override?: uint32  // 0 = default enforce 67; 68..200 = override
 //
 // The backend normalizes corrupt stored values to 0 on read, so the store
@@ -28,6 +29,7 @@
 import { toasts } from '../stores.js';
 import { getPreferences, putPreferences } from '../../api/messages.js';
 
+const DEFAULT_RETRY_INTERVAL_SECS = 30;
 const DEFAULT_CAP = 67;
 const UNSAFE_CAP = 200;
 
@@ -55,6 +57,7 @@ function buildPayload(baseline, patch) {
     fallback_policy: merged.fallback_policy,
     retention_days: merged.retention_days,
     retry_max_attempts: merged.retry_max_attempts,
+    retry_interval_secs: merged.retry_interval_secs,
     max_message_text_override: normalizeOverride(merged.max_message_text_override),
   };
 }
@@ -68,6 +71,7 @@ export const messagesPreferencesState = (() => {
     fallback_policy?: string,
     retention_days?: number,
     retry_max_attempts?: number,
+    retry_interval_secs?: number,
     max_message_text_override?: number,
   }} */ (null));
 
@@ -174,6 +178,37 @@ export const messagesPreferencesState = (() => {
     }
   }
 
+  async function setRetryIntervalSecs(n) {
+    const v = Math.max(10, Math.min(120, Math.floor(Number(n)) || DEFAULT_RETRY_INTERVAL_SECS));
+    if (!hydrated) {
+      await fetchPreferences();
+      if (!hydrated) {
+        toasts.error("Couldn't load preferences — try again in a moment.");
+        return;
+      }
+    }
+    if (prefs?.retry_interval_secs === v) return;
+    const baseline = prefs;
+    const prev = baseline;
+    const optimistic = { ...baseline, retry_interval_secs: v };
+    prefs = optimistic;
+    saving = true;
+    error = null;
+    try {
+      const resp = await putPreferences(buildPayload(baseline, { retry_interval_secs: v }));
+      const next = resp ?? optimistic;
+      next.max_message_text_override = normalizeOverride(next.max_message_text_override);
+      prefs = next;
+      toasts.success('Saved');
+    } catch (e) {
+      prefs = prev;
+      error = e?.message || String(e);
+      toasts.error("Couldn't save retry interval — try again.");
+    } finally {
+      saving = false;
+    }
+  }
+
   return {
     get loaded() { return loaded; },
     get saving() { return saving; },
@@ -189,6 +224,7 @@ export const messagesPreferencesState = (() => {
       return normalizeOverride(prefs?.max_message_text_override) > 0;
     },
     get fallbackPolicy() { return prefs?.fallback_policy || 'is_fallback'; },
+    get retryIntervalSecs() { return prefs?.retry_interval_secs || DEFAULT_RETRY_INTERVAL_SECS; },
     // Effective cap the compose bar should enforce. Mirrors the server's
     // sender gate: 0 => 67, otherwise => the override value itself.
     get maxMessageText() {
@@ -200,6 +236,7 @@ export const messagesPreferencesState = (() => {
     setOverride,
     setAllowLong,
     setFallbackPolicy,
+    setRetryIntervalSecs,
   };
 })();
 

@@ -10611,6 +10611,11 @@
                 "retention_days": {
                     "type": "integer"
                 },
+                "retry_interval_secs": {
+                    "description": "RetryIntervalSecs is the delay between DM retries. 0 (or absent)
+means \"use the default 30s\"; otherwise it must be 10..120.",
+                    "type": "integer"
+                },
                 "retry_max_attempts": {
                     "type": "integer"
                 }
@@ -10630,6 +10635,9 @@
                     "type": "integer"
                 },
                 "retention_days": {
+                    "type": "integer"
+                },
+                "retry_interval_secs": {
                     "type": "integer"
                 },
                 "retry_max_attempts": {

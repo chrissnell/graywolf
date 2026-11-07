@@ -28,6 +28,11 @@ var RetryBackoff = []time.Duration{
 // before the row fails.
 const DefaultRetryMaxAttempts = 4
 
+// DefaultRetryIntervalSecs is the retry delay used when
+// MessagePreferences.RetryIntervalSecs is unset (0). 30s is
+// channel-friendly on shared 1200-baud APRS.
+const DefaultRetryIntervalSecs uint32 = 30
+
 // RetryManagerConfig captures the retry loop's collaborators. All
 // fields except Logger, Clock, and Rand are required.
 type RetryManagerConfig struct {
@@ -399,17 +404,25 @@ func (r *RetryManager) scheduleNext(ctx context.Context, row *configstore.Messag
 }
 
 // backoffFor returns the target delay for the nth attempt (1-indexed),
-// with ±10% multiplicative jitter. Attempts beyond the ladder reuse
-// the last entry.
+// with ±10% multiplicative jitter. When the operator has set a retry
+// interval in preferences it is the base delay for every attempt and is
+// read at call time, so a settings change applies to the next retry
+// without a restart. Otherwise the RetryBackoff ladder applies and
+// attempts beyond it reuse the last entry.
 func (r *RetryManager) backoffFor(attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
-	idx := attempt - 1
-	if idx >= len(RetryBackoff) {
-		idx = len(RetryBackoff) - 1
+	var base time.Duration
+	if p := r.cfg.Preferences.Current(); p != nil && p.RetryIntervalSecs > 0 {
+		base = time.Duration(p.RetryIntervalSecs) * time.Second
+	} else {
+		idx := attempt - 1
+		if idx >= len(RetryBackoff) {
+			idx = len(RetryBackoff) - 1
+		}
+		base = RetryBackoff[idx]
 	}
-	base := RetryBackoff[idx]
 	// ±10% multiplicative jitter. rng is not safe for concurrent
 	// use, so guard under rngMu.
 	r.rngMu.Lock()

@@ -117,10 +117,11 @@ func (p *Preferences) EffectiveMaxMessageText() int {
 // seed values Phase 1 writes on first migrate.
 func defaultPrefs() *configstore.MessagePreferences {
 	return &configstore.MessagePreferences{
-		FallbackPolicy:   FallbackPolicyISFallback,
-		DefaultPath:      "WIDE1-1,WIDE2-1",
-		RetryMaxAttempts: 4,
-		RetentionDays:    0,
+		FallbackPolicy:    FallbackPolicyISFallback,
+		DefaultPath:       "WIDE1-1,WIDE2-1",
+		RetryMaxAttempts:  4,
+		RetryIntervalSecs: DefaultRetryIntervalSecs,
+		RetentionDays:     0,
 	}
 }
 
