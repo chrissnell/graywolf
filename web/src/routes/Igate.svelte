@@ -874,9 +874,12 @@
         <p class="rules-subtitle">
           Two automatic checks run first and aren't editable: directed messages
           only reach an addressee heard <strong>directly</strong> on RF in the last
-          30 minutes, and non-message traffic only goes out if it's from one of
-          your own other SSIDs. First matching rule below wins; if none match, the
-          packet is not transmitted. These rules only affect RF transmission —
+          30 minutes. Non-message traffic normally requires one of your own other
+          SSIDs; to opt in a different source (for example, an aircraft callsign),
+          add an <strong>Allow / Callsign</strong> rule with its exact source callsign.
+          Prefix and packet-type rules alone cannot bypass this safeguard, and
+          the iGate's own transmitting callsign is always excluded. First matching
+          rule wins; if none match, the packet is not transmitted. These rules only affect RF transmission —
           they do not hide stations from the map.
         </p>
       </div>
