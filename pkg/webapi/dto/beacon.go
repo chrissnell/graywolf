@@ -23,6 +23,7 @@ import (
 // The response DTO carries Callsign as plain string — an empty value
 // in the response means "inherits from station callsign".
 type BeaconRequest struct {
+	Label         string  `json:"label"`
 	Type          string  `json:"type"`
 	Channel       uint32  `json:"channel"`
 	Callsign      *string `json:"callsign"`
@@ -169,6 +170,7 @@ func (r BeaconRequest) callsignValue() string {
 
 func (r BeaconRequest) ToModel() configstore.Beacon {
 	return configstore.Beacon{
+		Label:         strings.TrimSpace(r.Label),
 		Type:          r.Type,
 		Channel:       r.Channel,
 		Callsign:      r.callsignValue(),
@@ -228,6 +230,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 	}
 	return configstore.Beacon{
 		ID:            id,
+		Label:         strings.TrimSpace(r.Label),
 		Type:          r.Type,
 		Channel:       r.Channel,
 		Callsign:      callsign,
@@ -275,6 +278,7 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 // callsign" at transmit time.
 type BeaconResponse struct {
 	ID            uint32  `json:"id"`
+	Label         string  `json:"label"`
 	Type          string  `json:"type"`
 	Channel       uint32  `json:"channel"`
 	Callsign      string  `json:"callsign"`
@@ -319,6 +323,7 @@ type BeaconResponse struct {
 func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 	return BeaconResponse{
 		ID:            m.ID,
+		Label:         m.Label,
 		Type:          m.Type,
 		Channel:       m.Channel,
 		Callsign:      m.Callsign,
