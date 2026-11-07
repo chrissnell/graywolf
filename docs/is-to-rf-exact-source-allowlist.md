@@ -33,3 +33,7 @@ This feature is opt-in via an existing exact Callsign allow rule. It
 does not add a global bypass, and it does not implement a new
 packet-level duplicate cache. Test with simulation mode and an
 appropriately narrow APRS-IS server filter before transmitting.
+
+The first matching rule must be an exact Callsign Allow rule for an
+unrelated non-message source; an earlier broad Allow rule does not grant
+this exception. This keeps the opt-in narrowly scoped.
