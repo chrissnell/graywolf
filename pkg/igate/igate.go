@@ -14,7 +14,8 @@
 // spec (addressed to a station heard directly on RF within 30 min, not
 // a bulletin/NWS broadcast), while non-message traffic (positions,
 // weather, telemetry, …) is gated only when the source shares the
-// iGate's base callsign but is not the iGate itself — so an operator
+// iGate's base callsign or is explicitly allowed by an exact-source rule,
+// and is not the iGate itself — so an operator
 // can echo their internet-fed weather station onto local RF without
 // re-broadcasting strangers' traffic. Every IS→RF frame is wrapped in
 // APRS third-party format and passes the operator's filter engine
@@ -42,8 +43,8 @@
 //     broadcast) plus loop prevention on every IS→RF packet. Non-messages
 //     additionally require the source to share the iGate's base callsign
 //     but not be the iGate itself — an operator can echo their own
-//     SSIDs (e.g. an internet-fed weather station) but not strangers'
-//     non-message traffic. Strangers' messages addressed to heard-direct
+//     SSIDs (e.g. an internet-fed weather station) or explicitly opt in a specific outside callsign, but cannot
+//     broadly re-broadcast strangers' non-message traffic. Strangers' messages addressed to heard-direct
 //     stations still forward normally — that is the iGate's core job.
 //     The user filter then applies as a narrower layer.
 //  5. Third-party wrap — every IS→RF frame passes through wrapThirdParty,
@@ -580,10 +581,11 @@ func (ig *Igate) handleISLine(line string) {
 //     bulletin/NWS broadcast, and not already transited via us.
 //   - Non-message traffic (positions, weather, telemetry, status, …)
 //     must be sourced from one of the operator's own SSIDs (base-call
-//     match) but NOT from the iGate's own transmitting call itself.
+//     match) or explicitly allowed by the first matching exact-callsign
+//     rule, but NOT from the iGate's own transmitting call itself.
 //     The intent: an operator can echo their internet-connected weather
 //     station or family tracker onto local RF, but cannot inadvertently
-//     re-broadcast strangers' packets or their own iGate beacons.
+//     re-broadcast arbitrary strangers' packets or their own iGate beacons.
 //
 // Loop prevention applies to both branches: if our callsign already
 // appears in the path, the packet has transited us and must not be
