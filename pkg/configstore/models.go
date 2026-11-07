@@ -632,6 +632,7 @@ type GPSConfig struct {
 // Beacon is a scheduled beacon. Type selects the payload builder.
 type Beacon struct {
 	ID           uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Label        string  `gorm:"not null;default:''" json:"label"` // optional operator-facing display label; never transmitted
 	Type         string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
 	Channel      uint32  `gorm:"not null;default:1" json:"channel"`
 	Callsign     string  `gorm:"not null" json:"callsign"`
