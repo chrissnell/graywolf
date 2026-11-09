@@ -449,7 +449,10 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 
 	a.gov = txgovernor.New(txgovernor.Config{
-		Sender:        txSender,
+		Sender: txSender,
+		OnOutcome: func(channel uint32, source txgovernor.SubmitSource, outcome txgovernor.Outcome) {
+			a.metrics.ObserveTxSourceOutcome(channel, source.Kind, string(outcome))
+		},
 		DcdEvents:     a.bridge.DcdEvents(),
 		Rate1MinLimit: rate1,
 		Rate5MinLimit: rate5,
@@ -565,7 +568,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		OnPacket: func(note string, fromChan, toChan uint32, f *ax25.Frame) {
 			a.metrics.DigipeaterPackets.Inc()
 			// Packet-log recording lives in the governor TX hook above;
-			// that site fires when the frame actually hits the air and
+			// that site fires when a backend accepts the frame and
 			// already carries Type + Decoded after the APRS-decode there.
 			// Recording here too would duplicate every digipeated entry.
 			// Update station cache with digipeated station positions.
