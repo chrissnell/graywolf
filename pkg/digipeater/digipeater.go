@@ -78,9 +78,9 @@ type Config struct {
 	// Logger is optional.
 	Logger *slog.Logger
 
-	// OnPacket is an optional hook invoked after a successful digipeat,
-	// carrying a short human-readable note. Used by packetlog to
-	// annotate entries.
+	// OnPacket is an optional hook invoked when Submit returns nil, carrying
+	// a short note. This includes TX-stage duplicate suppression, not just
+	// enqueued frames. Use governor outcomes to count backend acceptance.
 	OnPacket func(note string, fromChan, toChan uint32, f *ax25.Frame)
 
 	// OnDedup is an optional hook invoked when a frame is dropped as a
@@ -103,7 +103,7 @@ type Config struct {
 
 // Stats exposes counters.
 type Stats struct {
-	Packets uint64 // successfully digipeated
+	Packets uint64 // submission attempts, including TX-stage suppression and errors
 	Deduped uint64 // dropped as duplicate
 	Blocked uint64 // dropped because source matched the block list
 }
@@ -433,7 +433,7 @@ func (d *Digipeater) submitClone(ctx context.Context, fromCh, toCh uint32, clone
 	if d.onPkt != nil {
 		d.onPkt(note, fromCh, toCh, clone)
 	}
-	d.logger.Debug("digipeated", "from", fromCh, "to", toCh, "note", note)
+	d.logger.Debug("digipeater submission handled", "from", fromCh, "to", toCh, "note", note)
 	return true
 }
 

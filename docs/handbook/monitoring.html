@@ -92,6 +92,30 @@
     static_configs:
       - targets: ['graywolf-host:8080']</code></pre>
 
+    <h3>Transmit accounting</h3>
+    <p><code>graywolf_tx_source_outcomes_total</code> labels each governor event
+      by <code>channel</code>, <code>source</code> and <code>outcome</code>.
+      Outcomes are <code>enqueued</code>, <code>deduped</code>,
+      <code>queue_full</code>, <code>encode_error</code>, <code>send_error</code>
+      and <code>forwarded</code>. Enqueued is intermediate: do not sum all
+      outcomes as if each represented a different frame. Queued frames may
+      remain pending at shutdown or across a measurement window boundary.</p>
+    <p>For digipeater telemetry, select <code>source="digipeater"</code> and
+      <code>outcome="forwarded"</code>. This counts one frame when at least one
+      backend accepts it, even with multiple backends. It does not confirm RF
+      transmission or reception. A partial fanout failure still counts as
+      forwarded; per-backend results remain available in
+      <code>graywolf_tx_backend_submits_total</code>.</p>
+    <p>Source values are bounded to <code>kiss</code>, <code>agw</code>,
+      <code>beacon</code>, <code>digipeater</code>, <code>igate</code>,
+      <code>ax25conn</code>, <code>messages-autoack</code> and <code>other</code>.
+      No callsigns or paths are used as metric labels. Existing counters retain
+      their behavior; the legacy digipeater count can exceed successful TX
+      because the governor treats a suppressed duplicate as a handled submission.</p>
+    <p>Debug logs distinguish <code>digipeater submission handled</code>,
+      <code>tx deduped</code> and <code>tx forwarded</code>. The latter includes
+      source, channel and frame ID for correlation with backend logs.</p>
+
     <h3>Available Metrics</h3>
 
     <div class="box">
@@ -176,7 +200,7 @@
             <tr>
               <td><code>graywolf_digipeater_packets_total</code></td>
               <td>counter</td>
-              <td>Packets digipeated</td>
+              <td>Digipeater submissions handled without a governor error, including TX-stage duplicates. Preserved for compatibility; use the source outcome metric below for forwarded frames.</td>
             </tr>
             <tr>
               <td><code>graywolf_beacon_packets_total</code></td>

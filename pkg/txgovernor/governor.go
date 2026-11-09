@@ -61,10 +61,10 @@ var (
 // SubmitSource describes the origin of a TX request for logging, dedup
 // scoping, and metrics.
 type SubmitSource struct {
-	Kind       string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
-	Detail     string
-	Priority   int
-	SkipDedup  bool // bypass dedup window (e.g. operator-triggered send-now)
+	Kind      string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
+	Detail    string
+	Priority  int
+	SkipDedup bool // bypass dedup window (e.g. operator-triggered send-now)
 }
 
 // Sender transmits one frame to the Rust modem. In production this is
@@ -80,10 +80,29 @@ type ChannelTiming struct {
 	FullDup  bool          // skip CSMA entirely
 }
 
+// Outcome describes a governor decision or downstream send result. Enqueued is
+// an intermediate event; it is followed by Forwarded, EncodeError or SendError
+// if the worker processes the frame. Shutdown may leave queued frames unsent.
+// Forwarded means Sender returned nil, not that RF reception was confirmed.
+type Outcome string
+
+const (
+	OutcomeEnqueued    Outcome = "enqueued"
+	OutcomeDeduped     Outcome = "deduped"
+	OutcomeQueueFull   Outcome = "queue_full"
+	OutcomeEncodeError Outcome = "encode_error"
+	OutcomeSendError   Outcome = "send_error"
+	OutcomeForwarded   Outcome = "forwarded"
+)
+
 // Config is the Governor's static configuration.
 type Config struct {
 	// Sender is the downstream TransmitFrame consumer. Required.
 	Sender Sender
+	// OnOutcome is an optional accounting observer. It runs outside g.mu on
+	// Submit callers and the worker concurrently. It must be concurrency-safe,
+	// fast and non-blocking. It must not alter transmission decisions.
+	OnOutcome func(channel uint32, source SubmitSource, outcome Outcome)
 	// DcdEvents is an optional channel of per-channel DCD state changes
 	// from modembridge. If nil, CSMA falls back to "always clear".
 	DcdEvents <-chan *pb.DcdChange
@@ -177,12 +196,12 @@ type Governor struct {
 	cfg    Config
 	logger *slog.Logger
 
-	mu     sync.Mutex
-	q      pqueue
-	seq    uint64
-	dedup  *dedup.Window[string, struct{}]
-	rates  map[uint32]*channelRate // per-channel send rate trackers
-	dcd    map[uint32]bool         // current DCD per channel
+	mu    sync.Mutex
+	q     pqueue
+	seq   uint64
+	dedup *dedup.Window[string, struct{}]
+	rates map[uint32]*channelRate // per-channel send rate trackers
+	dcd   map[uint32]bool         // current DCD per channel
 
 	wake   chan struct{}
 	stats  Stats
@@ -310,7 +329,8 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 	if !src.SkipDedup && g.dedup.Has(key) {
 		g.stats.Deduped++
 		g.mu.Unlock()
-		g.logger.Debug("tx deduped", "source", src.Kind, "key-len", len(key))
+		g.observeOutcome(channel, src, OutcomeDeduped)
+		g.logger.Debug("tx deduped", "source", src.Kind, "channel", channel, "key-len", len(key))
 		return nil
 	}
 
@@ -321,6 +341,7 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 	if len(g.q) >= g.cfg.QueueCapacity {
 		g.stats.QueueDropped++
 		g.mu.Unlock()
+		g.observeOutcome(channel, src, OutcomeQueueFull)
 		return ErrQueueFull
 	}
 
@@ -336,12 +357,19 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 	})
 	g.stats.Enqueued++
 	g.mu.Unlock()
+	g.observeOutcome(channel, src, OutcomeEnqueued)
 
 	select {
 	case g.wake <- struct{}{}:
 	default:
 	}
 	return nil
+}
+
+func (g *Governor) observeOutcome(channel uint32, source SubmitSource, outcome Outcome) {
+	if g.cfg.OnOutcome != nil {
+		g.cfg.OnOutcome(channel, source, outcome)
+	}
 }
 
 // Run executes the worker loop until ctx is cancelled. It consumes DCD
@@ -468,7 +496,8 @@ func (g *Governor) processOne(ctx context.Context) {
 
 	raw, err := top.frame.Encode()
 	if err != nil {
-		g.logger.Warn("encode frame", "err", err)
+		g.observeOutcome(top.channel, top.source, OutcomeEncodeError)
+		g.logger.Warn("encode frame", "err", err, "source", top.source.Kind, "channel", top.channel)
 		return
 	}
 	// Stamp a monotonic FrameID so the dispatcher and every backend
@@ -487,8 +516,12 @@ func (g *Governor) processOne(ctx context.Context) {
 		// reserved for callers that need frame-specific timing.
 	}
 	if err := g.cfg.Sender(tf); err != nil {
-		g.logger.Warn("send transmit frame", "err", err, "channel", top.channel)
+		g.observeOutcome(top.channel, top.source, OutcomeSendError)
+		g.logger.Warn("send transmit frame", "err", err, "channel", top.channel, "source", top.source.Kind, "frame_id", frameID)
 	} else {
+		g.observeOutcome(top.channel, top.source, OutcomeForwarded)
+		g.logger.Debug("tx forwarded", "source", top.source.Kind, "channel", top.channel, "frame_id", frameID)
+
 		// Snapshot the hook slice under the lock, then invoke each
 		// without holding it so a hook cannot deadlock the governor
 		// by calling back into AddTxHook / Submit / QueueLen.
