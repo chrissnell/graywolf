@@ -84,6 +84,7 @@
   // instead of sitting on the baseline.
   const BADGE_HEAD_INDENT = 'padding-left: calc(0.4rem + 1px);';
   const columns = [
+    { key: 'display_name', label: 'Name' },
     { key: 'type', label: 'Type', headStyle: BADGE_HEAD_INDENT },
     { key: 'endpoint', label: 'Endpoint' },
     { key: 'channel', label: 'Channel' },
@@ -280,6 +281,7 @@
 
   function emptyForm() {
     return {
+      display_name: '',
       type: 'tcp',
       tcp_port: TCP_PORT_DEFAULT,
       // tcp (server) bind scope: false => listen on all interfaces
@@ -384,6 +386,7 @@
     saveError = '';
     form = {
       ...row,
+      display_name: row.display_name || '',
       tcp_port: String(row.tcp_port ?? ''),
       local_only: !!row.local_only,
       remote_host: row.remote_host || '',
@@ -643,6 +646,7 @@
 
   function buildPayload() {
     const data = {
+      display_name: (form.display_name || '').trim(),
       type: form.type,
       channel: parseInt(form.channel) || 1,
       mode: form.mode,
@@ -888,8 +892,12 @@
   rows={items}
   onEdit={openEdit}
   onDelete={handleDelete}
-  cells={{ type: typeCell, endpoint: endpointCell, mode: modeCell, status: statusCell, enabled: enabledCell }}
+  cells={{ display_name: displayNameCell, type: typeCell, endpoint: endpointCell, mode: modeCell, status: statusCell, enabled: enabledCell }}
 />
+
+{#snippet displayNameCell(value, _row)}
+  {value || '—'}
+{/snippet}
 
 {#snippet modeCell(value, _row)}
   <Badge variant={value === 'tnc' ? 'success' : 'info'}>{modeLabels[value] || 'Modem'}</Badge>
@@ -986,6 +994,9 @@
 {/snippet}
 
 <Modal bind:open={modalOpen} title={editing ? 'Edit KISS' : 'New KISS Interface'}>
+    <FormField label="Display Name (optional)" id="kiss-display-name" hint="A friendly label for this interface. Saving changes restarts the KISS connection.">
+      <Input id="kiss-display-name" bind:value={form.display_name} placeholder="e.g. Local Dire Wolf or TailTrace" />
+    </FormField>
     {#if form.type !== 'bluetooth'}
       <FormField label="Mode" id="kiss-mode" hint={modeHint}>
         {#snippet children(describedBy)}
