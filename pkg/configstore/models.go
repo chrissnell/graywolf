@@ -129,6 +129,7 @@ type PttConfig struct {
 type KissInterface struct {
 	ID               uint32 `gorm:"primaryKey;autoIncrement" json:"id"`
 	Name             string `gorm:"not null;uniqueIndex" json:"name"`
+	DisplayName      string `json:"display_name"` // Optional operator-facing label; not used for runtime identity
 	InterfaceType    string `gorm:"not null;default:'tcp'" json:"type"` // tcp|tcp-client|serial|bluetooth
 	ListenAddr       string `json:"listen_addr"`                        // host:port for tcp (server-listen)
 	Device           string `json:"serial_device"`                      // /dev/ttyUSB0 or bluetooth mac
