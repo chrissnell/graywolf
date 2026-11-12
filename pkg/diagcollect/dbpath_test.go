@@ -131,3 +131,81 @@ func TestDiscoverConfigDB_RealFileSystem(t *testing.T) {
 		t.Fatalf("src = %q, want cwd", src)
 	}
 }
+
+// recordingStat captures every path the probe checks, in order, and
+// reports a hit only for match. It lets tests assert both the result
+// and the order in which the documented candidates were tried.
+func recordingStat(match string, probed *[]string) func(string) bool {
+	return func(p string) bool {
+		*probed = append(*probed, p)
+		return p == match
+	}
+}
+
+func TestDiscoverConfigDB_DefaultsProbeInDocumentedOrder(t *testing.T) {
+	// The production wrapper DiscoverConfigDB — not the inner
+	// discoverConfigDBFrom — fills in the service-install, user-config,
+	// and workdir defaults. With every candidate empty and a probe that
+	// matches nothing, it must try those defaults in the published order
+	// and then report not-found.
+	userConfigDir, cfgErr := os.UserConfigDir()
+
+	var probed []string
+	got, _, err := DiscoverConfigDB(DiscoverOptions{
+		// Env and Explicit stay empty: neither should be probed.
+		Stat: recordingStat("", &probed),
+	})
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
+	}
+	if !ErrIsConfigDBNotFound(err) {
+		t.Fatalf("err = %v, want ErrConfigDBNotFound", err)
+	}
+
+	want := []string{"/var/lib/graywolf/graywolf.db"}
+	if cfgErr == nil {
+		want = append(want, filepath.Join(userConfigDir, "Graywolf", "graywolf.db"))
+	}
+	want = append(want, filepath.Join(".", "graywolf.db"))
+
+	if len(probed) != len(want) {
+		t.Fatalf("probe order = %v, want %v", probed, want)
+	}
+	for i := range want {
+		if probed[i] != want[i] {
+			t.Fatalf("probe order = %v, want %v", probed, want)
+		}
+	}
+}
+
+func TestDiscoverConfigDB_DefaultServiceInstallMatches(t *testing.T) {
+	var probed []string
+	got, src, err := DiscoverConfigDB(DiscoverOptions{
+		Stat: recordingStat("/var/lib/graywolf/graywolf.db", &probed),
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != "/var/lib/graywolf/graywolf.db" || src != "service_install" {
+		t.Fatalf("got (%q,%q), want (/var/lib/graywolf/graywolf.db, service_install)", got, src)
+	}
+	if len(probed) != 1 {
+		t.Fatalf("probe order = %v, want only the service-install default", probed)
+	}
+}
+
+func TestDiscoverConfigDB_DefaultWorkdirIsCurrentDir(t *testing.T) {
+	// When the service-install and user-config defaults miss, the
+	// workdir default "." is tried last and reported as "cwd".
+	cwdCandidate := filepath.Join(".", "graywolf.db")
+	var probed []string
+	got, src, err := DiscoverConfigDB(DiscoverOptions{
+		Stat: recordingStat(cwdCandidate, &probed),
+	})
+	if err != nil {
+		t.Fatalf("err = %v", err)
+	}
+	if got != cwdCandidate || src != "cwd" {
+		t.Fatalf("got (%q,%q), want (%q, cwd)", got, src, cwdCandidate)
+	}
+}
