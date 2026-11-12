@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte';
+  import { rfToISStatus } from '../lib/rfToISStatus.js';
   import { Button, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
   import { online } from '../lib/stores/connection.js';
@@ -16,6 +17,11 @@
   let stationCallsign = $state('');
   let audioDevices = $state([]);
   let pollTimer = $state(null);
+  let statusAvailable = $state(false);
+  let statusUpdatedAt = $state(0);
+  let now = $state(Date.now());
+  let loadSequence = 0;
+  let uplink = $derived(rfToISStatus(status?.igate, $online && statusAvailable && now - statusUpdatedAt < 15000));
 
   let offline = $derived(!$online);
 
@@ -28,6 +34,7 @@
   $effect(() => {
     if (!$online) {
       status = null;
+      statusAvailable = false;
       position = null;
       packets = [];
     }
@@ -90,22 +97,27 @@
     loadBeacons();
     loadStationCallsign();
     loadAudioDevices();
-    pollTimer = setInterval(loadData, 5000);
+    pollTimer = setInterval(() => { now = Date.now(); loadData(); }, 5000);
     return () => clearInterval(pollTimer);
   });
 
   async function loadData() {
+    const sequence = ++loadSequence;
     const [pkts, pos, st] = await Promise.allSettled([
       api.get('/packets?limit=20'),
       api.get('/position'),
       api.get('/status'),
     ]);
+    if (sequence !== loadSequence || !$online) return;
     // Auto-refresh gates only the packet feed (its toolbar owns the toggle),
     // so the operator can freeze the log to read it while the status cards
     // and position keep updating. See the toolbarToggles wiring below.
     if (pkts.status === 'fulfilled' && logPrefsState.autoRefresh) packets = pkts.value || [];
     if (pos.status === 'fulfilled') position = pos.value;
-    if (st.status === 'fulfilled' && st.value) {
+    statusAvailable = st.status === 'fulfilled' && !!st.value;
+    if (statusAvailable) {
+      statusUpdatedAt = Date.now();
+      now = statusUpdatedAt;
       // Track RX/TX activity changes for flash indicators
       if (st.value.channels) {
         for (const ch of st.value.channels) {
@@ -317,6 +329,7 @@
   <div class="stat-card">
     <span class="stat-value">{offline ? '—' : igated}</span>
     <span class="stat-label">iGated</span>
+    <span class="uplink-status" data-tone={uplink.tone} title="RF→IS routing eligibility; APRS rules and filters still apply.">RF → IS: {uplink.label}</span>
   </div>
   <div class="stat-card">
     <span class="stat-value">{formatUptime(status?.uptime_seconds)}</span>
@@ -357,6 +370,10 @@
 </div>
 
 <style>
+  .uplink-status { font-size: 12px; color: var(--text-muted); }
+  .uplink-status[data-tone="active"] { color: var(--success, #22863a); }
+  .uplink-status[data-tone="pending"], .uplink-status[data-tone="simulation"] { color: var(--warning, #b7791f); }
+
   /* ── lost-connection banner ───────────────────── */
   .conn-lost {
     display: flex;
