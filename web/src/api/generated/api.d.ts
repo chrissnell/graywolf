@@ -2907,6 +2907,7 @@ export interface components {
             allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
+            display_name?: string;
             /**
              * @description Enabled gates whether graywolf runs this interface. When false the
              *     manager stops the supervisor and releases the underlying device
@@ -2917,7 +2918,6 @@ export interface components {
              *     send the key keep their interfaces running. ToModel substitutes
              *     true when nil.
              */
-            display_name?: string;
             enabled?: boolean;
             /**
              * @description GateTxToIs opts a Mode=modem KISS interface in to gating frames
