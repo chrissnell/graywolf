@@ -122,6 +122,22 @@
       </div>
     </div>
 
+    <h2>Custom beacons</h2>
+
+    <p>
+      A custom beacon sends the <code>custom_info</code> value as the raw APRS
+      information field. It does not require a position, coordinates, altitude,
+      or symbol. An optional static comment and the output of
+      <code>comment_cmd</code> are appended at transmit time. Because the raw
+      information is not rewritten, include any separator you want between it
+      and the appended comment in <code>custom_info</code> itself.
+    </p>
+
+    <p>
+      Custom beacons use the same RF and APRS-IS routing as other beacon types.
+
+    </p>
+
     <h2>Common Settings</h2>
 
     <div class="box">
@@ -430,7 +446,7 @@
 
     <p>
       Beacons can include a static comment or dynamically generate one by
-      running a shell command:
+      running a server-side command:
     </p>
 
     <div class="box">
@@ -442,7 +458,7 @@
           </tr>
           <tr>
             <td><code>comment_cmd</code></td>
-            <td>Shell command whose stdout becomes the comment (e.g., weather data)</td>
+            <td>Command whose stdout becomes the comment (e.g., weather data). Arguments are parsed without a shell.</td>
           </tr>
         </table>
       </div>

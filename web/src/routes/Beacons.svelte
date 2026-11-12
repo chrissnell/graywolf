@@ -14,6 +14,7 @@
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
+  import { BEACON_TYPE_OPTIONS, beaconExtraFields, beaconTypeUsesPosition, validateCustomBeacon } from '../lib/beaconForm.js';
   import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
   import {
     channelRefStatus,
@@ -98,11 +99,13 @@
     symbol_table: '/', symbol: '-', overlay: '',
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
-    comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
+    comment: '', comment_cmd: '', custom_info: '',
+    interval: '600', slot: '', send_path: 'rf', enabled: true,
     smart_beacon: false,
   });
 
   let callsignError = $state('');
+  let customInfoError = $state('');
   // Placeholder shown in the disabled input when "override" is unchecked.
   // Mirrors the D3 copy: "Uses station callsign (KE7XYZ-9)" when loaded,
   // "Uses station callsign (not set)" when StationConfig is empty.
@@ -149,6 +152,8 @@
   // beacons hide the whole section. Position and tracker beacons both
   // emit a position report, so they share the format selector.
   let showFormat = $derived(form.type === 'position' || form.type === 'tracker');
+  let usesPosition = $derived(beaconTypeUsesPosition(form.type));
+  let isCustom = $derived(form.type === 'custom');
   // A tracker is a GPS-driven mobile beacon: the backend builder always
   // sources its position (and the CSE/SPD course-speed extension) from
   // the live GPS fix, so fixed coordinates are never valid for it. Force
@@ -315,6 +320,9 @@
     altInput = '';
     altError = '';
     form.comment = defaultComment;
+    form.comment_cmd = '';
+    form.custom_info = '';
+    customInfoError = '';
     form.interval = '600';
     form.slot = '';
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
@@ -351,10 +359,12 @@
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
       interval: String(row.interval),
       slot: row.slot_seconds != null && row.slot_seconds >= 0 ? String(row.slot_seconds) : '',
+      ...beaconExtraFields(row),
     });
     altInput = altInputFromFeet(form.alt_ft);
     altError = '';
     callsignError = '';
+    customInfoError = '';
     modalOpen = true;
   }
 
@@ -377,6 +387,11 @@
       callsignToSend = '';
     }
     callsignError = '';
+    customInfoError = validateCustomBeacon(form);
+    if (customInfoError) {
+      toasts.error(customInfoError);
+      return;
+    }
     let channelId = parseInt(form.channel);
     if (form.send_path === 'is_only') {
       // APRS-IS-only beacon: no RF channel needed. Store 0 unconditionally
@@ -428,7 +443,7 @@
       toasts.error('Latitude and longitude must be numeric');
       return;
     }
-    if (!useGps && lat === 0 && lon === 0) {
+    if (beaconTypeUsesPosition(form.type) && !useGps && lat === 0 && lon === 0) {
       toasts.error('Latitude/longitude required when not using GPS');
       return;
     }
@@ -643,6 +658,8 @@
               <Badge variant="info">Object</Badge>
             {:else if b.type === 'tracker'}
               <Badge variant="info">Tracker</Badge>
+            {:else if b.type === 'custom'}
+              <Badge variant="info">Custom</Badge>
             {/if}
             {#if b.send_path === 'is_only'}
               <Badge variant="info">APRS-IS only</Badge>
@@ -686,10 +703,17 @@
             <span class="detail-label">Path</span>
             <span class="detail-value">{b.path || '—'}</span>
           </div>
-          <div class="detail-row">
-            <span class="detail-label">Position</span>
-            <span class="detail-value">{formatCoords(b)}</span>
-          </div>
+          {#if b.type === 'custom'}
+            <div class="detail-row">
+              <span class="detail-label">Information</span>
+              <span class="detail-value detail-comment">{b.custom_info}</span>
+            </div>
+          {:else}
+            <div class="detail-row">
+              <span class="detail-label">Position</span>
+              <span class="detail-value">{formatCoords(b)}</span>
+            </div>
+          {/if}
           <div class="detail-row">
             <span class="detail-label">Interval</span>
             <span class="detail-value">{formatInterval(b.interval)}</span>
@@ -704,6 +728,12 @@
             <div class="detail-row">
               <span class="detail-label">Comment</span>
               <span class="detail-value detail-comment">{b.comment}</span>
+            </div>
+          {/if}
+          {#if b.comment_cmd}
+            <div class="detail-row">
+              <span class="detail-label">Comment command</span>
+              <span class="detail-value detail-comment">{b.comment_cmd}</span>
             </div>
           {/if}
         </div>
@@ -790,15 +820,15 @@
       <FormField label="Type" id="bcn-type">
         <RadioGroup bind:value={form.type}>
           <div class="pos-source-row">
-            <Radio value="position" label="Position" />
-            <Radio value="object" label="Object" />
-            <Radio value="tracker" label="Tracker" />
+            {#each BEACON_TYPE_OPTIONS as option}
+              <Radio value={option.value} label={option.label} />
+            {/each}
           </div>
         </RadioGroup>
         <div class="type-hint">
-          <div><strong>Position:</strong> a beacon for a station.</div>
-          <div><strong>Object:</strong> a named item such as a repeater, event site, hospital.</div>
-          <div><strong>Tracker:</strong> a GPS-driven mobile beacon that uses SmartBeaconing to adapt its rate to your speed and turns.</div>
+          {#each BEACON_TYPE_OPTIONS as option}
+            <div><strong>{option.label}:</strong> {option.description}</div>
+          {/each}
         </div>
       </FormField>
       {#if isTracker}
@@ -880,24 +910,26 @@
       <FormField label="Path" id="bcn-path">
         <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />
       </FormField>
-      <FormField label="Symbol" id="bcn-symbol"
-        hint="The icon shown for this station on aprs.fi and other APRS maps.">
-        <div class="symbol-row">
-          <span
-            class="symbol-swatch"
-            style="background-image: url({SPRITE_URLS[form.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(form.symbol || '-', CELL_PX)};"
-            aria-hidden="true"
-          >
-            {#if form.overlay && form.symbol_table === ALTERNATE_TABLE}
-              <span class="symbol-swatch-overlay">{form.overlay}</span>
-            {/if}
-          </span>
-          <span class="symbol-name">
-            {describe(symbolMeta, form.symbol_table || '/', form.symbol || '-') || '\u2014'}
-          </span>
-          <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
-        </div>
-      </FormField>
+      {#if usesPosition}
+        <FormField label="Symbol" id="bcn-symbol"
+          hint="The icon shown for this station on aprs.fi and other APRS maps.">
+          <div class="symbol-row">
+            <span
+              class="symbol-swatch"
+              style="background-image: url({SPRITE_URLS[form.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(form.symbol || '-', CELL_PX)};"
+              aria-hidden="true"
+            >
+              {#if form.overlay && form.symbol_table === ALTERNATE_TABLE}
+                <span class="symbol-swatch-overlay">{form.overlay}</span>
+              {/if}
+            </span>
+            <span class="symbol-name">
+              {describe(symbolMeta, form.symbol_table || '/', form.symbol || '-') || '\u2014'}
+            </span>
+            <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
+          </div>
+        </FormField>
+      {/if}
       {#if showFormat}
         <FormField label="Position report format" id="bcn-pos-fmt"
           hint="How this beacon's position is encoded on the air. Compressed is shortest and most precise. Uncompressed and Mic-E can carry deliberately coarse positions via ambiguity.">
@@ -928,14 +960,34 @@
           </FormField>
         {/if}
       {/if}
-      <FormField label="Comment" id="bcn-comment"
-        hint={"Tip: use {{version}} to insert the running graywolf version."}>
+      {#if isCustom}
+        <FormField label="Raw APRS information" id="bcn-custom-info"
+          error={customInfoError}
+          hint="The complete APRS information field. It is sent unchanged; include any separator you want before an appended comment.">
+          <Input id="bcn-custom-info" bind:value={form.custom_info} placeholder=">status"
+            oninput={() => customInfoError = ''} />
+        </FormField>
+      {/if}
+      <FormField label={isCustom ? 'Appended comment' : 'Comment'} id="bcn-comment"
+        hint={isCustom
+          ? "Optional text appended directly to the raw APRS information. Use {{version}} to insert the running Graywolf version."
+          : "Tip: use {{version}} to insert the running Graywolf version."}>
         <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
+      </FormField>
+      <FormField label="Dynamic comment command" id="bcn-comment-cmd"
+        hint="Optional command run by the Graywolf service at transmit time. Its stdout is appended to the static comment. Arguments are parsed without a shell.">
+        <Input id="bcn-comment-cmd" bind:value={form.comment_cmd}
+          placeholder="/usr/local/bin/weather-comment --short" />
       </FormField>
     </div>
 
     <div class="beacon-form-col">
-      {#if isTracker}
+      {#if isCustom}
+        <div class="tracker-note">
+          Custom beacons use the raw APRS information field and do not require
+          a position source, coordinates, altitude, or symbol.
+        </div>
+      {:else if isTracker}
         <FormField label="Position source" id="bcn-pos-source"
           hint="Trackers always transmit the live GPS fix — that's what lets SmartBeaconing follow your movement.">
           <div class="tracker-gps-fixed">Live GPS fix</div>
@@ -953,7 +1005,7 @@
           </RadioGroup>
         </FormField>
       {/if}
-      {#if form.pos_source === 'fixed'}
+      {#if usesPosition && form.pos_source === 'fixed'}
         <FormField label="Latitude" id="bcn-lat"
           hint="Decimal degrees, north positive (e.g. 37.5 for Half Moon Bay; -33.86 for Sydney).">
           <Input id="bcn-lat" bind:value={form.latitude} placeholder="37.5" />

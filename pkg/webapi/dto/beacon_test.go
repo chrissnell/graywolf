@@ -100,9 +100,22 @@ func TestBeaconRequest_Validate_BadSendPath(t *testing.T) {
 }
 
 func TestBeaconRequest_Validate_ISOnlyOK(t *testing.T) {
-	r := BeaconRequest{Type: "custom", SendPath: "is_only"}
+	r := BeaconRequest{Type: "custom", SendPath: "is_only", CustomInfo: ">status"}
 	if err := r.Validate(); err != nil {
 		t.Fatalf("is_only should validate, got %v", err)
+	}
+}
+
+func TestBeaconRequest_Validate_CustomRequiresInfo(t *testing.T) {
+	for _, info := range []string{"", "   "} {
+		r := BeaconRequest{Type: "custom", SendPath: "rf", CustomInfo: info}
+		if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "custom_info") {
+			t.Fatalf("CustomInfo %q: Validate() = %v, want custom_info error", info, err)
+		}
+	}
+	r := BeaconRequest{Type: "custom", SendPath: "rf", CustomInfo: ">status"}
+	if err := r.Validate(); err != nil {
+		t.Fatalf("valid custom beacon rejected: %v", err)
 	}
 }
 

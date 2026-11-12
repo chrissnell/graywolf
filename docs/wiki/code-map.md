@@ -430,3 +430,11 @@ transmitted data stays unacknowledged, or buffered data cannot be sent
 because the peer advertises a zero window, allowing the existing client
 supervisor to reconnect. This is not an idle receive timeout; a silent
 receive-only link remains open. Other platforms retain the existing behavior.
+
+## Custom beacon form
+
+`web/src/lib/beaconForm.js` holds beacon type choices, position-control
+visibility, custom-information validation and edit-form defaults.
+`web/src/routes/Beacons.svelte` exposes `custom_info` for custom beacons and
+`comment_cmd` for all beacon types. The scheduler already supports these
+fields; `pkg/webapi/dto/beacon.go` rejects empty custom information on save.

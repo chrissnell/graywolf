@@ -111,6 +111,10 @@ func (r BeaconRequest) Validate() error {
 		if !r.UseGps && r.Latitude == 0 && r.Longitude == 0 {
 			return fmt.Errorf("latitude/longitude required when use_gps is false")
 		}
+	case "custom":
+		if strings.TrimSpace(r.CustomInfo) == "" {
+			return fmt.Errorf("custom_info is required for a custom beacon")
+		}
 	}
 	if r.Type == "position" || r.Type == "tracker" || r.Type == "igate" {
 		switch r.PositionFormat {
