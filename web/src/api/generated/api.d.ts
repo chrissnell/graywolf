@@ -2907,6 +2907,7 @@ export interface components {
             allow_tx_from_governor?: boolean;
             baud_rate?: number;
             channel?: number;
+            display_name?: string;
             /**
              * @description Enabled gates whether graywolf runs this interface. When false the
              *     manager stops the supervisor and releases the underlying device
@@ -2962,6 +2963,7 @@ export interface components {
             baud_rate?: number;
             channel?: number;
             connected_since?: number;
+            display_name?: string;
             /**
              * @description Enabled mirrors KissInterface.Enabled so the Kiss page can show a
              *     "Disabled" state and offer a re-enable action. A disabled interface
