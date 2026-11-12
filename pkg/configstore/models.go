@@ -631,37 +631,42 @@ type GPSConfig struct {
 
 // Beacon is a scheduled beacon. Type selects the payload builder.
 type Beacon struct {
-	ID           uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
-	Type         string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|custom|igate
-	Channel      uint32  `gorm:"not null;default:1" json:"channel"`
-	Callsign     string  `gorm:"not null" json:"callsign"`
-	Destination  string  `gorm:"not null;default:'APGRWO'" json:"destination"`
-	Path         string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
-	UseGps       bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
-	Latitude     float64 `json:"latitude"`
-	Longitude    float64 `json:"longitude"`
-	AltFt        float64 `json:"alt_ft"` // altitude in feet for position reports
-	Ambiguity    uint32  `gorm:"not null;default:0" json:"ambiguity"`
-	SymbolTable  string  `gorm:"not null;default:'/'" json:"symbol_table"`
-	Symbol       string  `gorm:"not null;default:'-'" json:"symbol"`
-	Overlay      string  `json:"overlay"`                                 // alternate symbol table overlay character
-	PositionFormat string `gorm:"not null;default:'compressed'" json:"position_format"` // compressed | uncompressed | mic_e (APRS101 ch 9/6/10)
-	Messaging    bool    `gorm:"not null;default:false" json:"messaging"` // '=' instead of '!' prefix
-	Comment      string  `json:"comment"`
-	CommentCmd   string  `json:"comment_cmd"`                      // shell command whose stdout is appended as comment
-	CustomInfo   string  `json:"custom_info"`                      // raw info field override for Type=="custom"
-	ObjectName   string  `json:"object_name"`                      // for Type=="object"
-	Power        uint32  `gorm:"not null;default:0" json:"power"`  // watts for PHG
-	Height       uint32  `gorm:"not null;default:0" json:"height"` // feet HAAT for PHG
-	Gain         uint32  `gorm:"not null;default:0" json:"gain"`   // dBi for PHG
-	Dir          uint32  `gorm:"not null;default:0" json:"dir"`    // antenna direction 0..8 for PHG
-	Freq         string  `json:"freq"`                             // frequency string for freq info
-	Tone         string  `json:"tone"`                             // CTCSS/DCS tone
-	FreqOffset   string  `json:"freq_offset"`                      // repeater offset
-	DelaySeconds uint32  `gorm:"not null;default:30" json:"delay_seconds"`
-	EverySeconds uint32  `gorm:"not null;default:1800" json:"interval"`
-	SlotSeconds  int32   `gorm:"not null;default:-1" json:"slot_seconds"`
-	SmartBeacon  bool    `gorm:"not null;default:false" json:"smart_beacon"`
+	ID             uint32  `gorm:"primaryKey;autoIncrement" json:"id"`
+	Type           string  `gorm:"not null;default:'position'" json:"type"` // position|object|tracker|weather|custom|igate
+	Channel        uint32  `gorm:"not null;default:1" json:"channel"`
+	Callsign       string  `gorm:"not null" json:"callsign"`
+	Destination    string  `gorm:"not null;default:'APGRWO'" json:"destination"`
+	Path           string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
+	UseGps         bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
+	Latitude       float64 `json:"latitude"`
+	Longitude      float64 `json:"longitude"`
+	AltFt          float64 `json:"alt_ft"` // altitude in feet for position reports
+	Ambiguity      uint32  `gorm:"not null;default:0" json:"ambiguity"`
+	SymbolTable    string  `gorm:"not null;default:'/'" json:"symbol_table"`
+	Symbol         string  `gorm:"not null;default:'-'" json:"symbol"`
+	Overlay        string  `json:"overlay"`                                              // alternate symbol table overlay character
+	PositionFormat string  `gorm:"not null;default:'compressed'" json:"position_format"` // compressed | uncompressed | mic_e (APRS101 ch 9/6/10)
+	Messaging      bool    `gorm:"not null;default:false" json:"messaging"`              // '=' instead of '!' prefix
+	Comment        string  `json:"comment"`
+	CommentCmd     string  `json:"comment_cmd"`                               // shell command whose stdout is appended as comment
+	CustomInfo     string  `json:"custom_info"`                               // raw info field override for Type=="custom"
+	WeatherSource  string  `gorm:"not null;default:''" json:"weather_source"` // wxnow_file | davis_serial | peet_serial
+	WeatherPath    string  `gorm:"not null;default:''" json:"weather_path"`   // path to WxNow.txt
+	WeatherDevice  string  `gorm:"not null;default:''" json:"weather_device"` // Davis or Peet Bros serial device
+	WeatherBaud    uint32  `gorm:"not null;default:19200" json:"weather_baud"`
+	WeatherBucket  string  `gorm:"not null;default:'0.2mm'" json:"weather_bucket"` // Davis: 0.2mm|0.01in; Peet: 0.1mm|0.01in
+	ObjectName     string  `json:"object_name"`                                    // for Type=="object"
+	Power          uint32  `gorm:"not null;default:0" json:"power"`                // watts for PHG
+	Height         uint32  `gorm:"not null;default:0" json:"height"`               // feet HAAT for PHG
+	Gain           uint32  `gorm:"not null;default:0" json:"gain"`                 // dBi for PHG
+	Dir            uint32  `gorm:"not null;default:0" json:"dir"`                  // antenna direction 0..8 for PHG
+	Freq           string  `json:"freq"`                                           // frequency string for freq info
+	Tone           string  `json:"tone"`                                           // CTCSS/DCS tone
+	FreqOffset     string  `json:"freq_offset"`                                    // repeater offset
+	DelaySeconds   uint32  `gorm:"not null;default:30" json:"delay_seconds"`
+	EverySeconds   uint32  `gorm:"not null;default:1800" json:"interval"`
+	SlotSeconds    int32   `gorm:"not null;default:-1" json:"slot_seconds"`
+	SmartBeacon    bool    `gorm:"not null;default:false" json:"smart_beacon"`
 	// Deprecated: use the global configstore.SmartBeaconConfig instead.
 	// This column is no longer read as of 2026-04-18 (the SmartBeacon
 	// curve is now a global singleton, matching direwolf). The column

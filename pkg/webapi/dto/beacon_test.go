@@ -106,6 +106,68 @@ func TestBeaconRequest_Validate_ISOnlyOK(t *testing.T) {
 	}
 }
 
+func TestBeaconRequest_Validate_WeatherSource(t *testing.T) {
+	valid := BeaconRequest{
+		Type: "weather", UseGps: true, SendPath: "rf",
+		WeatherSource: "wxnow_file", WeatherPath: "/var/lib/weather/WxNow.txt",
+		Comment: "ignored", CommentCmd: "/usr/local/bin/ignored",
+	}
+	if err := valid.Validate(); err != nil {
+		t.Fatalf("valid weather beacon rejected: %v", err)
+	}
+	for _, tc := range []struct {
+		name, source, path, want string
+	}{
+		{"missing source", "", "/tmp/WxNow.txt", "weather_source"},
+		{"unknown source", "davis", "/tmp/WxNow.txt", "weather_source"},
+		{"missing path", "wxnow_file", " ", "weather_path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := valid
+			r.WeatherSource, r.WeatherPath = tc.source, tc.path
+			if err := r.Validate(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Validate() = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+	m := valid.ToModel()
+	if m.WeatherSource != valid.WeatherSource || m.WeatherPath != valid.WeatherPath {
+		t.Fatalf("weather source fields lost: %+v", m)
+	}
+	if m.SymbolTable != "/" || m.Symbol != "_" || m.PositionFormat != "uncompressed" {
+		t.Fatalf("weather APRS wire fields not normalized: %+v", m)
+	}
+	if m.Comment != "" || m.CommentCmd != "" {
+		t.Fatalf("weather comment fields must be cleared: %+v", m)
+	}
+	davis := valid
+	davis.WeatherSource = "davis_serial"
+	davis.WeatherPath = ""
+	davis.WeatherDevice = "/dev/ttyUSB0"
+	davis.WeatherBaud = 19200
+	davis.WeatherBucket = "0.2mm"
+	if err := davis.Validate(); err != nil {
+		t.Fatalf("valid Davis source rejected: %v", err)
+	}
+	davis.WeatherBucket = "unknown"
+	if err := davis.Validate(); err == nil || !strings.Contains(err.Error(), "weather_bucket") {
+		t.Fatalf("invalid Davis bucket accepted: %v", err)
+	}
+	peet := valid
+	peet.WeatherSource = "peet_serial"
+	peet.WeatherPath = ""
+	peet.WeatherDevice = "/dev/ttyUSB1"
+	peet.WeatherBaud = 2400
+	peet.WeatherBucket = "0.1mm"
+	if err := peet.Validate(); err != nil {
+		t.Fatalf("valid Peet Bros source rejected: %v", err)
+	}
+	peet.WeatherBucket = "0.2mm"
+	if err := peet.Validate(); err == nil || !strings.Contains(err.Error(), "weather_bucket") {
+		t.Fatalf("invalid Peet Bros rain unit accepted: %v", err)
+	}
+}
+
 func strPtr(s string) *string { return &s }
 
 func TestBeaconRequest_Validate_BadCallsignSSID(t *testing.T) {

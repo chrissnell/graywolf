@@ -14,6 +14,7 @@
   import { getChannel as lookupChannel } from '../lib/stores/channels.svelte.js';
   import { txPredicate, TX_REASON_FALLBACK } from '../lib/channelBacking.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
+  import { validateWeatherBeacon } from '../lib/weatherBeacon.js';
   import { trackerBeaconFlags } from '../lib/trackerBeacon.js';
   import {
     channelRefStatus,
@@ -98,10 +99,27 @@
     symbol_table: '/', symbol: '-', overlay: '',
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
+    weather_source: 'wxnow_file', weather_path: '',
+    weather_device: '', weather_baud: '19200', weather_bucket: '0.2mm',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
     smart_beacon: false,
   });
 
+  let weatherPathError = $state('');
+  let isWeather = $derived(form.type === 'weather');
+  let previousWeatherSource = 'wxnow_file';
+  $effect(() => {
+    const source = form.weather_source;
+    if (source === previousWeatherSource) return;
+    previousWeatherSource = source;
+    if (source === 'peet_serial' && form.weather_bucket === '0.2mm') {
+      form.weather_bucket = '0.01in';
+      if (form.weather_baud === '19200') form.weather_baud = '2400';
+    } else if (source === 'davis_serial' && form.weather_bucket === '0.1mm') {
+      form.weather_bucket = '0.2mm';
+      if (form.weather_baud === '2400') form.weather_baud = '19200';
+    }
+  });
   let callsignError = $state('');
   // Placeholder shown in the disabled input when "override" is unchecked.
   // Mirrors the D3 copy: "Uses station callsign (KE7XYZ-9)" when loaded,
@@ -315,6 +333,12 @@
     altInput = '';
     altError = '';
     form.comment = defaultComment;
+    form.weather_source = 'wxnow_file';
+    form.weather_path = '';
+    form.weather_device = '';
+    form.weather_baud = '19200';
+    form.weather_bucket = '0.2mm';
+    weatherPathError = '';
     form.interval = '600';
     form.slot = '';
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
@@ -336,6 +360,11 @@
     Object.assign(form, row, {
       type: row.type || 'position',
       object_name: row.object_name || '',
+      weather_source: row.weather_source || 'wxnow_file',
+      weather_path: row.weather_path || '',
+      weather_device: row.weather_device || '',
+      weather_baud: String(row.weather_baud || 19200),
+      weather_bucket: row.weather_bucket || '0.2mm',
       channel: String(row.channel),
       callsign: rowCall,
       callsign_override: rowCall !== '',
@@ -355,10 +384,13 @@
     altInput = altInputFromFeet(form.alt_ft);
     altError = '';
     callsignError = '';
+    weatherPathError = '';
     modalOpen = true;
   }
 
   async function handleSave() {
+    weatherPathError = validateWeatherBeacon(form);
+    if (weatherPathError) { toasts.error(weatherPathError); return; }
     // D3 override semantics. Unchecked → always send empty string so
     // the backend treats it as "inherit from StationConfig". Checked →
     // require a non-empty value (can't override with nothing) and send
@@ -454,6 +486,7 @@
       latitude: lat,
       longitude: lon,
       alt_ft: altFt,
+      weather_baud: parseInt(form.weather_baud, 10) || 0,
     };
     delete data.pos_source;
     delete data.callsign_override;
@@ -793,9 +826,11 @@
             <Radio value="position" label="Position" />
             <Radio value="object" label="Object" />
             <Radio value="tracker" label="Tracker" />
+            <Radio value="weather" label="Weather" />
           </div>
         </RadioGroup>
         <div class="type-hint">
+          <div><strong>Weather:</strong> measurements from Davis, Peet Bros, or WxNow.txt, with the station position.</div>
           <div><strong>Position:</strong> a beacon for a station.</div>
           <div><strong>Object:</strong> a named item such as a repeater, event site, hospital.</div>
           <div><strong>Tracker:</strong> a GPS-driven mobile beacon that uses SmartBeaconing to adapt its rate to your speed and turns.</div>
@@ -880,6 +915,7 @@
       <FormField label="Path" id="bcn-path">
         <Input id="bcn-path" bind:value={form.path} placeholder="WIDE1-1,WIDE2-1" />
       </FormField>
+      {#if !isWeather}
       <FormField label="Symbol" id="bcn-symbol"
         hint="The icon shown for this station on aprs.fi and other APRS maps.">
         <div class="symbol-row">
@@ -898,6 +934,7 @@
           <Button onclick={() => pickerOpen = true}>Choose&hellip;</Button>
         </div>
       </FormField>
+      {/if}
       {#if showFormat}
         <FormField label="Position report format" id="bcn-pos-fmt"
           hint="How this beacon's position is encoded on the air. Compressed is shortest and most precise. Uncompressed and Mic-E can carry deliberately coarse positions via ambiguity.">
@@ -928,10 +965,71 @@
           </FormField>
         {/if}
       {/if}
+      {#if isWeather}
+        <FormField label="Weather source" id="bcn-weather-source"
+          hint="Native serial sources support Davis Vantage and Peet Bros Ultimeter consoles. WxNow.txt remains available for weather software and other hardware.">
+          <RadioGroup bind:value={form.weather_source}>
+            <div class="pos-source-row">
+              <Radio value="davis_serial" label="Davis serial" />
+              <Radio value="peet_serial" label="Peet Bros serial" />
+              <Radio value="wxnow_file" label="WxNow.txt file" />
+            </div>
+          </RadioGroup>
+        </FormField>
+        {#if form.weather_source === 'davis_serial'}
+          <FormField label="Serial device" id="bcn-weather-device"
+            error={weatherPathError}
+            hint="Device connected to the Davis WeatherLink serial interface.">
+            <Input id="bcn-weather-device" bind:value={form.weather_device}
+              placeholder="/dev/ttyUSB0" oninput={() => weatherPathError = ''} />
+          </FormField>
+          <FormField label="Serial baud" id="bcn-weather-baud"
+            hint="Davis Vantage consoles normally use 19200 baud, 8N1.">
+            <Input id="bcn-weather-baud" bind:value={form.weather_baud} type="number" placeholder="19200" />
+          </FormField>
+          <FormField label="Rain collector" id="bcn-weather-bucket"
+            hint="Must match the collector configured on the Davis station.">
+            <RadioGroup bind:value={form.weather_bucket}>
+              <div class="pos-source-row">
+                <Radio value="0.2mm" label="0.2 mm per tip" />
+                <Radio value="0.01in" label="0.01 inch per tip" />
+              </div>
+            </RadioGroup>
+          </FormField>
+        {:else if form.weather_source === 'peet_serial'}
+          <FormField label="Serial device" id="bcn-weather-device"
+            error={weatherPathError}
+            hint="Device connected to the Peet Bros Ultimeter serial output.">
+            <Input id="bcn-weather-device" bind:value={form.weather_device}
+              placeholder="/dev/ttyUSB0" oninput={() => weatherPathError = ''} />
+          </FormField>
+          <FormField label="Serial baud" id="bcn-weather-baud"
+            hint="Peet Bros Ultimeter consoles normally use 2400 baud, 8N1.">
+            <Input id="bcn-weather-baud" bind:value={form.weather_baud} type="number" placeholder="2400" />
+          </FormField>
+          <FormField label="Rain counter unit" id="bcn-weather-bucket"
+            hint="Must match the rain gauge selection configured on the Ultimeter console.">
+            <RadioGroup bind:value={form.weather_bucket}>
+              <div class="pos-source-row">
+                <Radio value="0.1mm" label="0.1 mm per count" />
+                <Radio value="0.01in" label="0.01 inch per count" />
+              </div>
+            </RadioGroup>
+          </FormField>
+        {:else}
+          <FormField label="WxNow.txt path" id="bcn-weather-path"
+            error={weatherPathError}
+            hint="Absolute path visible to the Graywolf service. The standard two-line WxNow.txt format is expected.">
+            <Input id="bcn-weather-path" bind:value={form.weather_path}
+              placeholder="/var/lib/weather/WxNow.txt" oninput={() => weatherPathError = ''} />
+          </FormField>
+        {/if}
+      {:else}
       <FormField label="Comment" id="bcn-comment"
         hint={"Tip: use {{version}} to insert the running graywolf version."}>
         <Input id="bcn-comment" bind:value={form.comment} placeholder={defaultComment} />
       </FormField>
+      {/if}
     </div>
 
     <div class="beacon-form-col">
@@ -962,21 +1060,23 @@
           hint="Decimal degrees, east positive (e.g. -122.4 for San Francisco; 151.2 for Sydney).">
           <Input id="bcn-lon" bind:value={form.longitude} placeholder="-122.4" />
         </FormField>
-        <FormField label="Altitude" id="bcn-alt"
-          hint={form.type === 'object'
-            ? `Object altitude above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`
-            : `Antenna height above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`}>
-          <div class="alt-row">
-            <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
-              type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
-            <div class="unit-toggle" role="group" aria-label="Altitude unit">
-              <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
-                onclick={() => toggleAltUnit('feet')}>ft</button>
-              <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
-                onclick={() => toggleAltUnit('meters')}>m</button>
+        {#if !isWeather}
+          <FormField label="Altitude" id="bcn-alt"
+            hint={form.type === 'object'
+              ? `Object altitude above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`
+              : `Antenna height above sea level in ${altUnit}. Optional; leave blank or 0 to omit.`}>
+            <div class="alt-row">
+              <Input id="bcn-alt" bind:value={altInput} placeholder={altUnit === 'feet' ? '0 ft' : '0 m'}
+                type="text" inputmode="decimal" error={altError} oninput={() => altError = ''} />
+              <div class="unit-toggle" role="group" aria-label="Altitude unit">
+                <button type="button" class="unit-btn" class:unit-active={altUnit === 'feet'}
+                  onclick={() => toggleAltUnit('feet')}>ft</button>
+                <button type="button" class="unit-btn" class:unit-active={altUnit === 'meters'}
+                  onclick={() => toggleAltUnit('meters')}>m</button>
+              </div>
             </div>
-          </div>
-        </FormField>
+          </FormField>
+        {/if}
       {/if}
       <FormField label="Interval (seconds)" id="bcn-interval">
         <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
