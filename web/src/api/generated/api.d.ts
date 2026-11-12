@@ -2917,6 +2917,7 @@ export interface components {
              *     send the key keep their interfaces running. ToModel substitutes
              *     true when nil.
              */
+            display_name?: string;
             enabled?: boolean;
             /**
              * @description GateTxToIs opts a Mode=modem KISS interface in to gating frames
@@ -2962,6 +2963,7 @@ export interface components {
             baud_rate?: number;
             channel?: number;
             connected_since?: number;
+            display_name?: string;
             /**
              * @description Enabled mirrors KissInterface.Enabled so the Kiss page can show a
              *     "Disabled" state and offer a re-enable action. A disabled interface
