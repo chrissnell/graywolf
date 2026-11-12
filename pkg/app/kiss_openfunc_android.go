@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"regexp"
+	"time"
 
 	"github.com/chrissnell/graywolf/pkg/kiss"
 )
@@ -31,6 +32,12 @@ var vidPidRe = regexp.MustCompile(`^[0-9A-Fa-f]{4}:[0-9A-Fa-f]{4}$`)
 // than letting it fail later inside go.bug.st/serial.
 var errNotSupportedOnAndroid = errors.New("kiss: serial device path not supported on Android (use Bluetooth or USB serial interface)")
 
+// btOpenTimeout bounds one Bluetooth serial open. The Android side tries up
+// to three RFCOMM connect methods, each of which can block for ~12s on an
+// unreachable radio, so this leaves headroom. Without a bound a lost
+// SerialOpenAck would park the KISS supervisor forever with nothing logged.
+const btOpenTimeout = 60 * time.Second
+
 // newKissSerialOpenFunc returns an OpenFunc that routes MAC-style device
 // strings to platformsvc.BtSerialOpen, "vid:pid" strings to
 // platformsvc.UsbSerialOpen (with baud), and rejects raw device paths.
@@ -44,7 +51,9 @@ func newKissSerialOpenFunc(psv serialOpener) kiss.OpenFunc {
 	return func(device string, baud uint32) (io.ReadWriteCloser, error) {
 		switch {
 		case macRe.MatchString(device):
-			return psv.BtSerialOpen(context.Background(), device)
+			ctx, cancel := context.WithTimeout(context.Background(), btOpenTimeout)
+			defer cancel()
+			return psv.BtSerialOpen(ctx, device)
 		case vidPidRe.MatchString(device):
 			return psv.UsbSerialOpen(context.Background(), device, baud)
 		default:

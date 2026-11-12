@@ -128,6 +128,10 @@
   // lazy loader. Cleared whenever the operator picks a device or the
   // modal reopens.
   let saveError = $state('');
+  // Server-side failure from the last Create/Save, shown above the modal
+  // buttons. The toast alone is easy to miss on a tablet, where the modal
+  // then just stays open with no visible reason (GH #573).
+  let submitError = $state('');
 
   // Derived <Select> options for the bonded-device picker. chonky-ui's
   // Select doesn't honor `disabled` on individual options (it only
@@ -372,6 +376,7 @@
       form.type = 'bluetooth';
     }
     saveError = '';
+    submitError = '';
     // Default AllowTxFromGovernor=true for new tcp-client rows per
     // plan D4. When the operator flips to tcp-client we pre-check
     // the governor-TX checkbox so the common case (outbound TNC for
@@ -382,6 +387,7 @@
   function openEdit(row) {
     editing = row;
     saveError = '';
+    submitError = '';
     form = {
       ...row,
       tcp_port: String(row.tcp_port ?? ''),
@@ -444,15 +450,28 @@
   // Platform.isAndroid: on desktop the GET returns 501 by design, so
   // we short-circuit with a friendly message instead of letting the
   // operator stare at "HTTP 501".
+  //
+  // Auto-load at most once per modal open. Without this latch an empty
+  // result (nothing paired, or BLUETOOTH_CONNECT not granted) re-satisfies
+  // the gate the moment bondedLoading drops, so the effect refetches in a
+  // tight loop: the picker sits on "Loading…", Refresh stays disabled and
+  // the "Grant Bluetooth permission" button never renders (GH #573).
+  // Plain (non-$state) on purpose: the latch must not retrigger the effect.
+  let bondedAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'bluetooth' || !modalOpen) return;
+    if (!modalOpen) {
+      bondedAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'bluetooth') return;
     if (!Platform.isAndroid) {
       if (!bondedError) {
         bondedError = 'Bluetooth interfaces can only be configured from the Android app.';
       }
       return;
     }
-    if (bondedDevices.length === 0 && !bondedLoading && !bondedError) {
+    if (!bondedAutoLoaded && bondedDevices.length === 0 && !bondedLoading && !bondedError) {
+      bondedAutoLoaded = true;
       loadBondedDevices();
     }
   });
@@ -518,15 +537,23 @@
   // opens the modal with the "usbserial" type selected. Mirrors the
   // bluetooth lazy-loader pattern above. Gated on Platform.isAndroid:
   // desktop returns 501, so we short-circuit with a friendly message.
+  // Latched once per modal open for the same reason as bondedAutoLoaded:
+  // nothing plugged in is a legitimate empty result.
+  let usbAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'usbserial' || !modalOpen) return;
+    if (!modalOpen) {
+      usbAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'usbserial') return;
     if (!Platform.isAndroid) {
       if (!usbError) {
         usbError = 'USB serial interfaces can only be configured from the Android app.';
       }
       return;
     }
-    if (usbDevices.length === 0 && !usbLoading && !usbError) {
+    if (!usbAutoLoaded && usbDevices.length === 0 && !usbLoading && !usbError) {
+      usbAutoLoaded = true;
       loadUsbDevices();
     }
   });
@@ -547,11 +574,18 @@
   // Lazy-load host serial ports the first time the operator opens the modal
   // with the "serial" type selected. Unlike bluetooth/usbserial this works
   // on every desktop platform (the ports are enumerated on the host running
-  // graywolf), so there's no Platform gate. Re-runs only when the gate flips
-  // back to satisfied — the operator can clear an error and click Refresh.
+  // graywolf), so there's no Platform gate. Latched once per modal open
+  // like bondedAutoLoaded (a host with no serial ports is a legitimate
+  // empty result); the operator retries with Refresh.
+  let serialPortsAutoLoaded = false;
   $effect(() => {
-    if (form.type !== 'serial' || !modalOpen) return;
-    if (serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+    if (!modalOpen) {
+      serialPortsAutoLoaded = false;
+      return;
+    }
+    if (form.type !== 'serial') return;
+    if (!serialPortsAutoLoaded && serialPorts.length === 0 && !serialPortsLoading && !serialPortsError) {
+      serialPortsAutoLoaded = true;
       loadSerialPorts();
     }
   });
@@ -699,6 +733,7 @@
       await refreshItems();
       refreshChannels();
     } catch (err) {
+      submitError = err.message;
       toasts.error(err.message);
     }
   }
@@ -719,6 +754,7 @@
       return;
     }
     saveError = '';
+    submitError = '';
     // Mode changes on an existing interface take effect the instant the
     // server restarts the per-interface KISS server — connected peers see
     // routing behavior flip under them. Make the operator confirm it.
@@ -1140,7 +1176,13 @@
         <Select id="kiss-baud" bind:value={form.baud_rate} options={baudRateOptions} />
       </FormField>
     {/if}
-    <FormField label="Channel" id="kiss-channel">
+    <FormField
+      label="Channel"
+      id="kiss-channel"
+      hint={channels.length === 0
+        ? 'No channels exist yet, so Create will fail. Add one first under Settings → Channels (pick "KISS-TNC only" for a radio\'s built-in TNC), then come back.'
+        : ''}
+    >
       {#if channels.length > 0}
         <ChannelListbox
           id="kiss-channel"
@@ -1223,6 +1265,9 @@
         {/if}
       </div>
     {/if}
+    {#if submitError}
+      <p class="submit-error" role="alert">{submitError}</p>
+    {/if}
     <div class="modal-actions">
       <Button onclick={() => modalOpen = false}>Cancel</Button>
       <Button variant="primary" onclick={handleSave}>{editing ? 'Save' : 'Create'}</Button>
@@ -1261,6 +1306,7 @@
   }
 
   .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+  .submit-error { color: var(--color-danger, #d32f2f); margin: 16px 0 0; font-size: 13px; }
   .checkbox-field {
     display: flex;
     flex-direction: column;

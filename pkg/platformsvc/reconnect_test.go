@@ -99,6 +99,85 @@ func TestReconnectAfterEOF(t *testing.T) {
 	}
 }
 
+// TestReconnectReHandshakes verifies the client re-sends Hello on its own
+// after a reconnect (no caller intervention). The server registers a
+// connection for server→client broadcasts only after a Hello, so a
+// reconnect that skipped the handshake would silently drop every broadcast
+// (GPS/GNSS/bonded-device/serial) — the root cause of the KISS
+// bonded-device picker hanging on "Loading" (GH #573).
+func TestReconnectReHandshakes(t *testing.T) {
+	sockPath := fmt.Sprintf("@platformsvc-rehello-%d.sock", time.Now().UnixNano())
+
+	listener, err := net.Listen("unix", sockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	secondHello := make(chan struct{}, 1)
+	var (
+		acceptCount int
+		mu          sync.Mutex
+	)
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			acceptCount++
+			isFirst := acceptCount == 1
+			mu.Unlock()
+			go func(c net.Conn, first bool) {
+				defer c.Close()
+				// Reply to the Hello on this connection, then (first only)
+				// drop to force a reconnect.
+				msg, err := readFrame(c)
+				if err != nil || msg.GetHello() == nil {
+					return
+				}
+				_ = writeFrame(c, helloOK(msg.GetHello()))
+				if first {
+					time.Sleep(50 * time.Millisecond)
+					return
+				}
+				// The reconnected session must have Hello'd on its own.
+				select {
+				case secondHello <- struct{}{}:
+				default:
+				}
+				// Keep the connection open so the client doesn't loop.
+				_, _ = readFrame(c)
+			}(conn, isFirst)
+		}
+	}()
+
+	c := newClient(sockPath).(*clientImpl)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.ConnectWithReconnect(ctx); err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer c.Close()
+
+	// Initial Hello (as main_android does) — this is what records the
+	// schema version the reconnect loop replays.
+	helloCtx, helloCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer helloCancel()
+	if _, err := c.Hello(helloCtx, SchemaVersion); err != nil {
+		t.Fatalf("initial Hello: %v", err)
+	}
+
+	// The first connection drops; the reconnect loop must re-dial AND
+	// re-Hello without the caller touching Hello again.
+	select {
+	case <-secondHello:
+	case <-time.After(3 * time.Second):
+		t.Fatal("reconnected session never received an auto Hello")
+	}
+}
+
 // TestBackoffSchedule asserts the backoff sequence used by the reconnect
 // loop is the documented one (Decisions table). Test reads the package-
 // private backoffSchedule slice.

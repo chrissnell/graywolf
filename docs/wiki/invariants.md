@@ -2118,3 +2118,100 @@ Source: [`../../web/src/components/messages/MessageThread.svelte`](../../web/src
 [`../../web/src/lib/messagesStore.svelte.js`](../../web/src/lib/messagesStore.svelte.js)
 (`adjustUnread`),
 [`../../web/src/lib/unread-batch-core.js`](../../web/src/lib/unread-batch-core.js).
+
+### 71. The platformsvc client MUST re-Hello on every reconnect, or all server→client broadcasts silently stop
+
+The Android `PlatformServer` (Kotlin) registers a connection into
+`activeOutputs` -- the fan-out set that every server-initiated frame
+(`broadcastGpsFix`, `broadcastGnssStatus`, and `broadcastBt`, which carries
+`BondedBtDevicesResponse`, `SerialOpenAck`, `SerialData`, `SerialError`,
+`SerialClose`) is written to -- **only after a successful `Hello` round-trip**
+(`serveClient`, gated on `req.bodyCase == HELLO`). The Go client's initial
+`Hello` is sent once by `cmd/graywolf/main_android.go` `platformConnect`.
+
+Therefore the reconnect loop (`clientImpl.reconnectLoop`) MUST re-send `Hello`
+after each successful re-dial. It replays the schema version recorded by the
+first `Hello` (`clientImpl.helloSchema`). Without this, a UDS reconnect (any
+socket drop or `PlatformServer` re-bind while the Go child survives) lands on a
+fresh `serveClient` that never sees a Hello, so its `out` is never registered
+and **every** broadcast is dropped -- GPS/GNSS stop and, visibly, the KISS
+bonded-device picker hangs on "Loading" forever because its
+`BondedBtDevicesResponse` never reaches the blocked Go round-trip (GH #573).
+
+The re-Hello is **not atomic** with the re-dial: between `Connect` returning
+(conn set) and the loop acquiring the request line (`reqLine`) for the re-Hello,
+an application `roundTrip` can win it and send on the not-yet-registered connection.
+That single request's broadcast-borne reply is dropped and it fails after
+`bondedBtTimeout` (8s) rather than hanging forever -- bounded and self-healing
+(the next request lands on a registered conn), and in the common case the
+loop's re-Hello, issued immediately on the reconnect goroutine, wins the line
+first. Do not assume a request issued right after a reconnect is guaranteed a
+registered connection.
+
+Two independent backstops keep a single lost reply from being fatal:
+`BtSerialAdapter.handleBondedRequest` catches **all** throwables and always
+emits exactly one reply (a resetting Bluetooth stack throws
+`DeadObjectException`, not `SecurityException`), and
+`clientImpl.BondedBtDevices` bounds its round-trip with `bondedBtTimeout` so a
+never-arriving reply surfaces as an error rather than spinning the picker and
+wedging the request line.
+
+`reqLine` is a capacity-1 semaphore, not a `sync.Mutex`, so acquiring it
+honours the caller's ctx: a round-trip queued behind a wedged one gives up when
+its own deadline expires, and the error names the holder (`inflight`) instead
+of blocking forever behind it.
+
+*Why:* the Hello handshake is not just a version check -- it is the signal the
+server uses to start delivering asynchronous frames to a connection. A
+reconnect that skips it produces a connection that can send requests but never
+receives any server push.
+
+*How to apply:* any new server→client push added on the Kotlin side rides
+`activeOutputs`, so it inherits this dependency; never gate Hello behind a
+one-shot that the reconnect path can't repeat, and if the registration timing
+on the Kotlin side ever changes, re-check this invariant. `reconnectLoop` must
+also run for the whole process lifetime: `ConnectWithReconnect` takes the
+caller's app-lifetime ctx and bounds only the *initial* dial internally
+(`dialTimeout`). Never pass a short dial-deadline ctx straight through -- a
+deadline-scoped ctx cancels the loop the instant it elapses, so a later UDS
+drop is never re-dialed (nor re-Hello'd). `cmd/graywolf/main_android.go`
+`platformConnect` passes the lifetime ctx for exactly this reason.
+
+Source: [`../../pkg/platformsvc/client_impl.go`](../../pkg/platformsvc/client_impl.go)
+(`reconnectLoop`, `Hello`, `helloSchema`, `roundTrip`, `reqLine`),
+[`../../pkg/platformsvc/btserial.go`](../../pkg/platformsvc/btserial.go)
+(`BondedBtDevices`, `bondedBtTimeout`),
+[`../../pkg/platformsvc/reconnect_test.go`](../../pkg/platformsvc/reconnect_test.go)
+(`TestReconnectReHandshakes`),
+[`../../pkg/platformsvc/reqline_test.go`](../../pkg/platformsvc/reqline_test.go)
+(`TestRoundTripQueuedBehindWedgedRequestTimesOut`),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/PlatformServer.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/PlatformServer.kt)
+(`serveClient`, `activeOutputs`),
+[`../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt`](../../android/app/src/main/kotlin/com/nw5w/graywolf/platformsvc/BtSerialAdapter.kt)
+(`handleBondedRequest`).
+
+### 72. A lazy-load `$effect` whose gate an empty result re-satisfies MUST latch
+
+The KISS modal auto-loads its device lists (bonded Bluetooth, USB serial, host
+serial ports) from `$effect`s gated on "list empty, not loading, no error". An
+*empty* successful result re-satisfies that gate the moment the loading flag
+drops, so without a latch the effect refetches in a tight loop (54 requests in
+3 s per picker in a headless-browser repro). The picker then sits on
+"Loading…", Refresh stays disabled, and on Android the "Grant Bluetooth
+permission" button (gated on `!bondedLoading`) never renders. That button is
+the only in-app fix for the most common empty result: on Android 12+ an app
+without `BLUETOOTH_CONNECT` sees no bonded devices, which `BtSerialAdapter`
+reports as an empty list (GH #573).
+
+`Kiss.svelte` therefore latches each auto-load once per modal open with a
+plain, non-`$state` flag (`bondedAutoLoaded`, `usbAutoLoaded`,
+`serialPortsAutoLoaded`) that resets when the modal closes. Refresh and the
+permission callbacks still call the loaders directly.
+
+*How to apply:* any `$effect` that fetches when a list is empty must latch, or
+gate on something the fetch itself changes. Keep the latch out of `$state`:
+writing a reactive latch inside the effect would retrigger the effect it
+guards.
+
+Source: [`../../web/src/routes/Kiss.svelte`](../../web/src/routes/Kiss.svelte)
+(`bondedAutoLoaded`, `usbAutoLoaded`, `serialPortsAutoLoaded`).

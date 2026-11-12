@@ -102,9 +102,13 @@ func platformConnect(ctx context.Context, logger *slog.Logger, sockPath string) 
 	}
 	cli := platformsvc.NewClient(sockPath)
 
-	dialCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := cli.ConnectWithReconnect(dialCtx); err != nil {
+	// Pass the app-lifetime ctx, NOT a short dial deadline: ctx governs the
+	// client's reconnect loop for the whole process lifetime. A bounded
+	// dialCtx here would be cancelled by this function's return, killing the
+	// reconnect loop (and its re-Hello) moments after startup and leaving a
+	// genuine UDS drop un-redialed. ConnectWithReconnect bounds the initial
+	// dial internally.
+	if err := cli.ConnectWithReconnect(ctx); err != nil {
 		_ = cli.Close()
 		return nil, fmt.Errorf("connect: %w", err)
 	}

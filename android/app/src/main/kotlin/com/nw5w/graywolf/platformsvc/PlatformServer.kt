@@ -101,6 +101,12 @@ class PlatformServer(
      */
     private fun broadcast(msg: PlatformMessage) {
         val outs = activeOutputs  // snapshot — CoW List, safe to iterate
+        if (outs.isEmpty() && msg.bodyCase != PlatformMessage.BodyCase.GPS_FIX &&
+            msg.bodyCase != PlatformMessage.BodyCase.GNSS_STATUS) {
+            // A Bluetooth/USB reply with no Hello-registered client is lost,
+            // and the Go caller waits for it until its timeout.
+            Log.w(TAG, "dropping ${msg.bodyCase}: no Hello-registered client connected")
+        }
         for (os in outs) {
             try {
                 synchronized(os) { WireCodec.writeFrame(os, msg) }

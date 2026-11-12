@@ -31,12 +31,16 @@ func (p platformBtSource) BondedBtDevices(ctx context.Context) ([]webapi.BondedB
 	}
 	devs, err := c.BondedBtDevices(ctx)
 	if err != nil {
+		p.app.logger.Warn("kiss-bt: bonded device list failed", "err", err)
 		return nil, err
 	}
 	out := make([]webapi.BondedBtDevice, 0, len(devs))
+	names := make([]string, 0, len(devs))
 	for _, d := range devs {
 		out = append(out, webapi.BondedBtDevice{MAC: d.MAC, Name: d.Name})
+		names = append(names, d.Name+" ("+d.MAC+")")
 	}
+	p.app.logger.Info("kiss-bt: bonded device list", "count", len(out), "devices", names)
 	return out, nil
 }
 
