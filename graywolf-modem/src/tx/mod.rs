@@ -44,6 +44,40 @@ pub fn build_samples(
     afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)
 }
 
+/// Build native Bell 202 FX.25 audio. Parity and tail are in the same
+/// buffer handed to the existing drain/PTT worker. Never falls back to AX.25.
+pub fn build_fx25_samples(
+    frame: &[u8],
+    txdelay_ms: u32,
+    txtail_ms: u32,
+    sample_rate: u32,
+    baud: u32,
+    mark_freq: u32,
+    space_freq: u32,
+) -> Result<Vec<i16>, TxError> {
+    if (baud, mark_freq, space_freq) != (1200, 1200, 2200) {
+        return Err(TxError::UnsupportedFx25);
+    }
+    let wire = crate::fx25::encode(frame, None).ok_or(TxError::Fx25FrameTooLong)?;
+    let bytes = std::iter::repeat_n(0x7e, flags_for_ms(txdelay_ms, baud).max(1))
+        .chain(wire)
+        .chain(std::iter::repeat_n(
+            0x7e,
+            flags_for_ms(txtail_ms, baud).max(1),
+        ));
+    let mut line = 0;
+    let bits: Vec<u8> = bytes
+        .flat_map(|b| (0..8).map(move |n| (b >> n) & 1))
+        .map(|bit| {
+            if bit == 0 {
+                line ^= 1;
+            }
+            line
+        })
+        .collect();
+    afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)
+}
+
 /// Prepend `ms` milliseconds of silence (at `sample_rate`) to `samples`.
 ///
 /// Used by the Android Digirig Lite tone PTT path: the AFSK (left channel)

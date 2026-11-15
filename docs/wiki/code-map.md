@@ -18,7 +18,7 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | Multi-demod ensemble + dedup | `demod_afsk_multi.rs` |
 | 9600 G3RUH modem | `modem_9600/mod.rs` |
 | QPSK 2400 / 8-PSK 4800 | `modem_psk/mod.rs` |
-| FX.25 RS-coded FEC | `fx25/{mod,rs,tests}.rs` |
+| FX.25 RS-coded FEC (1200 Bell 202 only) | `fx25/{mod,rs,tests}.rs`; RX `demod_afsk.rs` before HDLC unstuffing; TX `tx::build_fx25_samples` via `modem/mod.rs`; independent tooling `scripts/fx25/`; limits `docs/fx25.md` |
 | IL2P framing + RS | `il2p/{mod,header,payload,scramble,rs_il2p,tests}.rs` |
 | HDLC RX (NRZI, FCS-16, bit-unstuff, fix-bits retry) | `hdlc.rs` |
 | HDLC TX bit stream | `tx/hdlc_encode.rs` |

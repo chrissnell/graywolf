@@ -215,6 +215,11 @@
       </div>
     </div>
 
+    <FormField label="Forward error correction" id="ch-fx25" error={errors.fx25_encode}>
+      <Toggle id="ch-fx25" bind:checked={form.fx25_encode} label="FX.25 transmit" />
+      <p>1200-baud AFSK with 1200/2200 Hz tones. FX.25 reception is automatic. Oversized frames are rejected.</p>
+    </FormField>
+
     <!-- ── Timing ─────────────────────────────────────────────────── -->
     {#if isTxEnabled}
       <div class="tx-timing-section">

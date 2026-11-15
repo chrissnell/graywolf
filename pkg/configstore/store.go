@@ -859,6 +859,9 @@ func (s *Store) RekeyPttConfig(ctx context.Context, oldChannelID uint32, p *PttC
 // validation, so callers can omit the field on legacy code paths and
 // still get a valid persisted row.
 func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint32) error {
+	if err := c.ValidateFX25(); err != nil {
+		return err
+	}
 	if c.Mode == "" {
 		c.Mode = ChannelModeAPRS
 	}
@@ -945,11 +948,27 @@ func (s *Store) validateChannel(ctx context.Context, c *Channel, excludeID uint3
 
 // SetChannelFX25 sets FX.25 encoding for a channel.
 func (s *Store) SetChannelFX25(ctx context.Context, id uint32, enable bool) error {
+	ch, err := s.GetChannel(ctx, id)
+	if err != nil {
+		return err
+	}
+	ch.FX25Encode = enable
+	if err := ch.ValidateFX25(); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("fx25_encode", enable).Error
 }
 
 // SetChannelIL2P sets IL2P encoding for a channel.
 func (s *Store) SetChannelIL2P(ctx context.Context, id uint32, enable bool) error {
+	ch, err := s.GetChannel(ctx, id)
+	if err != nil {
+		return err
+	}
+	ch.IL2PEncode = enable
+	if err := ch.ValidateFX25(); err != nil {
+		return err
+	}
 	return s.db.WithContext(ctx).Model(&Channel{}).Where("id = ?", id).Update("il2p_encode", enable).Error
 }
 

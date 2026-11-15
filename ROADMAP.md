@@ -7,33 +7,19 @@ re-expose them.
 
 ## FX.25 forward error correction
 
-- Library: `graywolf-modem/src/fx25/` (`mod.rs`, `rs.rs`, `tests.rs`)
-- Status: encoder, decoder, `Fx25Receiver`, RS codec, correlation-tag
-  preamble all implemented and unit-tested. Zero call sites in
-  `graywolf-modem/src/modem/mod.rs` (RX) or
-  `graywolf-modem/src/modem/tx_worker.rs` (TX). `ModemConfig.fx25_encode`
-  is plumbed through config but never read by the modulator or demod
-  loop.
-- Wiring needed:
-  - TX: in `tx/mod.rs` (or a new dispatch layer), when `fx25_encode` is
-    set, wrap the AX.25-with-FCS frame via `fx25::encode(...)` before
-    feeding bits into `afsk_mod::modulate` (and any future modulators).
-    Choose `tag_hint` based on payload length per FX.25 spec.
-  - RX: instantiate `Fx25Receiver` per channel alongside the existing
-    HDLC receiver. Feed the same recovered bit stream to both; emit
-    frames from whichever decodes first (FX.25 wins when correlation
-    tag matches and RS corrects).
-- Re-expose: README "forward error correction" line, wiki glossary +
-  code-map entries, optional per-channel toggle in Channels.svelte.
+Native TX/RX is wired for 1200-baud Bell 202 AFSK (1200/2200 Hz) only.
+See [FX.25 implementation and interoperability](docs/fx25.md) for standard
+formats, bounds, independent fixtures and hardware acceptance status.
+Other rates/modulations are deliberately excluded.
 
 ## IL2P forward error correction
 
 - Library: `graywolf-modem/src/il2p/` (`mod.rs`, `header.rs`,
   `payload.rs`, `scramble.rs`, `rs_il2p.rs`, `tests.rs`)
 - Status: `encode`, `decode`, `Il2pReceiver`, header RS, payload RS,
-  scrambler all implemented and unit-tested. Same wiring gap as FX.25
+  scrambler all implemented and unit-tested. The live wiring remains absent
   — `ModemConfig.il2p_encode` accepted but ignored.
-- Wiring needed: mirrors FX.25 above. TX wraps via `il2p::encode`; RX
+- Wiring needed: requires separate protocol-specific integration. TX wraps via `il2p::encode`; RX
   runs `Il2pReceiver` in parallel with HDLC + FX.25.
 - Note: IL2P removes the HDLC layer entirely (own framing, own
   scrambler, own RS over header and payload). RX dispatch must accept
@@ -90,5 +76,4 @@ re-expose them.
 - `web/src/lib/api.js`: mock channels updated from `gfsk*` to `afsk`
   so dev mode no longer surfaces a non-existent modem in the UI.
 - `docs/wiki/glossary.md:24-25` and `docs/wiki/code-map.md:21-22`:
-  FX.25 / IL2P entries should be annotated "implemented in modem
-  crate, not yet wired into RX/TX path" until the wiring above lands.
+  IL2P remains a codec library; FX.25 is wired only for 1200-baud Bell 202.

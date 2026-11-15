@@ -1,265 +1,223 @@
-//! FX.25 Forward Error Correction for AX.25.
+//! Standard FX.25 encapsulation (1200-baud Bell 202 integration only).
 //!
-//! Implements the FX.25 specification using Reed-Solomon coding over GF(2^8)
-//! with the CCSDS polynomial. Ported from direwolf's fx25_init.c / fx25_rec.c.
-//!
-//! FX.25 wraps an AX.25 frame in a correlation tag followed by RS-coded data.
-//! The correlation tag identifies the RS code parameters (block size, check
-//! symbol count). The receiver correlates against all known tags to detect
-//! FX.25 frames, then applies RS error correction.
-
+//! Wire parameters: FX.25 draft 0.01 (2006-09-01) and Dire Wolf
+//! eda1383f5fa9d8ba3cb27f99db1d2c79494404c9, fx25_{init,send,rec}.c.
+//! See docs/fx25.md for provenance, limits and independent tests.
 pub mod rs;
 #[cfg(test)]
 mod tests;
 
-/// FX.25 correlation tags — 64-bit patterns that identify the FEC parameters.
-/// Tag value → (total_block_bytes, data_bytes, check_bytes).
-pub const FX25_TAGS: [(u64, usize, usize, usize); 16] = [
-    (0x566ED2717946107E, 255, 239, 16),  // Tag 0x01
-    (0xB74DB7DF8A532F3E, 255, 223, 32),  // Tag 0x02
-    (0x26FF60A600C2FEBE, 255, 191, 64),  // Tag 0x03
-    (0xC7DC0508F3D9B09E, 255, 127, 128), // Tag 0x04
-    (0x8F056EB4369660EE, 255,  63, 192), // Tag 0x05
-    (0x6E260B1AC5835FAE, 32,   26,   6), // Tag 0x06
-    (0xFF94DC634F1CFF4E, 64,   58,   6), // Tag 0x07
-    (0x1EB7B9CDBC09C00E, 128, 122,   6), // Tag 0x08
-    (0xDBF869BD2DBB1776, 255, 249,   6), // Tag 0x09
-    (0x3ADB0C13DEAE2836, 32,   20,  12), // Tag 0x0A
-    (0xAB69DB6A543188D6, 64,   52,  12), // Tag 0x0B
-    (0x4A4ABEC4A724B796, 128, 116,  12), // Tag 0x0C
-    (0x0293D578626B67E6, 255, 243,  12), // Tag 0x0D
-    (0xE3B0B0D6917E58A6, 255, 229,  26), // Tag 0x0E (non-standard)
-    (0x720267AF1BE1F846, 255, 205,  50), // Tag 0x0F (non-standard)
-    (0x93210201E8F4F306,  0,    0,   0), // Tag 0x10: undefined/reserved
-];
+use crate::hdlc::{DecodedFrame, HdlcDecoder};
+use std::sync::OnceLock;
 
-/// Number of correlation tag bits.
+/// Indexed by the on-air tag number. Reserved tags have zero capacities.
+/// (tag, transmitted block bytes, transmitted data bytes, parity bytes).
+pub const FX25_TAGS: [(u64, usize, usize, usize); 16] = [
+    (0x566ED2717946107E, 0, 0, 0),
+    (0xB74DB7DF8A532F3E, 255, 239, 16),
+    (0x26FF60A600CC8FDE, 144, 128, 16),
+    (0xC7DC0508F3D9B09E, 80, 64, 16),
+    (0x8F056EB4369660EE, 48, 32, 16),
+    (0x6E260B1AC5835FAE, 255, 223, 32),
+    (0xFF94DC634F1CFF4E, 160, 128, 32),
+    (0x1EB7B9CDBC09C00E, 96, 64, 32),
+    (0xDBF869BD2DBB1776, 64, 32, 32),
+    (0x3ADB0C13DEAE2836, 255, 191, 64),
+    (0xAB69DB6A543188D6, 192, 128, 64),
+    (0x4A4ABEC4A724B796, 128, 64, 64),
+    (0x0293D578626B67E6, 0, 0, 0),
+    (0xE3B0B0D6917E58A6, 0, 0, 0),
+    (0x720267AF1BE1F846, 0, 0, 0),
+    (0x93210201E8F4C706, 0, 0, 0),
+];
 pub const TAG_BITS: usize = 64;
 
-/// Find the best matching tag given 64 received bits.
-/// Returns (tag_index, hamming_distance) if distance <= max_errors.
+fn codec(check: usize) -> &'static rs::RsCodec {
+    static CODECS: OnceLock<[rs::RsCodec; 3]> = OnceLock::new();
+    let codecs = CODECS.get_or_init(|| {
+        [
+            rs::RsCodec::new(16),
+            rs::RsCodec::new(32),
+            rs::RsCodec::new(64),
+        ]
+    });
+    &codecs[match check {
+        16 => 0,
+        32 => 1,
+        64 => 2,
+        _ => unreachable!(),
+    }]
+}
+
 pub fn correlate_tag(received: u64, max_errors: u32) -> Option<(usize, u32)> {
-    let mut best_idx = 0;
-    let mut best_dist = 65u32;
-
-    for (i, &(tag, total, _data, _check)) in FX25_TAGS.iter().enumerate() {
-        if total == 0 { continue; } // skip reserved
-        let dist = (received ^ tag).count_ones();
-        if dist < best_dist {
-            best_dist = dist;
-            best_idx = i;
-        }
-    }
-
-    if best_dist <= max_errors {
-        Some((best_idx, best_dist))
-    } else {
-        None
-    }
+    // Tags are distance 32 apart. Never accept an ambiguous radius.
+    FX25_TAGS
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| t.1 != 0)
+        .map(|(i, t)| (i, (received ^ t.0).count_ones()))
+        .find(|&(_, d)| d <= max_errors.min(8))
 }
 
-/// FX.25 frame encoder.
-///
-/// Given raw AX.25 frame data (with FCS), selects the smallest suitable
-/// FX.25 tag, pads the data, appends RS check symbols, and returns the
-/// complete FX.25 frame (correlation tag + coded block).
-pub fn encode(ax25_with_fcs: &[u8], tag_hint: Option<usize>) -> Option<Vec<u8>> {
-    // Find smallest tag that fits
-    let data_len = ax25_with_fcs.len();
-    let tag_idx = if let Some(hint) = tag_hint {
-        if hint < FX25_TAGS.len() && FX25_TAGS[hint].2 >= data_len {
-            hint
-        } else {
-            find_smallest_tag(data_len)?
-        }
-    } else {
-        find_smallest_tag(data_len)?
+/// Encode raw AX.25 WITHOUT FCS. Default: Dire Wolf automatic standard-format selection.
+/// A forced tag must fit exactly; there is no fallback or truncation.
+pub fn encode(frame: &[u8], tag_hint: Option<usize>) -> Option<Vec<u8>> {
+    if frame.len() < 15 || frame.len() > 235 {
+        return None;
+    }
+    // Reuse the ordinary HDLC encoder for framing, FCS and stuffing, then
+    // undo NRZI. The protected block contains DATA bits, not line states.
+    let lines = crate::tx::hdlc_encode::encode(frame, 1, 1);
+    let mut previous = 0;
+    let mut bits: Vec<u8> = lines
+        .into_iter()
+        .map(|line| {
+            let bit = u8::from(line == previous);
+            previous = line;
+            bit
+        })
+        .collect();
+    let needed = bits.len().div_ceil(8);
+    let idx = match tag_hint {
+        Some(i) => i,
+        None => [4, 3, 6, 9, 5, 1]
+            .into_iter()
+            .find(|&i| FX25_TAGS[i].2 >= needed)?,
     };
-
-    let (tag_val, total, data_cap, check) = FX25_TAGS[tag_idx];
-    if data_cap < data_len || total == 0 {
+    let &(tag, total, cap, check) = FX25_TAGS.get(idx)?;
+    if total == 0 || needed > cap {
         return None;
     }
-
-    // Pad data to data_cap with 0x7E (flag bytes, per FX.25 spec)
-    let mut padded = vec![0x7E; data_cap];
-    padded[..data_len].copy_from_slice(ax25_with_fcs);
-
-    // Compute RS check symbols
-    let rs_codec = rs::RsCodec::new(check);
-    let check_symbols = rs_codec.encode(&padded);
-
-    // Build output: 8-byte tag + data + check
-    let mut output = Vec::with_capacity(8 + total);
-    output.extend_from_slice(&tag_val.to_be_bytes());
-    output.extend_from_slice(&padded);
-    output.extend_from_slice(&check_symbols);
-
-    Some(output)
+    // Continue the closing flag pattern at its original bit phase.
+    let mut shift = 0;
+    while bits.len() < cap * 8 {
+        bits.push((0x7e >> shift) & 1);
+        shift = (shift + 1) & 7;
+    }
+    let mut data = vec![0; 255 - check];
+    for (n, bit) in bits.into_iter().enumerate() {
+        data[n / 8] |= bit << (n % 8);
+    }
+    // FX.25 shortening omits zero symbols AFTER data, BEFORE parity.
+    // The shared IL2P codec's leading-zero convention remains unchanged.
+    let parity = codec(check).encode(&data);
+    let mut out = Vec::with_capacity(8 + total);
+    out.extend_from_slice(&tag.to_le_bytes());
+    out.extend_from_slice(&data[..cap]);
+    out.extend_from_slice(&parity);
+    Some(out)
 }
 
-/// FX.25 frame decoder.
-///
-/// Given a coded block (after correlation tag removal), applies RS error
-/// correction. Returns the corrected data portion on success (caller
-/// extracts AX.25 frame from the padded data).
+/// Correct a complete radio block, restoring omitted trailing zero symbols.
 pub fn decode(block: &[u8], tag_idx: usize) -> Option<Vec<u8>> {
-    let (_tag_val, total, data_cap, check) = FX25_TAGS[tag_idx];
-    if total == 0 || block.len() < total {
+    let &(_, total, cap, check) = FX25_TAGS.get(tag_idx)?;
+    if total == 0 || block.len() != total {
         return None;
     }
-
-    let block = &block[..total];
-    let rs_codec = rs::RsCodec::new(check);
-
-    // Attempt RS decode
-    let mut corrected = block.to_vec();
-    if rs_codec.decode(&mut corrected)? {
-        // Extract data portion, find the AX.25 frame (strip trailing 0x7E padding)
-        let data = &corrected[..data_cap];
-        Some(data.to_vec())
-    } else {
-        None
+    let mut full = vec![0; 255];
+    full[..cap].copy_from_slice(&block[..cap]);
+    full[255 - check..].copy_from_slice(&block[cap..]);
+    codec(check).decode(&mut full)?;
+    // Omitted symbols are known zeros, never accept a correction there.
+    if full[cap..255 - check].iter().any(|&b| b != 0) {
+        return None;
     }
+    Some(full[..cap].to_vec())
 }
 
-/// Extract the AX.25 frame from decoded FX.25 data.
-/// Strips trailing 0x7E pad bytes.
-pub fn extract_ax25(data: &[u8]) -> &[u8] {
-    let mut end = data.len();
-    while end > 0 && data[end - 1] == 0x7E {
-        end -= 1;
-    }
-    &data[..end]
+/// A validated frame and its closing-flag position within the protected data.
+/// The position lets production dedup use the SAME event time as plain HDLC,
+/// even though parity recovery completes much later.
+pub struct RecoveredFrame {
+    pub frame: DecodedFrame,
+    pub trailing_bits: usize,
 }
 
-fn find_smallest_tag(data_len: usize) -> Option<usize> {
-    let mut best_idx = None;
-    let mut best_total = usize::MAX;
-
-    for (i, &(_tag, total, data_cap, _check)) in FX25_TAGS.iter().enumerate() {
-        if total == 0 { continue; }
-        if data_cap >= data_len && total < best_total {
-            best_total = total;
-            best_idx = Some(i);
+fn extract_ax25(data: &[u8]) -> Option<(DecodedFrame, usize)> {
+    if data.first() != Some(&0x7e) {
+        return None;
+    }
+    let mut decoder = HdlcDecoder::new(0, 0, 0, false);
+    let (mut line, mut nudge, mut symbols) = (false, 0, 0);
+    for (i, bit) in data
+        .iter()
+        .flat_map(|b| (0..8).map(move |s| (b >> s) & 1))
+        .enumerate()
+    {
+        if bit == 0 {
+            line = !line;
+        }
+        if let Some(frame) = decoder.process_bit(line, &mut nudge, &mut symbols) {
+            return Some((frame, i + 1));
         }
     }
-    best_idx
+    None
 }
 
-/// FX.25 receiver state machine.
-///
-/// Accumulates bits, correlates against known tags, collects the coded
-/// block, and attempts RS decode. Outputs corrected AX.25 frames.
+/// Bounded bit receiver: one <=255-byte block, <=11 popcounts per search bit.
+/// Input is NRZI-decoded data, before HDLC unstuffing. Output is FCS validated.
+/// Partial/false blocks expire after their announced length (<=2040 bits).
 pub struct Fx25Receiver {
-    // Bit shift register for tag correlation
     tag_accum: u64,
-    bits_received: usize,
-
-    // State: searching for tag or collecting block
-    state: Fx25State,
-
-    // Block collection
-    block_buf: Vec<u8>,
-    block_byte_acc: u8,
-    block_bit_count: usize,
-    block_bytes_needed: usize,
-    tag_idx: usize,
-
-    // Output
-    decoded_frames: Vec<Vec<u8>>,
-
-    // Max tag correlation errors to accept
-    max_tag_errors: u32,
+    search_bits: usize,
+    block: Vec<u8>,
+    block_bits: usize,
+    tag_idx: Option<usize>,
 }
-
-#[derive(Clone, Copy, PartialEq)]
-enum Fx25State {
-    SearchingTag,
-    CollectingBlock,
-}
-
 impl Default for Fx25Receiver {
     fn default() -> Self {
         Self::new()
     }
 }
-
 impl Fx25Receiver {
     pub fn new() -> Self {
         Self {
             tag_accum: 0,
-            bits_received: 0,
-            state: Fx25State::SearchingTag,
-            block_buf: Vec::new(),
-            block_byte_acc: 0,
-            block_bit_count: 0,
-            block_bytes_needed: 0,
-            tag_idx: 0,
-            decoded_frames: Vec::new(),
-            max_tag_errors: 5,
+            search_bits: 0,
+            block: Vec::with_capacity(255),
+            block_bits: 0,
+            tag_idx: None,
         }
     }
-
-    /// Feed one demodulated bit.
-    pub fn process_bit(&mut self, bit: bool) {
-        match self.state {
-            Fx25State::SearchingTag => {
-                self.tag_accum = (self.tag_accum << 1) | u64::from(bit);
-                self.bits_received += 1;
-
-                if self.bits_received >= TAG_BITS {
-                    if let Some((idx, _dist)) = correlate_tag(self.tag_accum, self.max_tag_errors) {
-                        let (_tag, total, _data, _check) = FX25_TAGS[idx];
-                        if total > 0 {
-                            self.state = Fx25State::CollectingBlock;
-                            self.block_buf.clear();
-                            self.block_byte_acc = 0;
-                            self.block_bit_count = 0;
-                            self.block_bytes_needed = total;
-                            self.tag_idx = idx;
-                        }
-                    }
-                }
-            }
-            Fx25State::CollectingBlock => {
-                // Accumulate bits LSB first into bytes
-                if bit {
-                    self.block_byte_acc |= 1 << (self.block_bit_count & 7);
-                }
-                self.block_bit_count += 1;
-
-                if (self.block_bit_count & 7) == 0 {
-                    self.block_buf.push(self.block_byte_acc);
-                    self.block_byte_acc = 0;
-
-                    if self.block_buf.len() >= self.block_bytes_needed {
-                        // Attempt decode
-                        if let Some(data) = decode(&self.block_buf, self.tag_idx) {
-                            let ax25 = extract_ax25(&data);
-                            if ax25.len() >= 15 {
-                                self.decoded_frames.push(ax25.to_vec());
-                            }
-                        }
-                        self.state = Fx25State::SearchingTag;
-                        self.bits_received = 0;
-                        self.tag_accum = 0;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Take decoded frames (AX.25 data with FCS).
-    pub fn take_frames(&mut self) -> Vec<Vec<u8>> {
-        std::mem::take(&mut self.decoded_frames)
-    }
-
-    /// Reset state.
     pub fn reset(&mut self) {
-        self.state = Fx25State::SearchingTag;
         self.tag_accum = 0;
-        self.bits_received = 0;
-        self.block_buf.clear();
+        self.search_bits = 0;
+        self.block.clear();
+        self.block_bits = 0;
+        self.tag_idx = None;
+    }
+    pub fn process_bit(&mut self, bit: bool) -> Option<RecoveredFrame> {
+        // Keep searching during collection too: a truncated block must not
+        // consume the next valid tag. Distance threshold matches Dire Wolf.
+        self.tag_accum = (self.tag_accum >> 1) | (u64::from(bit) << 63);
+        self.search_bits = (self.search_bits + 1).min(64);
+        if self.search_bits == 64 {
+            if let Some((idx, _)) = correlate_tag(self.tag_accum, 8) {
+                self.tag_idx = Some(idx);
+                self.block.clear();
+                self.block_bits = 0;
+                self.search_bits = 0;
+                return None;
+            }
+        }
+        let idx = self.tag_idx?;
+        if self.block_bits.is_multiple_of(8) {
+            self.block.push(0);
+        }
+        if bit {
+            *self.block.last_mut()? |= 1 << (self.block_bits % 8);
+        }
+        self.block_bits += 1;
+        let total = FX25_TAGS[idx].1;
+        if self.block_bits != total * 8 {
+            return None;
+        }
+        self.tag_idx = None;
+        let data = decode(&self.block, idx)?;
+        let (frame, end_bit) = extract_ax25(&data)?;
+        Some(RecoveredFrame {
+            frame,
+            trailing_bits: total * 8 - end_bit,
+        })
     }
 }

@@ -170,6 +170,12 @@ pub struct AfskDemodulator {
     chan: usize,
     subchan: usize,
     hdlc: Vec<HdlcDecoder>,
+    fx25: Vec<crate::fx25::Fx25Receiver>,
+    fx25_previous: Vec<bool>,
+    fx25_enabled: bool,
+    samples_per_bit: f64,
+    sample_rate: u32,
+    recent_frames: std::collections::VecDeque<(Vec<u8>, u64, u64)>,
     decoded_frames: Vec<DecodedFrame>,
     dcd_changes: Vec<DcdChange>,
     fcos256_table: [f32; 256],
@@ -233,10 +239,19 @@ impl AfskDemodulator {
             .map(|s| HdlcDecoder::new(chan, subchan, s, false))
             .collect();
 
+        let num_slicers = state.num_slicers;
         AfskDemodulator {
             state,
             chan,
             subchan,
+            fx25: (0..num_slicers)
+                .map(|_| crate::fx25::Fx25Receiver::new())
+                .collect(),
+            fx25_previous: vec![false; num_slicers],
+            fx25_enabled: (baud, mark_freq, space_freq) == (1200, 1200, 2200),
+            samples_per_bit: samples_per_sec as f64 / baud as f64,
+            sample_rate: samples_per_sec,
+            recent_frames: std::collections::VecDeque::new(),
             hdlc,
             decoded_frames: Vec::new(),
             dcd_changes: Vec::new(),
@@ -684,7 +699,26 @@ impl AfskDemodulator {
             ) {
                 frame.quality = quality;
                 frame.sample_offset = self.sample_counter;
-                self.decoded_frames.push(frame);
+                self.deliver_frame(frame);
+            }
+
+            if self.fx25_enabled {
+                let bit = raw_bit == self.fx25_previous[slice];
+                self.fx25_previous[slice] = raw_bit;
+                if let Some(mut recovered) = self.fx25[slice].process_bit(bit) {
+                    let frame = &mut recovered.frame;
+                    frame.chan = self.chan;
+                    frame.subchan = self.subchan;
+                    frame.slice = slice;
+                    frame.quality = quality;
+                    frame.audio_level_mark = self.state.alevel_mark_peak;
+                    frame.audio_level_space = self.state.alevel_space_peak;
+                    frame.retry = RetryType::Fx25;
+                    frame.sample_offset = self.sample_counter.saturating_sub(
+                        (recovered.trailing_bits as f64 * self.samples_per_bit).round() as u64,
+                    );
+                    self.deliver_frame(recovered.frame);
+                }
             }
 
             self.state.slicer[slice].pll_symbol_count += 1;
@@ -759,6 +793,33 @@ impl AfskDemodulator {
     }
 
     // --- Public query / mutation API ----------------------------------------
+
+    fn deliver_frame(&mut self, frame: DecodedFrame) {
+        // Retain only the maximum FX.25 recovery latency, with a strict
+        // count cap. Event matching itself stays within three symbol times.
+        let retention = self.sample_rate as u64 * 3;
+        while self
+            .recent_frames
+            .front()
+            .is_some_and(|f| self.sample_counter.saturating_sub(f.2) > retention)
+        {
+            self.recent_frames.pop_front();
+        }
+        let window = (self.samples_per_bit * 3.0).ceil() as u64;
+        if self
+            .recent_frames
+            .iter()
+            .any(|(data, time, _)| data == &frame.data && time.abs_diff(frame.sample_offset) <= window)
+        {
+            return;
+        }
+        if self.recent_frames.len() >= 128 {
+            self.recent_frames.pop_front();
+        }
+        self.recent_frames
+            .push_back((frame.data.clone(), frame.sample_offset, self.sample_counter));
+        self.decoded_frames.push(frame);
+    }
 
     /// Take all decoded frames, leaving the internal buffer empty.
     #[must_use]
@@ -835,6 +896,11 @@ impl AfskDemodulator {
     pub fn set_num_slicers(&mut self, n: usize) {
         assert!(n >= 1 && n <= MAX_SLICERS);
         self.state.num_slicers = n;
+        self.fx25 = (0..n)
+            .map(|_| crate::fx25::Fx25Receiver::new())
+            .collect();
+        self.fx25_previous = vec![false; n];
+        self.recent_frames.clear();
         self.hdlc = (0..n)
             .map(|s| HdlcDecoder::new(self.chan, self.subchan, s, false))
             .collect();

@@ -159,6 +159,9 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	channels := make([]configstore.Channel, 0, len(allChannels))
 	for _, ch := range allChannels {
 		if ch.Enabled {
+			if err := ch.ValidateFX25(); err != nil {
+				return false, fmt.Errorf("channel %d: %w", ch.ID, err)
+			}
 			channels = append(channels, ch)
 		}
 	}

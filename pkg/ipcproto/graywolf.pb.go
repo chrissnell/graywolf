@@ -461,7 +461,7 @@ type ReceivedFrame struct {
 	AudioLevelMark  float32                `protobuf:"fixed32,6,opt,name=audio_level_mark,json=audioLevelMark,proto3" json:"audio_level_mark,omitempty"`    // mark level at time of capture
 	AudioLevelSpace float32                `protobuf:"fixed32,7,opt,name=audio_level_space,json=audioLevelSpace,proto3" json:"audio_level_space,omitempty"` // space level at time of capture
 	SpeedError      float32                `protobuf:"fixed32,8,opt,name=speed_error,json=speedError,proto3" json:"speed_error,omitempty"`                  // baud-rate error, percent
-	Retry           string                 `protobuf:"bytes,9,opt,name=retry,proto3" json:"retry,omitempty"`                                                // "none" | "single" | "double"
+	Retry           string                 `protobuf:"bytes,9,opt,name=retry,proto3" json:"retry,omitempty"`                                                // "none" | "single" | "double" | "fx25" (validated FEC recovery)
 	TimestampNs     uint64                 `protobuf:"varint,10,opt,name=timestamp_ns,json=timestampNs,proto3" json:"timestamp_ns,omitempty"`               // monotonic capture time
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache

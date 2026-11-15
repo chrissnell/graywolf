@@ -336,9 +336,9 @@
     <h2>Forward Error Correction</h2>
 
     <p>
-      Graywolf can encode transmitted packets with forward error correction.
-      FEC-encoded packets are always decoded on receive regardless of these
-      settings &mdash; these flags only affect transmission.
+      Native FX.25 reception is automatic alongside ordinary AX.25 on
+      1200-baud AFSK channels with 1200/2200 Hz Bell 202 tones. The FX.25
+      transmit toggle affects transmission only.
     </p>
 
     <div class="box">
@@ -346,11 +346,11 @@
         <table>
           <tr>
             <td><code>fx25_encode</code></td>
-            <td>Enable FX.25 (interleaved convolutional code, MIL-STD-188-165) on transmit</td>
+            <td>Enable standard Reed-Solomon FX.25 on native 1200-baud Bell 202 AFSK transmit</td>
           </tr>
           <tr>
             <td><code>il2p_encode</code></td>
-            <td>Enable IL2P (Improved Layer 2 Protocol) on transmit</td>
+            <td>Reserved IL2P setting; native live TX/RX is not connected</td>
           </tr>
         </table>
       </div>
@@ -360,10 +360,15 @@
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
-          FX.25 and IL2P add redundancy that can recover packets with bit
-          errors, improving reliability on noisy channels. The receiver
-          automatically detects and decodes FEC-encoded frames regardless
-          of these transmit settings.
+          FX.25 supports standard tags 1&ndash;11 and 16/32/64 parity bytes.
+          TX automatically chooses tags 4, 3, 6, 9, 5, then 1 as the protected
+          frame grows. The maximum AX.25 frame before FCS is 235 bytes;
+          bit stuffing can lower that limit. Oversized frames are rejected,
+          with no truncation or fallback. Unsupported rates, tones, KISS-only
+          channels, and simultaneous FX.25/IL2P transmit settings are rejected.
+          In Channels, edit the native channel, select AFSK and 1200 baud,
+          set mark/space to 1200/2200 Hz, then enable FX.25 transmit and save.
+          This does not transmit a packet.
         </p>
       </div>
     </div>

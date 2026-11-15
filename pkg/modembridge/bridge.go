@@ -292,6 +292,20 @@ func (b *Bridge) dispatchDcd(ev *pb.DcdChange) { b.dcd.Publish(ev) }
 // connected modem session. Returns an error if no session is active.
 // Callers (e.g. the txgovernor) retry or drop on error.
 func (b *Bridge) SendTransmitFrame(tf *pb.TransmitFrame) error {
+	if b.cfg.Store != nil {
+		ch, err := b.cfg.Store.GetChannel(context.Background(), tf.Channel)
+		if err != nil {
+			return err
+		}
+		if err := ch.ValidateFX25(); err != nil {
+			return err
+		}
+		if ch.FX25Encode {
+			if err := validateFX25Frame(tf.Data); err != nil {
+				return err
+			}
+		}
+	}
 	return b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_TransmitFrame{TransmitFrame: tf}})
 }
 

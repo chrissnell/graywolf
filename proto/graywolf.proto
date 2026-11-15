@@ -58,7 +58,7 @@ message ReceivedFrame {
   float audio_level_mark = 6;   // mark level at time of capture
   float audio_level_space = 7;  // space level at time of capture
   float speed_error = 8;        // baud-rate error, percent
-  string retry = 9;             // "none" | "single" | "double"
+  string retry = 9;             // "none" | "single" | "double" | "fx25" (validated FEC recovery)
   uint64 timestamp_ns = 10;     // monotonic capture time
 }
 

@@ -75,7 +75,7 @@ func (r ChannelRequest) Validate() error {
 	if r.ModemType == "" {
 		return fmt.Errorf("modem_type is required")
 	}
-	return nil
+	return r.ToModel().ValidateFX25()
 }
 
 // ToModel maps a create request to a storage model.

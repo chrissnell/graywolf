@@ -970,7 +970,14 @@ impl Modem {
         // AFSK params come from ChannelConfig so TX matches RX on every
         // channel — HF APRS at 300 baud was previously encoded as 1200
         // baud Bell 202 because these values were ignored. See issue #22.
-        let mut samples = match crate::tx::build_samples(
+        let build = if ccfg.fx25_encode {
+            if ccfg.modem_type != "afsk" || ccfg.il2p_encode {
+                eprintln!("graywolf-modem: FX.25 requires AFSK and cannot be combined with IL2P");
+                return;
+            }
+            crate::tx::build_fx25_samples
+        } else { crate::tx::build_samples };
+        let mut samples = match build(
             &tf.data,
             txdelay_ms,
             txtail_ms,
@@ -2475,6 +2482,7 @@ fn build_received(f: &DecodedFrame) -> ReceivedFrame {
         audio_level_space: f.audio_level_space,
         speed_error: f.speed_error,
         retry: match f.retry {
+            RetryType::Fx25 => "fx25".into(),
             RetryType::None => "none".into(),
             RetryType::InvertSingle => "single".into(),
             RetryType::InvertDouble => "double".into(),
@@ -2879,5 +2887,110 @@ mod tests {
         assert!(s2.shutdown_complete, "final=true + sorted channels: last message carries the flag");
 
         assert!(!modem.rx_frames.contains_key(&99), "stale counter for removed channel must be pruned");
+    }
+}
+
+#[cfg(test)]
+mod fx25_acceptance {
+    use super::*;
+    fn unhex(s: &str) -> Vec<u8> {
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    }
+    fn collect(
+        demod: &mut ChannelDemod,
+        samples: impl IntoIterator<Item = i16>,
+    ) -> Vec<DecodedFrame> {
+        let mut frames = Vec::new();
+        for s in samples {
+            process_demod_sample(demod, s as i32);
+            frames.extend(take_demod_frames(demod));
+        }
+        frames
+    }
+    #[test]
+    fn independent_audio_through_production_channel_dispatch() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../testdata/fx25/direwolf.json")).unwrap();
+        for (file, key, requires_fec) in [
+            ("direwolf.wav", "audio_frames", false),
+            ("direwolf-damaged.wav", "damaged_frames", true),
+        ] {
+            for ensemble in ["single", "triple"] {
+                let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("testdata/fx25")
+                    .join(file);
+                let mut wav = hound::WavReader::open(path).unwrap();
+                let config = ChannelConfig {
+                    channel: 7,
+                    demod_ensemble: ensemble.into(),
+                    num_slicers: 9,
+                    ..Default::default()
+                };
+                let mut demod = create_demod(&config, wav.spec().sample_rate);
+                let frames = collect(&mut demod, wav.samples::<i16>().map(Result::unwrap));
+                let expected = fixtures[key].as_array().unwrap();
+                assert_eq!(
+                    frames.len(),
+                    expected.len(),
+                    "{file} {ensemble}: duplicate or lost frame"
+                );
+                for (frame, v) in frames.iter().zip(expected) {
+                    assert_eq!(frame.data, unhex(v["frame"].as_str().unwrap()));
+                    assert_eq!(frame.chan, 7);
+                    if requires_fec {
+                        assert_eq!(frame.retry, RetryType::Fx25);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn plain_and_fx25_mixed_repeats_survive_across_parity_and_reset() {
+        let frame = unhex("82a0a4a640406096a6729c40406103f000ff7e");
+        for ensemble in ["single", "triple"] {
+            let config = ChannelConfig {
+                demod_ensemble: ensemble.into(),
+                num_slicers: 9,
+                ..Default::default()
+            };
+            let mut demod = create_demod(&config, 48000);
+            let plain =
+                crate::tx::build_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap();
+            let fec =
+                crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap();
+            let frames = collect(
+                &mut demod,
+                plain
+                    .iter()
+                    .chain(fec.iter())
+                    .chain(plain.iter())
+                    .chain(fec.iter())
+                    .copied(),
+            );
+            assert_eq!(frames.len(), 4, "{ensemble}");
+            assert!(frames.iter().all(|f| f.data == frame));
+            // Reconfiguration creates fresh DSP/FX.25 state in production.
+            demod = create_demod(&config, 48000);
+            assert_eq!(collect(&mut demod, fec).len(), 1);
+        }
+    }
+    #[test]
+    fn tx_scope_and_full_parity_duration() {
+        let frame = unhex("82a0a4a640406096a6729c40406103f078");
+        let wire = crate::fx25::encode(&frame, None).unwrap();
+        let audio =
+            crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap();
+        assert_eq!(audio.len(), (45 * 8 + wire.len() * 8 + 15 * 8) * 40);
+        assert_eq!(
+            crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 300, 1600, 1800),
+            Err(crate::tx::TxError::UnsupportedFx25)
+        );
+        assert_eq!(
+            crate::tx::build_fx25_samples(&vec![0; 236], 300, 100, 48000, 1200, 1200, 2200),
+            Err(crate::tx::TxError::Fx25FrameTooLong)
+        );
     }
 }

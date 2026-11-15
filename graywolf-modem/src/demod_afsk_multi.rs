@@ -145,6 +145,8 @@ pub struct MultiAfskDemodulator {
     /// accumulated deduped frame output, ready for `take_frames`
     out: Vec<DecodedFrame>,
     window_samples: u64,
+    sample_counter: u64,
+    retention_samples: u64,
 }
 
 impl MultiAfskDemodulator {
@@ -193,7 +195,9 @@ impl MultiAfskDemodulator {
             demods,
             last_seen: HashMap::new(),
             out: Vec::new(),
-            window_samples: DEFAULT_WINDOW_SAMPLES,
+            window_samples: (samples_per_sec as u64 * 3).div_ceil(baud as u64),
+            sample_counter: 0,
+            retention_samples: samples_per_sec as u64 * 3,
         }
     }
 
@@ -218,6 +222,7 @@ impl MultiAfskDemodulator {
     /// in the output buffer, which you can drain with [`take_frames`].
     #[inline]
     pub fn process_sample(&mut self, sam: i32) {
+        self.sample_counter += 1;
         for d in &mut self.demods {
             d.process_sample(sam);
         }
@@ -225,9 +230,12 @@ impl MultiAfskDemodulator {
         // across the ensemble using (content, sample_offset within window).
         for d in &mut self.demods {
             for frame in d.take_frames() {
+                self.last_seen.retain(|_, time| {
+                    self.sample_counter.saturating_sub(*time) <= self.retention_samples
+                });
                 let prev = self.last_seen.get(&frame.data).copied();
                 let keep = match prev {
-                    Some(p) => frame.sample_offset.saturating_sub(p) >= self.window_samples,
+                    Some(p) => frame.sample_offset.abs_diff(p) > self.window_samples,
                     None => true,
                 };
                 if keep {
