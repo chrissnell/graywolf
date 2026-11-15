@@ -619,10 +619,6 @@
       <div class="beacon-card">
         <div class="beacon-header">
           <div class="beacon-identity">
-            {#if b.label?.trim()}
-              <span class="beacon-callsign">{b.label.trim()}</span>
-              <span class="beacon-callsign-inherited">({b.type === 'object' && b.object_name ? b.object_name : (b.callsign || stationCallsign || 'unset')})</span>
-            {:else}
             <span
               class="symbol-swatch"
               style="background-image: url({SPRITE_URLS[b.symbol_table] || SPRITE_URLS[PRIMARY_TABLE]}); background-position: {backgroundPosition(b.symbol || '-', CELL_PX)};"
@@ -632,6 +628,10 @@
                 <span class="symbol-swatch-overlay">{b.overlay}</span>
               {/if}
             </span>
+            {#if b.label?.trim()}
+              <span class="beacon-callsign">{b.label.trim()}</span>
+              <span class="beacon-callsign-inherited">({b.type === 'object' && b.object_name ? b.object_name : (b.callsign || stationCallsign || 'unset')})</span>
+            {:else}
             {#if b.type === 'object' && b.object_name}
               <span class="beacon-callsign">{b.object_name}</span>
               <span class="beacon-callsign-inherited">via {b.callsign || stationCallsign || '(not set)'}</span>
