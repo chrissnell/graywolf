@@ -368,7 +368,11 @@
           channels, and simultaneous FX.25/IL2P transmit settings are rejected.
           In Channels, edit the native channel, select AFSK and 1200 baud,
           set mark/space to 1200/2200 Hz, then enable FX.25 transmit and save.
-          This does not transmit a packet.
+          TX defaults off. Automatic is recommended for everyday use; fixed
+          16/32/64-parity modes are available for specific use cases or controlled
+          testing. The selector affects TX only; RX recognizes all supported modes.
+          The packet log shows a verified FX.25 badge, tag/parity and repaired-symbol
+          count, including zero for clean codewords. This does not transmit a packet.
         </p>
       </div>
     </div>

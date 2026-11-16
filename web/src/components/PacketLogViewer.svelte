@@ -22,6 +22,7 @@
     packetToEntry,
     audioLevel,
     displaySegments,
+    receiveDecoding,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
 
@@ -130,10 +131,14 @@
 
 {#snippet typeCell(_value, entry)}
   {@const origin = originTag(entry)}
-  {#if entry.type || origin}
+  {@const reception = receiveDecoding(entry)}
+  {#if entry.type || origin || reception}
     <div class="pkt-type-stack">
       {#if entry.type}
         <span class="pkt-badge pkt-b-type" data-type={entry.type}>{entry.type}</span>
+      {/if}
+      {#if reception}
+        <span class="pkt-badge pkt-b-reception" class:pkt-b-fx25={reception.fx25}>{reception.label}</span>
       {/if}
       {#if origin}
         <span class="pkt-badge pkt-b-origin" data-origin={origin.cls}>{origin.label}</span>
@@ -203,6 +208,13 @@
 {/snippet}
 
 {#snippet rawPacketFooter(entry)}
+  {@const reception = receiveDecoding(entry)}
+  {#if reception}
+    <div class="pkt-reception" data-testid="packet-reception">
+      <span>{reception.detail}</span>
+      {#if reception.fx25}<span>Tag {reception.tag} · {reception.parity} parity bytes</span>{/if}
+    </div>
+  {/if}
   <div class="pkt-foot">
     <code class="pkt-raw">{#if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
@@ -249,6 +261,10 @@
 <style>
   /* Cell-level styles. Chonky owns layout (.log-grid-cell / .log-card etc);
      we only theme the values & badges that used to live in the routes. */
+
+  .pkt-reception { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.75rem; color: var(--color-text-dim); margin-bottom: 4px; }
+  .pkt-b-reception { background: var(--color-surface-raised); color: var(--color-text); }
+  .pkt-b-fx25 { color: var(--color-success); }
 
   .pkt-time {
     font-variant-numeric: tabular-nums;

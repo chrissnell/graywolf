@@ -40,6 +40,8 @@ jobs:
       - run: cargo test --release --lib fx25
       - run: cargo test --release --lib il2p
       - if: runner.os == 'Linux'
+        run: cargo test --release --lib --features android-test-stub fx25
+      - if: runner.os == 'Linux'
         run: |
           rustup target add aarch64-linux-android
           cargo check --lib --target aarch64-linux-android

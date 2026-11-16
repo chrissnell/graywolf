@@ -314,18 +314,8 @@ fn run_demod(
                             // 0-indexed `frame.chan`. Without this tag
                             // the Go dispatcher can't attribute frames
                             // to a per-channel rx_frames counter.
-                            let pb = ReceivedFrame {
-                                channel: config_state::channel_id(),
-                                subchan: frame.subchan as u32,
-                                slice: frame.slice as u32,
-                                data: frame.data,
-                                quality: 0,
-                                audio_level_mark: 0.0,
-                                audio_level_space: 0.0,
-                                speed_error: 0.0,
-                                retry: String::new(),
-                                timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
-                            };
+                            let mut pb = crate::modem::build_received(&frame);
+                            pb.channel = config_state::channel_id();
                             config_state::increment_rx_frames();
                             // Drop on full — IPC thread will catch up when the
                             // Go child connects. Count drops so a deaf modem
@@ -453,6 +443,9 @@ fn run_demod(
                             // Capture DSP params so TransmitFrame can call
                             // build_samples with the same baud / tone pair.
                             config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                            config_state::set_fx25_config(cc.fx25_encode, cc.fx25_parity,
+                                cc.modem_type == "afsk" && !cc.il2p_encode &&
+                                (cc.baud, cc.mark_freq, cc.space_freq) == (1200,1200,2200));
                             // If this channel already uses Digirig tone PTT,
                             // re-pre-warm the sink at the (possibly new) mark
                             // frequency. Covers the ConfigurePtt-before-
@@ -524,15 +517,7 @@ fn run_demod(
                             } else {
                                 config_state::txtail_ms()
                             };
-                            match crate::tx::build_samples(
-                                &tf.data,
-                                txdelay,
-                                txtail,
-                                TARGET_SAMPLE_RATE,
-                                config_state::baud(),
-                                config_state::mark_freq(),
-                                config_state::space_freq(),
-                            ) {
+                            match config_state::build_tx_samples(&tf.data, txdelay, txtail, TARGET_SAMPLE_RATE) {
                                 Ok(samples) => {
                                     // Digirig Lite tone PTT: prepend a 500 ms
                                     // silent left-channel lead-in so the

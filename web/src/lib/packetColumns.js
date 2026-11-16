@@ -162,3 +162,18 @@ export function displaySegments(str) {
 export function packetToEntry(pkt) {
   return { ...pkt, level: directionToLevel(pkt.direction) };
 }
+
+/** Validated native receive decoding, never inferred from a channel TX setting. */
+export function receiveDecoding(pkt) {
+  if (pkt.direction !== 'RX' || pkt.source !== 'modem') return null;
+  const f = pkt.fx25;
+  if (!f) return { label: 'AX.25', detail: 'HDLC decoded · FCS valid', fx25: false };
+  const count = f.corrected_symbols;
+  return {
+    label: 'FX.25', fx25: true,
+    detail: `FEC decoded · ${count} ${count === 1 ? 'symbol' : 'symbols'} repaired`,
+    tag: `0x${Number(f.tag).toString(16).padStart(2, '0').toUpperCase()}`,
+    mode: `RS(${f.data_bytes + f.parity_bytes},${f.data_bytes})`,
+    parity: f.parity_bytes, corrected: count,
+  };
+}

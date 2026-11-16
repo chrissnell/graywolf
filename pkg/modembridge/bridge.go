@@ -301,7 +301,7 @@ func (b *Bridge) SendTransmitFrame(tf *pb.TransmitFrame) error {
 			return err
 		}
 		if ch.FX25Encode {
-			if err := validateFX25Frame(tf.Data); err != nil {
+			if err := validateFX25FrameParity(tf.Data, ch.FX25ParityBytes()); err != nil {
 				return err
 			}
 		}

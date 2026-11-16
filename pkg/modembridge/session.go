@@ -239,6 +239,7 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			NumDecoders:    ch.NumDecoders,
 			DecoderOffset:  ch.DecoderOffset,
 			Fx25Encode:     ch.FX25Encode,
+			Fx25Parity:     ch.FX25ParityBytes(),
 			Il2PEncode:     ch.IL2PEncode,
 		}}}
 		if err := send(cmsg); err != nil {

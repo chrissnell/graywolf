@@ -17,14 +17,16 @@ pub enum TxError {
     /// divide by zero, so callers must supply a non-zero rate.
     InvalidSampleRate,
     UnsupportedFx25,
+    UnsupportedFx25Parity,
     Fx25FrameTooLong,
 }
 
 impl fmt::Display for TxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnsupportedFx25Parity => f.write_str("FX.25 parity must be 0 (automatic), 16, 32, or 64"),
             Self::UnsupportedFx25 => f.write_str("FX.25 requires 1200-baud AFSK with 1200/2200 Hz tones"),
-            Self::Fx25FrameTooLong => f.write_str("FX.25 frame exceeds 239 protected bytes including flags, stuffing and FCS"),
+            Self::Fx25FrameTooLong => f.write_str("FX.25 frame exceeds the selected standard mode capacity including flags, stuffing and FCS"),
             Self::InvalidSampleRate => f.write_str("sample rate must be non-zero"),
         }
     }

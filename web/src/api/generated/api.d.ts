@@ -2658,6 +2658,12 @@ export interface components {
             enabled?: boolean;
             fix_bits?: string;
             fx25_encode?: boolean;
+            /**
+             * @description FX25Mode selects TX mode: auto (recommended), 16, 32, or 64 parity bytes. RX remains automatic.
+             * @default auto
+             * @enum {string}
+             */
+            fx25_mode: "auto" | "16" | "32" | "64";
             il2p_encode?: boolean;
             input_channel?: number;
             input_device_id?: number;
@@ -2688,6 +2694,12 @@ export interface components {
             enabled?: boolean;
             fix_bits?: string;
             fx25_encode?: boolean;
+            /**
+             * @description FX25Mode selects TX mode: auto (recommended), 16, 32, or 64 parity bytes. RX remains automatic.
+             * @default auto
+             * @enum {string}
+             */
+            fx25_mode: "auto" | "16" | "32" | "64";
             id?: number;
             il2p_encode?: boolean;
             input_channel?: number;
@@ -3632,6 +3644,12 @@ export interface components {
         };
         /** @enum {string} */
         "packetlog.Direction": "RX" | "TX" | "IS";
+        "packetlog.FX25Reception": {
+            corrected_symbols?: number;
+            data_bytes?: number;
+            parity_bytes?: number;
+            tag?: number;
+        };
         "pttdevice.AvailableDevice": {
             /** @description human-friendly label (USB product, GPIO chip) */
             description?: string;
@@ -3937,6 +3955,8 @@ export interface components {
             display?: string;
             /** @description DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable. */
             distance_mi?: number;
+            /** @description FX25 is present only for native RX after RS and embedded HDLC/FCS validation. */
+            fx25?: components["schemas"]["packetlog.FX25Reception"];
             /**
              * @description Lat/Lon are the packet's reported coordinates in decimal degrees (WGS84),
              *     surfaced for any transmission type that carries a fix -- position, Mic-E,

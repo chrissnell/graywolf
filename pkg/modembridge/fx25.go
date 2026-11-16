@@ -5,7 +5,19 @@ import "fmt"
 // validateFX25Frame preflights the protected HDLC size before queueing IPC.
 // The Rust encoder repeats this check. Flags, stuffed FCS and stuffed data
 // must all fit the largest standard information field (239 bytes).
-func validateFX25Frame(frame []byte) error {
+func validateFX25Frame(frame []byte) error { return validateFX25FrameParity(frame, 0) }
+
+func validateFX25FrameParity(frame []byte, parity uint32) error {
+	capacity := 239
+	switch parity {
+	case 0, 16:
+	case 32:
+		capacity = 223
+	case 64:
+		capacity = 191
+	default:
+		return fmt.Errorf("invalid FX.25 parity %d", parity)
+	}
 	if len(frame) < 15 || len(frame) > 235 {
 		return fmt.Errorf("FX.25 requires 15..235 AX.25 bytes before FCS; stuffing may reduce the maximum")
 	}
@@ -41,8 +53,8 @@ func validateFX25Frame(frame []byte) error {
 	}
 	count(byte(crc))
 	count(byte(crc >> 8))
-	if bits > 239*8 {
-		return fmt.Errorf("FX.25 frame needs %d protected bits; maximum is 1912 (239 bytes)", bits)
+	if bits > capacity*8 {
+		return fmt.Errorf("FX.25 frame needs %d protected bits; selected mode maximum is %d (%d bytes)", bits, capacity*8, capacity)
 	}
 	return nil
 }

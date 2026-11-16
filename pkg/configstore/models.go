@@ -71,6 +71,7 @@ type Channel struct {
 	Profile        string       `gorm:"not null;default:'A'" json:"profile"`
 	NumSlicers     uint32       `gorm:"not null;default:1" json:"num_slicers"`
 	FixBits        string       `gorm:"not null;default:'none'" json:"fix_bits"` // none|single|double
+	FX25Mode       string       `gorm:"not null;default:'auto'" json:"fx25_mode"`
 	FX25Encode     bool         `gorm:"not null;default:false" json:"fx25_encode"`
 	IL2PEncode     bool         `gorm:"column:il2p_encode;not null;default:false" json:"il2p_encode"`
 	NumDecoders    uint32       `gorm:"not null;default:1" json:"num_decoders"`

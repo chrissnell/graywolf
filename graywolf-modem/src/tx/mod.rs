@@ -55,10 +55,37 @@ pub fn build_fx25_samples(
     mark_freq: u32,
     space_freq: u32,
 ) -> Result<Vec<i16>, TxError> {
+    build_fx25_samples_with_parity(
+        frame,
+        txdelay_ms,
+        txtail_ms,
+        sample_rate,
+        baud,
+        mark_freq,
+        space_freq,
+        0,
+    )
+}
+
+/// Same production path with an explicit standard parity count (0 = automatic).
+#[allow(clippy::too_many_arguments)]
+pub fn build_fx25_samples_with_parity(
+    frame: &[u8],
+    txdelay_ms: u32,
+    txtail_ms: u32,
+    sample_rate: u32,
+    baud: u32,
+    mark_freq: u32,
+    space_freq: u32,
+    parity: u32,
+) -> Result<Vec<i16>, TxError> {
     if (baud, mark_freq, space_freq) != (1200, 1200, 2200) {
         return Err(TxError::UnsupportedFx25);
     }
-    let wire = crate::fx25::encode(frame, None).ok_or(TxError::Fx25FrameTooLong)?;
+    if !matches!(parity, 0 | 16 | 32 | 64) {
+        return Err(TxError::UnsupportedFx25Parity);
+    }
+    let wire = crate::fx25::encode_with_parity(frame, parity).ok_or(TxError::Fx25FrameTooLong)?;
     let bytes = std::iter::repeat_n(0x7e, flags_for_ms(txdelay_ms, baud).max(1))
         .chain(wire)
         .chain(std::iter::repeat_n(

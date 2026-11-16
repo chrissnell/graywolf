@@ -47,6 +47,17 @@ type Entry struct {
 	// the modem; nil for TX, APRS-IS, and hardware KISS-TNC entries, which carry
 	// no soundcard-domain level.
 	AudioLevel *AudioLevel `json:"audio_level,omitempty"`
+	// FX25 is present only for native RX after RS and embedded HDLC/FCS validation.
+	FX25 *FX25Reception `json:"fx25,omitempty"`
+}
+
+// FX25Reception identifies a validated standard FX.25 decode, including clean
+// codewords. CorrectedSymbols counts repaired codeword bytes, not tag bits.
+type FX25Reception struct {
+	Tag              uint32 `json:"tag"`
+	DataBytes        uint32 `json:"data_bytes"`
+	ParityBytes      uint32 `json:"parity_bytes"`
+	CorrectedSymbols uint32 `json:"corrected_symbols"`
 }
 
 // AudioLevel is the received audio level a demodulator measured while

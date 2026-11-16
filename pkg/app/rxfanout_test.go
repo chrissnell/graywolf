@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"net"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,5 +169,49 @@ func TestDispatchRxFrameBroadcastsRawKISSOnDecodeFailure(t *testing.T) {
 	}
 	if len(data) != len(undecodable)+1 || string(data[1:]) != string(undecodable) {
 		t.Errorf("payload = %v, want leading byte followed by %v", data, undecodable)
+	}
+}
+
+func TestDispatchRxFrameFX25Metadata(t *testing.T) {
+	h := newKissTncHarness(t)
+	defer h.stop()
+	cases := []struct {
+		call   string
+		fx     *pb.Fx25Reception
+		source ingress.Source
+		want   bool
+	}{
+		{"FEC0", &pb.Fx25Reception{Tag: 4, DataBytes: 32, ParityBytes: 16, CorrectedSymbols: 0}, ingress.Modem(), true},
+		{"FEC3", &pb.Fx25Reception{Tag: 6, DataBytes: 128, ParityBytes: 32, CorrectedSymbols: 3}, ingress.Modem(), true},
+		{"PLAIN", nil, ingress.Modem(), false},
+		{"TNC", &pb.Fx25Reception{Tag: 4, DataBytes: 32, ParityBytes: 16}, ingress.KissTnc(50), false},
+	}
+	for _, c := range cases {
+		f := buildUIFrame(t, c.call, ">metadata", nil)
+		data, _ := f.Encode()
+		h.app.rxFanout <- rxFanoutItem{rf: &pb.ReceivedFrame{Channel: 1, Data: data, Fx25: c.fx}, src: c.source}
+	}
+	h.waitDispatched(int64(len(cases)), 2*time.Second)
+	entries := h.app.plog.Query(packetlog.Filter{Channel: -1})
+	if len(entries) != len(cases) {
+		t.Fatalf("entries=%d", len(entries))
+	}
+	for _, c := range cases {
+		found := false
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Display, c.call+">") {
+				continue
+			}
+			found = true
+			if (e.FX25 != nil) != c.want {
+				t.Fatalf("%s metadata=%+v", c.call, e.FX25)
+			}
+			if c.want && (e.FX25.Tag != c.fx.Tag || e.FX25.CorrectedSymbols != c.fx.CorrectedSymbols) {
+				t.Fatalf("lost metadata for %s", c.call)
+			}
+		}
+		if !found {
+			t.Fatalf("missing %s", c.call)
+		}
 	}
 }

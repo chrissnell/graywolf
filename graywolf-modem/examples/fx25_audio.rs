@@ -16,10 +16,24 @@ fn hex(b: &[u8]) -> String {
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     match args[1].as_str() {
-        "encode" => {
+        "encode" | "encode-mode" => {
             let frame = unhex(&args[2]);
-            let tag = args.get(4).map(|s| s.parse().unwrap());
-            let samples = if let Some(tag) = tag {
+            let tag = if args[1] == "encode" {
+                args.get(4).map(|s| s.parse().unwrap())
+            } else {
+                None
+            };
+            let samples = if args[1] == "encode-mode" {
+                let parity = if args[4] == "auto" {
+                    0
+                } else {
+                    args[4].parse().unwrap()
+                };
+                tx::build_fx25_samples_with_parity(
+                    &frame, 300, 100, 48000, 1200, 1200, 2200, parity,
+                )
+                .unwrap()
+            } else if let Some(tag) = tag {
                 let wire = fx25::encode(&frame, Some(tag)).expect("frame does not fit");
                 let mut line = 0;
                 let bits: Vec<u8> = std::iter::repeat_n(0x7e, 45)

@@ -101,3 +101,16 @@ test('displaySegments: space and tab are treated correctly (space printable, tab
     { text: 'c' },
   ]);
 });
+
+test('native RX decode badges distinguish clean and repaired FX.25', async () => {
+  const { receiveDecoding }=await import('./packetColumns.js');
+  const native={direction:'RX',source:'modem'};
+  assert.equal(receiveDecoding(native).label,'AX.25');
+  const clean={...native,fx25:{tag:4,data_bytes:32,parity_bytes:16,corrected_symbols:0}};
+  assert.equal(receiveDecoding(clean).detail,'FEC decoded · 0 symbols repaired');
+  assert.equal(receiveDecoding(clean).mode,'RS(48,32)');
+  const repaired={...clean,fx25:{...clean.fx25,corrected_symbols:3}};
+  assert.equal(receiveDecoding(repaired).detail,'FEC decoded · 3 symbols repaired');
+  assert.equal(receiveDecoding({...repaired,source:'kiss-tnc'}),null);
+  assert.equal(receiveDecoding({...repaired,direction:'TX'}),null);
+});

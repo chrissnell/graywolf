@@ -7,10 +7,11 @@
 
   import Modal from './Modal.svelte';
   import { decodeRaw, hexDump, analyzeFrame } from '../lib/packetInspect.js';
-  import { parseDisplay, formatTime } from '../lib/packetColumns.js';
+  import { parseDisplay, formatTime, receiveDecoding } from '../lib/packetColumns.js';
 
   let { open = $bindable(false), packet = null } = $props();
 
+  const reception = $derived(packet ? receiveDecoding(packet) : null);
   const bytes = $derived(decodeRaw(packet?.raw));
   const rows = $derived(hexDump(bytes));
   const frame = $derived(bytes.length ? analyzeFrame(bytes) : null);
@@ -39,6 +40,19 @@
         {#if packet.direction}<span class="meta-pill">{packet.direction}</span>{/if}
         {#if packet.timestamp}<span class="meta-time">{formatTime(packet.timestamp)}</span>{/if}
       </div>
+
+      {#if reception}
+        <dl class="frame" data-testid="inspector-reception">
+          <dt>Received as</dt><dd>{reception.label}</dd>
+          <dt>Decoded by</dt><dd>{reception.fx25 ? 'Reed–Solomon → HDLC / FCS validation' : 'HDLC'}</dd>
+          {#if reception.fx25}
+            <dt>Correlation tag</dt><dd>{reception.tag} · {reception.mode}</dd>
+            <dt>Parity</dt><dd>{reception.parity} bytes</dd>
+            <dt>Symbols repaired</dt><dd>{reception.corrected} bytes</dd>
+          {/if}
+          <dt>AX.25 FCS</dt><dd>{reception.fx25 ? 'Valid after FEC decoding' : 'Valid'}</dd>
+        </dl>
+      {/if}
 
       {#if frame && frame.issues.length}
         <ul class="issues">

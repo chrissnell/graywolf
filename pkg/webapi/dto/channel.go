@@ -31,10 +31,12 @@ type ChannelRequest struct {
 	Profile        string  `json:"profile"`
 	NumSlicers     uint32  `json:"num_slicers"`
 	FixBits        string  `json:"fix_bits"`
-	FX25Encode     bool    `json:"fx25_encode"`
-	IL2PEncode     bool    `json:"il2p_encode"`
-	NumDecoders    uint32  `json:"num_decoders"`
-	DecoderOffset  int32   `json:"decoder_offset"`
+	// FX25Mode selects TX mode: auto (recommended), 16, 32, or 64 parity bytes. RX remains automatic.
+	FX25Mode      string `json:"fx25_mode" enums:"auto,16,32,64" default:"auto"`
+	FX25Encode    bool   `json:"fx25_encode"`
+	IL2PEncode    bool   `json:"il2p_encode"`
+	NumDecoders   uint32 `json:"num_decoders"`
+	DecoderOffset int32  `json:"decoder_offset"`
 	// Enabled gates whether graywolf brings the channel up. A pointer so
 	// an omitted field means "leave at the default" (true) rather than
 	// "disable": older clients and partial callers that never send the
@@ -80,6 +82,10 @@ func (r ChannelRequest) Validate() error {
 
 // ToModel maps a create request to a storage model.
 func (r ChannelRequest) ToModel() configstore.Channel {
+	fx25Mode := r.FX25Mode
+	if fx25Mode == "" {
+		fx25Mode = "auto"
+	}
 	// Absent enabled flag defaults to true so existing clients that never
 	// send the key keep creating/updating running channels; an explicit
 	// false disables (see Channel.Enabled).
@@ -103,6 +109,7 @@ func (r ChannelRequest) ToModel() configstore.Channel {
 		NumSlicers:     r.NumSlicers,
 		FixBits:        r.FixBits,
 		FX25Encode:     r.FX25Encode,
+		FX25Mode:       fx25Mode,
 		IL2PEncode:     r.IL2PEncode,
 		NumDecoders:    r.NumDecoders,
 		DecoderOffset:  r.DecoderOffset,
@@ -341,6 +348,10 @@ func pttDetail(p configstore.PttConfig, method string) string {
 // `input_device_id: null` — the segmented type picker on the
 // Channels page treats that as "KISS-TNC only".
 func ChannelFromModel(m configstore.Channel) ChannelResponse {
+	fx25Mode := m.FX25Mode
+	if fx25Mode == "" {
+		fx25Mode = "auto"
+	}
 	enabled := m.Enabled
 	return ChannelResponse{
 		ID: m.ID,
@@ -360,6 +371,7 @@ func ChannelFromModel(m configstore.Channel) ChannelResponse {
 			NumSlicers:     m.NumSlicers,
 			FixBits:        m.FixBits,
 			FX25Encode:     m.FX25Encode,
+			FX25Mode:       fx25Mode,
 			IL2PEncode:     m.IL2PEncode,
 			NumDecoders:    m.NumDecoders,
 			DecoderOffset:  m.DecoderOffset,

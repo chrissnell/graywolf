@@ -13,3 +13,10 @@ test('FX.25 rejects unsupported rates, tones and KISS channels', () => {
     assert.ok(validateForm({...form,...bad}).fx25_encode);
   }
 });
+test('FX.25 public modes are explicit, retained while disabled', () => {
+  const f={...blankForm(),input_device_id:'1',fx25_encode:false,fx25_mode:'64'};
+  assert.equal(formToPayload(f).fx25_mode,'64');
+  assert.equal(formToPayload(f).fx25_encode,false);
+  assert.equal(rowToForm(formToPayload(f)).fx25_mode,'64');
+  assert.equal(validateForm({...f,fx25_mode:'0'}).fx25_encode,'Invalid FX.25 parity selection.');
+});

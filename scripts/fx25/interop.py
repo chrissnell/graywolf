@@ -59,6 +59,14 @@ with tempfile.TemporaryDirectory() as tmp:
             dump = re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)", out, re.M)
             decoded = bytes.fromhex("".join(dump))
             assert decoded == frame, (tag,kind,"atest payload",out)
+    # Exercise the exact production mode-selection/sample builder too.
+    for mode in ["auto","16","32","64"]:
+        v=vectors[0]
+        wav=tmp/"production-mode.wav"
+        run([GW,"encode-mode",v["frame"],wav,mode])
+        out=run([DW/"build/src/atest","-B","1200","-h","-L","1","-G","1",wav]).decode()
+        dump=re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)",out,re.M)
+        assert bytes.fromhex("".join(dump)).hex()==v["frame"],mode
     audio_frames = []
     wave_chunks = []
     for tag, cap in enumerate(CAPS,1):
@@ -71,7 +79,7 @@ with tempfile.TemporaryDirectory() as tmp:
             # gen_packets deliberately retains the input newline as payload.
             expected = "82a0a4a64040e096a6729c4040e103f0" + (payload+"\n").encode().hex()
             got = run([GW,"decode",wav]).decode().splitlines()
-            assert len(got)==1 and got[0].split()[0]==expected, (tag,kind,got)
+            assert got==[expected+" fx25"], (tag,kind,got)
             audio_frames.append(dict(tag=tag,case=kind,frame=expected))
             with wave.open(str(wav),"rb") as w:
                 params = w.getparams()
@@ -107,4 +115,4 @@ with tempfile.TemporaryDirectory() as tmp:
         (FIX/"SHA256SUMS").write_text("".join(hashlib.sha256((FIX/n).read_bytes()).hexdigest()+"  "+n+"\n" for n in ["direwolf.json","direwolf.wav","direwolf-damaged.wav"]))
     else:
         assert json.loads((FIX/"direwolf.json").read_text()) == fixture
-    print(f"PASS: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")
+    print(f"PASS: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio + 4 production mode cases; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")

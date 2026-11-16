@@ -60,6 +60,15 @@ message ReceivedFrame {
   float speed_error = 8;        // baud-rate error, percent
   string retry = 9;             // "none" | "single" | "double" | "fx25" (validated FEC recovery)
   uint64 timestamp_ns = 10;     // monotonic capture time
+  Fx25Reception fx25 = 11;      // present only after RS + HDLC/FCS validation
+}
+
+// Standard FX.25 reception. Symbol corrections exclude correlation-tag bits.
+message Fx25Reception {
+  uint32 tag = 1;
+  uint32 data_bytes = 2;
+  uint32 parity_bytes = 3;
+  uint32 corrected_symbols = 4;
 }
 
 // Data Carrier Detect state transition.
@@ -174,6 +183,7 @@ message ConfigureChannel {
   // When a preset is active, output frames are deduped across the ensemble
   // using a 3-symbol time window (matching Direwolf's dedup semantics).
   string demod_ensemble = 19;
+  uint32 fx25_parity = 20;       // 0=automatic, or fixed 16/32/64 parity bytes (TX only)
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).

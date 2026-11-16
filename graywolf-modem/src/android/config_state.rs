@@ -40,6 +40,50 @@ static BAUD: AtomicU32 = AtomicU32::new(1200);
 static MARK_FREQ: AtomicU32 = AtomicU32::new(1200);
 static SPACE_FREQ: AtomicU32 = AtomicU32::new(2200);
 
+static FX25_ENABLED: AtomicBool = AtomicBool::new(false);
+static FX25_PARITY: AtomicU32 = AtomicU32::new(0);
+static FX25_SUPPORTED: AtomicBool = AtomicBool::new(true);
+
+pub fn set_fx25_config(enabled: bool, parity: u32, supported: bool) {
+    FX25_ENABLED.store(enabled, Ordering::Relaxed);
+    FX25_PARITY.store(parity, Ordering::Relaxed);
+    FX25_SUPPORTED.store(supported, Ordering::Relaxed);
+}
+
+/// Android dispatch uses the same pure TX builders and scope checks as desktop.
+pub fn build_tx_samples(
+    frame: &[u8],
+    txdelay: u32,
+    txtail: u32,
+    rate: u32,
+) -> Result<Vec<i16>, crate::tx::TxError> {
+    if FX25_ENABLED.load(Ordering::Relaxed) {
+        if !FX25_SUPPORTED.load(Ordering::Relaxed) {
+            return Err(crate::tx::TxError::UnsupportedFx25);
+        }
+        crate::tx::build_fx25_samples_with_parity(
+            frame,
+            txdelay,
+            txtail,
+            rate,
+            baud(),
+            mark_freq(),
+            space_freq(),
+            FX25_PARITY.load(Ordering::Relaxed),
+        )
+    } else {
+        crate::tx::build_samples(
+            frame,
+            txdelay,
+            txtail,
+            rate,
+            baud(),
+            mark_freq(),
+            space_freq(),
+        )
+    }
+}
+
 /// TX timing captured from the most recent ConfigurePtt.
 static TXDELAY_MS: AtomicU32 = AtomicU32::new(300);
 static TXTAIL_MS: AtomicU32 = AtomicU32::new(100);
@@ -156,5 +200,36 @@ mod tests {
         assert!(digirig_tone());
         set_digirig_tone(false);
         assert!(!digirig_tone());
+    }
+}
+
+#[cfg(test)]
+mod fx25_tests {
+    use super::*;
+    #[test]
+    fn android_fx25_dispatch_honors_enable_mode_and_scope() {
+        let frame = vec![0; 20];
+        set_channel_dsp(1200, 1200, 2200);
+        for parity in [0, 16, 32, 64] {
+            set_fx25_config(true, parity, true);
+            assert_eq!(
+                build_tx_samples(&frame, 300, 100, 48000).unwrap(),
+                crate::tx::build_fx25_samples_with_parity(
+                    &frame, 300, 100, 48000, 1200, 1200, 2200, parity
+                )
+                .unwrap()
+            );
+        }
+        set_fx25_config(true, 16, false);
+        assert_eq!(
+            build_tx_samples(&frame, 300, 100, 48000),
+            Err(crate::tx::TxError::UnsupportedFx25)
+        );
+        set_fx25_config(false, 64, true);
+        assert_eq!(
+            build_tx_samples(&frame, 300, 100, 48000).unwrap(),
+            crate::tx::build_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap()
+        );
+        set_fx25_config(false, 0, true);
     }
 }

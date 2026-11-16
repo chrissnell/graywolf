@@ -130,3 +130,31 @@ fn deterministic_noise_and_reserved_streams_do_not_deliver() {
         assert!(receive(&wire).is_empty());
     }
 }
+
+#[test]
+fn metadata_counts_data_and_parity_corrections() {
+    for tag in 1..=11 {
+        let mut wire = encode(&frame(), Some(tag)).unwrap();
+        let clean = receive(&wire).remove(0);
+        assert_eq!(clean.frame.fx25.as_ref().unwrap().corrected_symbols, 0);
+        wire[8 + 10] ^= 0x55;
+        let end = wire.len() - 1;
+        wire[end] ^= 0xaa;
+        let repaired = receive(&wire).remove(0);
+        assert_eq!(repaired.frame.fx25.as_ref().unwrap().corrected_symbols, 2);
+    }
+}
+#[test]
+fn fixed_parity_selects_standard_modes_and_rejects_overflow() {
+    for parity in [16, 32, 64] {
+        let wire = encode_with_parity(&frame(), parity).unwrap();
+        assert_eq!(
+            receive(&wire)[0].frame.fx25.as_ref().unwrap().parity_bytes,
+            parity
+        );
+    }
+    assert!(encode_with_parity(&frame(), 8).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 64).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 32).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 16).is_some());
+}

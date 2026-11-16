@@ -108,8 +108,25 @@ pub fn encode(frame: &[u8], tag_hint: Option<usize>) -> Option<Vec<u8>> {
     Some(out)
 }
 
+/// Select automatic mode (0) or the shortest standard block with exactly
+/// 16/32/64 parity bytes. A fixed parity request never falls back.
+pub fn encode_with_parity(frame: &[u8], parity: u32) -> Option<Vec<u8>> {
+    let tags: &[usize] = match parity {
+        0 => return encode(frame, None),
+        16 => &[4, 3, 2, 1],
+        32 => &[8, 7, 6, 5],
+        64 => &[11, 10, 9],
+        _ => return None,
+    };
+    tags.iter().find_map(|&tag| encode(frame, Some(tag)))
+}
+
 /// Correct a complete radio block, restoring omitted trailing zero symbols.
 pub fn decode(block: &[u8], tag_idx: usize) -> Option<Vec<u8>> {
+    decode_with_count(block, tag_idx).map(|(data, _)| data)
+}
+
+fn decode_with_count(block: &[u8], tag_idx: usize) -> Option<(Vec<u8>, u32)> {
     let &(_, total, cap, check) = FX25_TAGS.get(tag_idx)?;
     if total == 0 || block.len() != total {
         return None;
@@ -117,12 +134,14 @@ pub fn decode(block: &[u8], tag_idx: usize) -> Option<Vec<u8>> {
     let mut full = vec![0; 255];
     full[..cap].copy_from_slice(&block[..cap]);
     full[255 - check..].copy_from_slice(&block[cap..]);
+    let original = full.clone();
     codec(check).decode(&mut full)?;
     // Omitted symbols are known zeros, never accept a correction there.
     if full[cap..255 - check].iter().any(|&b| b != 0) {
         return None;
     }
-    Some(full[..cap].to_vec())
+    let repaired = full.iter().zip(&original).filter(|(a, b)| a != b).count() as u32;
+    Some((full[..cap].to_vec(), repaired))
 }
 
 /// A validated frame and its closing-flag position within the protected data.
@@ -186,6 +205,10 @@ impl Fx25Receiver {
         self.block_bits = 0;
         self.tag_idx = None;
     }
+    pub fn in_progress(&self) -> bool {
+        self.tag_idx.is_some()
+    }
+
     pub fn process_bit(&mut self, bit: bool) -> Option<RecoveredFrame> {
         // Keep searching during collection too: a truncated block must not
         // consume the next valid tag. Distance threshold matches Dire Wolf.
@@ -213,8 +236,14 @@ impl Fx25Receiver {
             return None;
         }
         self.tag_idx = None;
-        let data = decode(&self.block, idx)?;
-        let (frame, end_bit) = extract_ax25(&data)?;
+        let (data, corrected_symbols) = decode_with_count(&self.block, idx)?;
+        let (mut frame, end_bit) = extract_ax25(&data)?;
+        frame.fx25 = Some(crate::hdlc::Fx25Metadata {
+            tag: idx as u32,
+            data_bytes: FX25_TAGS[idx].2 as u32,
+            parity_bytes: FX25_TAGS[idx].3 as u32,
+            corrected_symbols,
+        });
         Some(RecoveredFrame {
             frame,
             trailing_bits: total * 8 - end_bit,

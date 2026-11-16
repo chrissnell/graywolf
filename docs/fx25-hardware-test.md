@@ -86,6 +86,14 @@ by a KISS TNC is not a native-modem test.
 
 ## 4. RF tests (you initiate every transmission)
 
+In Graywolf's channel editor, FX.25 transmit defaults off. When enabled,
+**Automatic is recommended for everyday use. Choose a fixed parity mode for
+specific use cases or controlled testing.** Use the 16/32/64 selector to test
+each family toward Dire Wolf, then restore Automatic. RX always recognizes
+all supported families independently of this selector. Fixed-mode capacity
+failures are explicit and must not silently produce ordinary AX.25.
+
+
 Use an appropriate test frequency, station identification and radio/audio
 levels. Do not enable any repeating schedule merely to run this matrix.
 Create a raw RF-only beacon with a unique sequence marker, e.g.
@@ -113,20 +121,22 @@ MODEM 1200
 FX25TX 16
 ```
 
-Change only `FX25TX` to 32, 64 or 0 for the corresponding supervised test;
+The example explicitly requests 16 parity bytes; it is not the default.
+Dire Wolf normally defaults FX.25 TX off for APRS. `FX25TX 1` selects its
+automatic mode. Change only `FX25TX` to 32, 64 or 0 for the corresponding supervised test;
 use that station's existing audio/PTT config and normal manual TX client.
-No instruction here automatically sends a radio packet. If a clean FX.25
-packet arrives via ordinary HDLC first, Graywolf metadata can say `none`;
-`fx25` identifies an actual FEC recovery. Capture audio if diagnosing that
-case; do not intentionally degrade a transmitter or change RF power without
-a separate test plan.
+No instruction here automatically sends a radio packet. The packet log must show FX.25 for both clean and repaired verified
+codewords. Check “FEC decoded · 0 symbols repaired” for a clean codeword;
+the inspector shows the tag, RS mode and parity. The old `none` limitation
+is removed in the replacement build. Do not infer successful FEC decoding
+from the channel TX setting alone.
 
 Record: BUILD commit, OS/architecture, USB device names, channel settings,
 PTT method, exact marker/frame, sender timestamp, receiver timestamp/tag,
 received-event count, receiver audio capture if available, and outcome.
 Keep RF reception evidence separate from API responses, queue completion,
 local counters and offline tests. All matrix rows remain pending until you
-provide their results; the PR remains draft.
+provide their results; no upstream PR will be opened until local testing is complete and you explicitly request it.
 
 ## Recovery
 

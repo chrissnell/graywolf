@@ -147,6 +147,8 @@ pub struct MultiAfskDemodulator {
     window_samples: u64,
     sample_counter: u64,
     retention_samples: u64,
+    pending_plain: std::collections::VecDeque<(DecodedFrame, u64)>,
+    hold_samples: u64,
 }
 
 impl MultiAfskDemodulator {
@@ -197,6 +199,8 @@ impl MultiAfskDemodulator {
             out: Vec::new(),
             window_samples: (samples_per_sec as u64 * 3).div_ceil(baud as u64),
             sample_counter: 0,
+            pending_plain: std::collections::VecDeque::new(),
+            hold_samples: (samples_per_sec as f64 / baud as f64 * 2040.0 * 1.25).ceil() as u64,
             retention_samples: samples_per_sec as u64 * 3,
         }
     }
@@ -226,23 +230,53 @@ impl MultiAfskDemodulator {
         for d in &mut self.demods {
             d.process_sample(sam);
         }
-        // Collect freshly emitted frames from each demodulator and dedup
-        // across the ensemble using (content, sample_offset within window).
+        // A profile that missed the tag may decode HDLC before another
+        // profile finishes FEC. Hold it while ANY profile has an active block.
+        let mut fresh = Vec::new();
         for d in &mut self.demods {
-            for frame in d.take_frames() {
-                self.last_seen.retain(|_, time| {
-                    self.sample_counter.saturating_sub(*time) <= self.retention_samples
-                });
-                let prev = self.last_seen.get(&frame.data).copied();
-                let keep = match prev {
-                    Some(p) => frame.sample_offset.abs_diff(p) > self.window_samples,
-                    None => true,
-                };
-                if keep {
-                    self.last_seen.insert(frame.data.clone(), frame.sample_offset);
-                    self.out.push(frame);
+            fresh.extend(d.take_frames());
+        }
+        if fresh.is_empty() && self.pending_plain.is_empty() {
+            return;
+        }
+        let active = self.demods.iter().any(|d| d.fx25_in_progress());
+        fresh.sort_by_key(|f| f.fx25.is_none());
+        for frame in fresh {
+            if frame.fx25.is_none() && active {
+                if self.pending_plain.len() >= 128 {
+                    if let Some((old, _)) = self.pending_plain.pop_front() {
+                        self.deliver_frame(old);
+                    }
                 }
+                self.pending_plain
+                    .push_back((frame, self.sample_counter + self.hold_samples));
+            } else {
+                self.deliver_frame(frame);
             }
+        }
+        while self
+            .pending_plain
+            .front()
+            .is_some_and(|(_, deadline)| !active || self.sample_counter >= *deadline)
+        {
+            if let Some((frame, _)) = self.pending_plain.pop_front() {
+                self.deliver_frame(frame);
+            }
+        }
+    }
+
+    fn deliver_frame(&mut self, frame: DecodedFrame) {
+        self.last_seen
+            .retain(|_, time| self.sample_counter.saturating_sub(*time) <= self.retention_samples);
+        let prev = self.last_seen.get(&frame.data).copied();
+        let keep = match prev {
+            Some(p) => frame.sample_offset.abs_diff(p) > self.window_samples,
+            None => true,
+        };
+        if keep {
+            self.last_seen
+                .insert(frame.data.clone(), frame.sample_offset);
+            self.out.push(frame);
         }
     }
 
@@ -374,5 +408,48 @@ mod tests {
             m.process_sample(0);
         }
         assert!(m.take_frames().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod fx25_comparison {
+    use super::*;
+
+    #[test]
+    fn fx25_recovers_independent_audio_rejected_by_identical_hdlc_only_ensemble() {
+        for (name, expected_fec, expected_hdlc) in [
+            ("direwolf-damaged.wav", 11, 0),
+            ("direwolf.wav", 33, 33),
+        ] {
+            let path=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/fx25").join(name);
+            let mut wav=hound::WavReader::open(path).unwrap();
+            let rate=wav.spec().sample_rate;
+            let mut fec=MultiAfskDemodulator::new(rate,1200,1200,2200,0,&RECOMMENDED_3DEMOD);
+            let mut plain=MultiAfskDemodulator::new(rate,1200,1200,2200,0,&RECOMMENDED_3DEMOD);
+            // Same audio, profiles, slicers, levels, PLLs and FCS policy.
+            // Disable ONLY the FEC path; this switch exists only in tests.
+            for d in &mut plain.demods { d.disable_fx25_for_comparison(); }
+            let (mut recovered,mut ordinary)=(Vec::new(),Vec::new());
+            for sample in wav.samples::<i16>() {
+                let s=sample.unwrap() as i32;
+                fec.process_sample(s); plain.process_sample(s);
+                recovered.extend(fec.take_frames()); ordinary.extend(plain.take_frames());
+            }
+            assert_eq!(recovered.len(),expected_fec,"{name}: FEC-enabled ensemble");
+            assert_eq!(ordinary.len(),expected_hdlc,"{name}: HDLC-only ensemble");
+            assert!(recovered.iter().all(|f| f.fx25.is_some()));
+            assert!(ordinary.iter().all(|f| f.fx25.is_none()));
+            if name=="direwolf-damaged.wav" {
+                assert!(recovered.iter().all(|f| f.fx25.as_ref().unwrap().corrected_symbols>0));
+                let fixture:serde_json::Value=serde_json::from_str(include_str!("../testdata/fx25/direwolf.json")).unwrap();
+                for (frame, expected) in recovered.iter().zip(fixture["damaged_frames"].as_array().unwrap()) {
+                    let hex:String=frame.data.iter().map(|b| format!("{b:02x}")).collect();
+                    assert_eq!(hex,expected["frame"].as_str().unwrap());
+                }
+            } else {
+                assert_eq!(recovered.iter().map(|f| &f.data).collect::<Vec<_>>(),ordinary.iter().map(|f| &f.data).collect::<Vec<_>>());
+            }
+            eprintln!("{name}: FX.25-enabled {expected_fec}, identical HDLC-only {expected_hdlc}");
+        }
     }
 }

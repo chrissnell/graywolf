@@ -166,3 +166,28 @@ func TestListPackets_ExposesCoordinates(t *testing.T) {
 		}
 	}
 }
+
+func TestPacketsFX25MetadataIncludesZeroCorrections(t *testing.T) {
+	srv, _ := newTestServer(t)
+	log := packetlog.New(packetlog.Config{Capacity: 10})
+	log.Record(packetlog.Entry{Direction: packetlog.DirRX, Source: "modem", FX25: &packetlog.FX25Reception{Tag: 4, DataBytes: 32, ParityBytes: 16, CorrectedSymbols: 0}})
+	mux := http.NewServeMux()
+	RegisterPackets(srv, mux, log, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/packets", nil))
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var packets []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &packets); err != nil {
+		t.Fatal(err)
+	}
+	fx := packets[0]["fx25"].(map[string]any)
+	count, exists := fx["corrected_symbols"]
+	if !exists || count != float64(0) {
+		t.Fatalf("missing clean-FEC zero: %v", fx)
+	}
+	if fx["tag"] != float64(4) || fx["parity_bytes"] != float64(16) {
+		t.Fatal(fx)
+	}
+}

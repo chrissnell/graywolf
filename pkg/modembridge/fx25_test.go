@@ -42,3 +42,15 @@ func TestFX25IndependentLengthVectors(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFixedFX25ParityCapacity(t *testing.T) {
+	frame := make([]byte, 220)
+	if validateFX25FrameParity(frame, 16) != nil {
+		t.Fatal("16 parity should fit")
+	}
+	for _, parity := range []uint32{32, 64} {
+		if validateFX25FrameParity(frame, parity) == nil {
+			t.Fatalf("accepted oversized %d", parity)
+		}
+	}
+}

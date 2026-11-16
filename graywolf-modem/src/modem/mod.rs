@@ -52,6 +52,7 @@ pub struct ChannelConfig {
     pub num_decoders: u32,
     pub decoder_offset: i32,
     pub fx25_encode: bool,
+    pub fx25_parity: u32,
     pub il2p_encode: bool,
     /// Multi-demodulator ensemble preset; overrides `profile` and `num_slicers`
     /// when non-empty. Supported values: "" (single demod), "dual", "triple".
@@ -76,6 +77,7 @@ impl Default for ChannelConfig {
             num_decoders: 1,
             decoder_offset: 0,
             fx25_encode: false,
+            fx25_parity: 0,
             il2p_encode: false,
             demod_ensemble: String::new(),
         }
@@ -970,22 +972,22 @@ impl Modem {
         // AFSK params come from ChannelConfig so TX matches RX on every
         // channel — HF APRS at 300 baud was previously encoded as 1200
         // baud Bell 202 because these values were ignored. See issue #22.
-        let build = if ccfg.fx25_encode {
+        let built = if ccfg.fx25_encode {
             if ccfg.modem_type != "afsk" || ccfg.il2p_encode {
                 eprintln!("graywolf-modem: FX.25 requires AFSK and cannot be combined with IL2P");
                 return;
             }
-            crate::tx::build_fx25_samples
-        } else { crate::tx::build_samples };
-        let mut samples = match build(
-            &tf.data,
-            txdelay_ms,
-            txtail_ms,
-            acfg.sample_rate,
-            ccfg.baud,
-            ccfg.mark_freq,
-            ccfg.space_freq,
-        ) {
+            crate::tx::build_fx25_samples_with_parity(
+                &tf.data, txdelay_ms, txtail_ms, acfg.sample_rate, ccfg.baud,
+                ccfg.mark_freq, ccfg.space_freq, ccfg.fx25_parity,
+            )
+        } else {
+            crate::tx::build_samples(
+                &tf.data, txdelay_ms, txtail_ms, acfg.sample_rate, ccfg.baud,
+                ccfg.mark_freq, ccfg.space_freq,
+            )
+        };
+        let mut samples = match built {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("graywolf-modem: TransmitFrame: build_samples failed: {}", e);
@@ -2466,12 +2468,13 @@ fn parse_channel(c: &ConfigureChannel) -> ChannelConfig {
         num_decoders: c.num_decoders.max(1),
         decoder_offset: c.decoder_offset,
         fx25_encode: c.fx25_encode,
+        fx25_parity: c.fx25_parity,
         il2p_encode: c.il2p_encode,
         demod_ensemble: c.demod_ensemble.clone(),
     }
 }
 
-fn build_received(f: &DecodedFrame) -> ReceivedFrame {
+pub(crate) fn build_received(f: &DecodedFrame) -> ReceivedFrame {
     ReceivedFrame {
         channel: f.chan as u32,
         subchan: f.subchan as u32,
@@ -2490,6 +2493,10 @@ fn build_received(f: &DecodedFrame) -> ReceivedFrame {
             RetryType::InvertTwoSep => "two_sep".into(),
         },
         timestamp_ns: now_ns(),
+        fx25: f.fx25.as_ref().map(|m| crate::ipc::proto::Fx25Reception {
+            tag: m.tag, data_bytes: m.data_bytes, parity_bytes: m.parity_bytes,
+            corrected_symbols: m.corrected_symbols,
+        }),
     }
 }
 
@@ -2940,6 +2947,22 @@ mod fx25_acceptance {
                 for (frame, v) in frames.iter().zip(expected) {
                     assert_eq!(frame.data, unhex(v["frame"].as_str().unwrap()));
                     assert_eq!(frame.chan, 7);
+                    let metadata = frame
+                        .fx25
+                        .as_ref()
+                        .expect("clean and repaired FX.25 must retain metadata");
+                    let tag = v["tag"].as_u64().unwrap() as usize;
+                    assert_eq!(metadata.tag, tag as u32);
+                    assert_eq!(metadata.parity_bytes, crate::fx25::FX25_TAGS[tag].3 as u32);
+                    assert_eq!(
+                        metadata.corrected_symbols,
+                        if requires_fec {
+                            metadata.parity_bytes / 2
+                        } else {
+                            0
+                        }
+                    );
+                    assert!(build_received(frame).fx25.is_some());
                     if requires_fec {
                         assert_eq!(frame.retry, RetryType::Fx25);
                     }
@@ -2977,6 +3000,45 @@ mod fx25_acceptance {
             assert_eq!(collect(&mut demod, fec).len(), 1);
         }
     }
+    #[test]
+    fn fx25_failed_parity_preserves_valid_hdlc_without_false_fec_label() {
+        let frame = unhex("82a0a4a640406096a6729c40406103f078");
+        let mut wire = crate::fx25::encode(&frame, Some(1)).unwrap();
+        // Data/HDLC stays intact; all 16 parity bytes are invalid.
+        for byte in &mut wire[8 + 239..] {
+            *byte ^= 0xff;
+        }
+        let mut line = 0;
+        let bits: Vec<u8> = std::iter::repeat_n(0x7e, 45)
+            .chain(wire)
+            .chain(std::iter::repeat_n(0x7e, 15))
+            .flat_map(|b| (0..8).map(move |s| (b >> s) & 1))
+            .map(|b| {
+                if b == 0 {
+                    line ^= 1;
+                }
+                line
+            })
+            .collect();
+        let mut audio = crate::tx::afsk_mod::modulate(&bits, 48000, 1200, 1200, 2200).unwrap();
+        audio.extend(std::iter::repeat_n(0, 48000 * 3));
+        for ensemble in ["single", "triple"] {
+            let config = ChannelConfig {
+                demod_ensemble: ensemble.into(),
+                num_slicers: 9,
+                ..Default::default()
+            };
+            let mut demod = create_demod(&config, 48000);
+            let frames = collect(&mut demod, audio.iter().copied());
+            assert_eq!(frames.len(), 1, "{ensemble}");
+            assert_eq!(frames[0].data, frame);
+            assert!(
+                frames[0].fx25.is_none(),
+                "bad parity must not claim FEC success"
+            );
+        }
+    }
+
     #[test]
     fn tx_scope_and_full_parity_duration() {
         let frame = unhex("82a0a4a640406096a6729c40406103f078");
