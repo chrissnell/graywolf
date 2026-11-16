@@ -149,6 +149,17 @@
   {/if}
 {/snippet}
 
+{#snippet packetFooter(entry)}
+  {@const reception = packetEncoding(entry)}
+  {#if reception}
+    <div class="pkt-reception" data-testid="packet-reception">
+      <span>{reception.detail}</span>
+      {#if reception.fx25}<span>Tag {reception.tag} · {reception.parity} parity bytes</span>{/if}
+    </div>
+  {/if}
+  {@render rawPacketFooter(entry)}
+{/snippet}
+
 {#snippet srcDstCell(_value, entry)}
   {@const calls = parseDisplay(entry)}
   <span class="pkt-srcdst">
@@ -208,13 +219,6 @@
 {/snippet}
 
 {#snippet rawPacketFooter(entry)}
-  {@const reception = packetEncoding(entry)}
-  {#if reception}
-    <div class="pkt-reception" data-testid="packet-reception">
-      <span>{reception.detail}</span>
-      {#if reception.fx25}<span>Tag {reception.tag} · {reception.parity} parity bytes</span>{/if}
-    </div>
-  {/if}
   <div class="pkt-foot">
     <code class="pkt-raw">{#if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
@@ -249,7 +253,7 @@
     {showHeader}
     {height}
     {mobileBreakpoint}
-    footer={rawPacketFooter}
+    footer={packetFooter}
     class={newestFirst ? 'pkt-order-newest' : undefined}
   />
 </div>
@@ -385,7 +389,9 @@
     flex-direction: row;
     align-items: center;
     gap: 4px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .pkt-b-origin {
