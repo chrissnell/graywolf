@@ -96,10 +96,11 @@
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
+    require_fresh_gps: false, gps_max_age_seconds: 30,
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
-    smart_beacon: false, require_fresh_gps: false, gps_max_age_seconds: 30,
+    smart_beacon: false,
   });
 
   let callsignError = $state('');
