@@ -369,8 +369,9 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
 
     <h3>RTS and DTR together</h3>
     <p>Select <strong>Serial RTS + DTR</strong> to drive both lines on one
-      device. Set each polarity separately in the device dialog. With the RTS
-      toggle off and the DTR toggle on, this matches Dire Wolf
+      device. The Serial signal levels selector lists all four combinations with
+      explicit transmit and receive levels. Choose RTS: TX HIGH / RX LOW and
+      DTR: TX LOW / RX HIGH to match Dire Wolf
       <code>PTT /dev/ttyUSB0 RTS -DTR</code>:</p>
     <table><thead><tr><th>State</th><th>RTS</th><th>DTR</th></tr></thead>
       <tbody><tr><td>TX</td><td>HIGH</td><td>LOW</td></tr>

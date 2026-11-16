@@ -6,6 +6,7 @@
   import DevicePicker from './DevicePicker.svelte';
   import { api } from '../../lib/api.js';
   import { resolveDevice } from './devicePayload.js';
+  import { serialOptions, serialValue, serialFlags } from './serialPolarity.js';
 
   let {
     open = $bindable(),
@@ -31,7 +32,7 @@
   let gpioLineSel = $state('0');
   let gpioPinSel = $state('3');
   let invert = $state(false);
-  let dtrInvert = $state(false);
+  let polarity = $state('00');
 
   // Manual free-form device path (GH #511): udev-renamed devices such as
   // /dev/aioc-aprs-ptt never appear in enumeration, so the operator needs
@@ -46,6 +47,7 @@
   let initializing = false;
 
   let wireMethod = $derived(method?.wire?.method);
+  let isSerial = $derived(['serial_rts', 'serial_dtr', 'serial_rts_dtr'].includes(wireMethod));
   let isGpio = $derived(wireMethod === 'gpio');
   let isCm108 = $derived(wireMethod === 'cm108');
 
@@ -64,7 +66,7 @@
       gpioLineSel = String(initialGpioLine ?? 0);
       gpioPinSel = String(initialGpioPin ?? 3);
       invert = !!initialInvert;
-      dtrInvert = !!initialDtrInvert;
+      polarity = serialValue(wireMethod, initialInvert, initialDtrInvert);
       wasOpen = true;
       initializing = true;
       void refresh();
@@ -165,8 +167,7 @@
       device: resolveDevice(devices, effectivePath, wireMethod),
       gpio_line: isGpio ? Number(gpioLineSel) : undefined,
       gpio_pin: isCm108 ? Number(gpioPinSel) : undefined,
-      invert,
-      dtr_invert: wireMethod === 'serial_rts_dtr' && dtrInvert,
+      ...(isSerial ? serialFlags(wireMethod, polarity) : { invert, dtr_invert: false }),
     };
   }
 
@@ -255,16 +256,14 @@
     </FormField>
   {/if}
 
-  {#if wireMethod !== 'none' && wireMethod !== 'rigctld'}
-    <FormField label={wireMethod === 'serial_rts_dtr' ? 'RTS Polarity' : 'Invert Polarity'} id="dlg-invert">
-      <Toggle bind:checked={invert} label="Key radio on LOW instead of HIGH" />
+  {#if isSerial}
+    <FormField label="Serial signal levels" id="dlg-serial-polarity"
+      hint="TX levels are applied while transmitting; RX levels are restored when receiving. Unselected serial lines are left untouched.">
+      <Select id="dlg-serial-polarity" bind:value={polarity} options={serialOptions(wireMethod)} />
     </FormField>
-  {/if}
-
-  {#if wireMethod === 'serial_rts_dtr'}
-    <FormField label="DTR Polarity" id="dlg-dtr-invert"
-      hint="Each line reverses on receive. For Dire Wolf RTS -DTR: RTS toggle off, DTR toggle on.">
-      <Toggle bind:checked={dtrInvert} label="Key DTR on LOW instead of HIGH" />
+  {:else if wireMethod !== 'none' && wireMethod !== 'rigctld'}
+    <FormField label="Invert Polarity" id="dlg-invert">
+      <Toggle bind:checked={invert} label="Key radio on LOW instead of HIGH" />
     </FormField>
   {/if}
 
