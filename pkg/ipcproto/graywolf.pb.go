@@ -853,8 +853,11 @@ type StatusUpdate struct {
 	DcdState         bool                   `protobuf:"varint,9,opt,name=dcd_state,json=dcdState,proto3" json:"dcd_state,omitempty"`
 	ShutdownComplete bool                   `protobuf:"varint,10,opt,name=shutdown_complete,json=shutdownComplete,proto3" json:"shutdown_complete,omitempty"` // final status before process exit
 	TimestampNs      uint64                 `protobuf:"varint,11,opt,name=timestamp_ns,json=timestampNs,proto3" json:"timestamp_ns,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// False for unavailable/placeholder DCD (including older modems).
+	// True only when dcd_state comes from an active native demodulator.
+	DcdStateValid bool `protobuf:"varint,12,opt,name=dcd_state_valid,json=dcdStateValid,proto3" json:"dcd_state_valid,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *StatusUpdate) Reset() {
@@ -962,6 +965,13 @@ func (x *StatusUpdate) GetTimestampNs() uint64 {
 		return x.TimestampNs
 	}
 	return 0
+}
+
+func (x *StatusUpdate) GetDcdStateValid() bool {
+	if x != nil {
+		return x.DcdStateValid
+	}
+	return false
 }
 
 // Sent once after the modem has bound its IPC socket, accepted a connection,
@@ -2510,7 +2520,7 @@ const file_graywolf_proto_rawDesc = "" +
 	"\asubchan\x18\x02 \x01(\rR\asubchan\x12\x14\n" +
 	"\x05slice\x18\x03 \x01(\rR\x05slice\x12\x1a\n" +
 	"\bdetected\x18\x04 \x01(\bR\bdetected\x12!\n" +
-	"\ftimestamp_ns\x18\x05 \x01(\x04R\vtimestampNs\"\x96\x03\n" +
+	"\ftimestamp_ns\x18\x05 \x01(\x04R\vtimestampNs\"\xbe\x03\n" +
 	"\fStatusUpdate\x12\x18\n" +
 	"\achannel\x18\x01 \x01(\rR\achannel\x12\x1b\n" +
 	"\trx_frames\x18\x02 \x01(\x04R\brxFrames\x12\x1c\n" +
@@ -2524,7 +2534,8 @@ const file_graywolf_proto_rawDesc = "" +
 	"\tdcd_state\x18\t \x01(\bR\bdcdState\x12+\n" +
 	"\x11shutdown_complete\x18\n" +
 	" \x01(\bR\x10shutdownComplete\x12!\n" +
-	"\ftimestamp_ns\x18\v \x01(\x04R\vtimestampNs\"8\n" +
+	"\ftimestamp_ns\x18\v \x01(\x04R\vtimestampNs\x12&\n" +
+	"\x0fdcd_state_valid\x18\f \x01(\bR\rdcdStateValid\"8\n" +
 	"\n" +
 	"ModemReady\x12\x18\n" +
 	"\aversion\x18\x01 \x01(\tR\aversion\x12\x10\n" +

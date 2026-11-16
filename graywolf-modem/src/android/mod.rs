@@ -410,6 +410,7 @@ fn run_demod(
                     audio_level_space: 0.0,
                     audio_level_peak: 0.0,
                     dcd_state: false,
+                    dcd_state_valid: false, // Android does not yet report authoritative DCD.
                     shutdown_complete: false,
                     timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                 };

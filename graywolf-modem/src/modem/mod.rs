@@ -806,6 +806,7 @@ impl Modem {
                     audio_level_space: 0.0,
                     audio_level_peak: 0.0,
                     dcd_state: false,
+                    dcd_state_valid: false,
                     shutdown_complete: true,
                     timestamp_ns: now_ns(),
                 };
@@ -827,6 +828,8 @@ impl Modem {
                 audio_level_space: space,
                 audio_level_peak: peak,
                 dcd_state,
+                dcd_state_valid: self.active_devices.values().any(|pipe|
+                    pipe.channels.iter().any(|p| p.channel_id == *ch)),
                 shutdown_complete: final_ && i == last_idx,
                 timestamp_ns: now_ns(),
             };

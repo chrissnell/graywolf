@@ -107,6 +107,9 @@ message StatusUpdate {
   bool dcd_state = 9;
   bool shutdown_complete = 10;   // final status before process exit
   uint64 timestamp_ns = 11;
+  // False for unavailable/placeholder DCD (including older modems).
+  // True only when dcd_state comes from an active native demodulator.
+  bool dcd_state_valid = 12;
 }
 
 // Sent once after the modem has bound its IPC socket, accepted a connection,

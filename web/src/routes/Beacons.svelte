@@ -547,7 +547,7 @@
   async function handleSendNow(row) {
     try {
       await api.post(`/beacons/${row.id}/send`, {});
-      toasts.success(`Beacon sent: ${beaconLabel(row, stationCallsign)}`);
+      toasts.success(`Beacon queued: ${beaconLabel(row, stationCallsign)}`);
     } catch (err) {
       toasts.error(err.message);
     }

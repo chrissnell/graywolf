@@ -80,6 +80,10 @@ type Bridge struct {
 	// long-lived subscription returned by DcdEvents() for the txgovernor.
 	dcd        *dcdPublisher
 	dcdPrimary <-chan *pb.DcdChange
+	// Last state forwarded to carrier-sense consumers. Demodulator restarts
+	// can reset to quiet without an edge; status snapshots repair that state.
+	dcdStateMu sync.Mutex
+	dcdState   map[uint32]bool
 
 	// status holds per-channel stats and per-device audio levels, Reset
 	// on every supervise iteration.
@@ -286,7 +290,38 @@ func (b *Bridge) DcdSubscribe() <-chan *pb.DcdChange { return b.dcd.Subscribe() 
 func (b *Bridge) DcdUnsubscribe(ch <-chan *pb.DcdChange) { b.dcd.Unsubscribe(ch) }
 
 // dispatchDcd is called by the IPC dispatch path to fan out a DcdChange.
-func (b *Bridge) dispatchDcd(ev *pb.DcdChange) { b.dcd.Publish(ev) }
+func (b *Bridge) dispatchDcd(ev *pb.DcdChange) {
+	b.dcdStateMu.Lock()
+	defer b.dcdStateMu.Unlock()
+	if b.dcdState == nil {
+		b.dcdState = make(map[uint32]bool)
+	}
+	b.dcdState[ev.Channel] = ev.Detected
+	b.dcd.Publish(ev)
+}
+
+// reconcileDcd repairs a stale carrier-sense state after audio reconfiguration
+// or modem restart. This uses actual demodulator state, never a busy timeout:
+// genuine carrier continues to inhibit half-duplex transmission.
+func (b *Bridge) reconcileDcd(status *pb.StatusUpdate) {
+	if !status.DcdStateValid {
+		return
+	}
+	b.dcdStateMu.Lock()
+	defer b.dcdStateMu.Unlock()
+	previous, known := b.dcdState[status.Channel]
+	if known && previous == status.DcdState {
+		return
+	}
+	if b.dcdState == nil {
+		b.dcdState = make(map[uint32]bool)
+	}
+	b.dcdState[status.Channel] = status.DcdState
+	b.dcd.Publish(&pb.DcdChange{
+		Channel: status.Channel, Detected: status.DcdState,
+		TimestampNs: status.TimestampNs,
+	})
+}
 
 // SendTransmitFrame queues a TransmitFrame IPC message to the currently
 // connected modem session. Returns an error if no session is active.

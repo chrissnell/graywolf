@@ -118,6 +118,7 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		}
 	case *pb.IpcMessage_StatusUpdate:
 		b.updateStatusCache(p.StatusUpdate)
+		b.reconcileDcd(p.StatusUpdate)
 		if b.cfg.Metrics != nil {
 			b.cfg.Metrics.UpdateFromStatus(p.StatusUpdate)
 		}
