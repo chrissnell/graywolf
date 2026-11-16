@@ -153,8 +153,81 @@ not bypass genuine busy-channel sensing. The final operator check passed.
 
 ## Operator Pi workload and upstream baseline
 
-Offline recommended triple ensemble, 43.656 audio seconds per clean FX.25
-fixture pass; no sound device, PTT or RF:
+### Primary comparison: original upstream versus new FX.25 RX enabled
+
+**The new decoder was benchmarked with FX.25 reception enabled.** These are
+matched comparisons against original upstream on the same recordings, with
+the same compiler/dependencies and recommended triple decoder ensemble:
+
+| Audio fixture | Original upstream CPU (% of one core) | New, FX.25 RX enabled CPU (% of one core) | Relative CPU change |
+|---|---:|---:|---:|
+| Ordinary AX.25 | 16.70% | 16.18% | -3.11% |
+| Clean FX.25 | 16.39% | 16.66% | +1.63% |
+
+The relative changes use the unrounded CPU-seconds/audio-second values:
+0.16697 → 0.16177 for ordinary audio and 0.16393 → 0.16661 for FX.25 audio.
+For example, +1.63% is a relative CPU increase, not 1.63 percentage points of
+an entire core. Small differences may include measurement noise; this does
+not establish a speedup or a precise universal FEC overhead.
+
+Original upstream can decode these **clean** FX.25 recordings through their
+embedded ordinary AX.25 HDLC frames. That does not mean it has working FX.25
+recovery. The separate [damaged-fixture comparison](#demonstrated-recovery-beyond-ordinary-hdlcfcs)
+shows the functional benefit: new FX.25 RX recovered 11/11 packets versus
+0/11 with the same new decoder ensemble using ordinary HDLC/FCS alone. That
+recovery comparison is not an upstream CPU benchmark or an RF sensitivity test.
+
+### Additional control: new code with RX FEC disabled versus enabled
+
+The disabled runs isolate the incremental cost of the FEC receive path within
+the new code. They supplement the upstream comparison above. “Disabled” here
+means a **test-only RX FEC switch**, not the channel's FX.25 TX toggle. Native
+FX.25 RX normally runs automatically on supported channels regardless of TX
+settings.
+
+| Audio fixture | New, RX FEC disabled CPU (% of one core) | New, RX FEC enabled CPU (% of one core) | Relative CPU change |
+|---|---:|---:|---:|
+| Ordinary AX.25 | 15.81% | 16.18% | +2.33% |
+| Clean FX.25 | 16.11% | 16.66% | +3.39% |
+
+The unrounded disabled CPU-seconds/audio-second values were 0.15809 and
+0.16115, respectively. These small relative changes also include run-to-run
+variation; do not interpret them as fixed overhead for every workload.
+
+Peak memory in the same paired trials:
+
+| Audio fixture | Original upstream peak RSS KiB | New, RX FEC disabled peak RSS KiB | New, RX FEC enabled peak RSS KiB |
+|---|---:|---:|---:|
+| Ordinary AX.25 | 4360 | 4628 | 4632 |
+| Clean FX.25 | 4376 | 4760 | 4760 |
+
+### Method, source and audio-duration normalization
+
+The separately supplied benchmark package compared original upstream
+`bde16a1752ef96e8907aea9dc18c698e3e96a9d7` with the b0e9a9c7 combined build.
+Instrumented source commits were `075aecd92649c5d77aa2987129a6804ec84e749c`
+(upstream) and `2a6ed24ec249bf77ec30de83951b1c00124d3bdc` (new). Exact source
+archives and commands were included in that package, separate from the
+feature fixtures. Each trial ran three passes and byte-verified 99 packets;
+two rounds reversed mode order. CPU results above average those two rounds.
+These measurements predate the later TX metadata and DCD fixes; they are not
+new measurements of the final d460a5df integration build.
+
+CPU percent of one core = 100 × (user + system CPU seconds) / audio seconds.
+This measures offline receive processing, not whole-app CPU usage, TX cost
+or a comparison of Graywolf CPU against Dire Wolf CPU.
+
+The fixtures contain the same 33 payloads, but ordinary audio lasts 23.098
+seconds and forced-tag FX.25 audio lasts 43.656 seconds per pass. The FX.25
+recording therefore takes nearly twice as long to process at a similar CPU
+cost per audio second. Compare normalized rates, not raw execution time
+across different recordings. That fixture's 1.89× airtime is specific to its
+forced-tag mix; it is not a general multiplier for Auto or everyday traffic.
+
+### Longer offline workload
+
+A separate recommended-triple-ensemble run processed the clean FX.25 fixture
+without opening sound devices or PTT:
 
 | Passes | Packets | Audio seconds | Wall seconds | User + system CPU seconds | Peak RSS KiB |
 |---:|---:|---:|---:|---:|---:|
@@ -162,38 +235,10 @@ fixture pass; no sound device, PTT or RF:
 | 30 | 990 | 1309.665 | 224.329 | 224.28 | 3992 |
 
 No swaps; `vcgencmd get_throttled` reported `0x0`. Processing was about 5.8
-times faster than real time. Two peak-RSS measurements do not establish
-long-term memory stability or whole-application resource usage.
-
-A separately supplied benchmark package compared original upstream
-`bde16a1752ef96e8907aea9dc18c698e3e96a9d7` with the b0e9a9c7 combined build,
-with the same compiler/dependencies and decoder ensemble. Instrumented source
-commits were `075aecd92649c5d77aa2987129a6804ec84e749c` (upstream) and
-`2a6ed24ec249bf77ec30de83951b1c00124d3bdc` (new). Exact source archives and
-commands were included in that package, separate from the feature fixtures.
-Each trial ran three passes and verified 99 packet bytes; two rounds reversed
-mode order. New “disabled” means the test-only RX FEC switch, not the channel's
-TX toggle.
-
-| Fixture | Decoder | CPU seconds/audio second | Percent of one core | Peak RSS KiB |
-|---|---|---:|---:|---:|
-| Ordinary AX.25 | Original upstream | 0.16697 | 16.70 | 4360 |
-| Ordinary AX.25 | New, RX FEC disabled | 0.15809 | 15.81 | 4628 |
-| Ordinary AX.25 | New, RX FEC enabled | 0.16177 | 16.18 | 4632 |
-| FX.25 | Original upstream | 0.16393 | 16.39 | 4376 |
-| FX.25 | New, RX FEC disabled | 0.16115 | 16.11 | 4760 |
-| FX.25 | New, RX FEC enabled | 0.16661 | 16.66 | 4760 |
-
-Enabled versus new disabled differed by +2.33% for ordinary audio and +3.39%
-for FX.25 audio; enabled versus original upstream was -3.11% and +1.63%.
-These small changes may include measurement noise; they do not establish a
-speedup or a precise universal FEC overhead. The fixtures contain the same
-33 payloads, but ordinary audio lasts 23.098 seconds and forced-tag FX.25
-audio 43.656 seconds. Raw execution times therefore cannot be compared
-without normalizing by audio duration. That fixture's 1.89× airtime is not a
-general multiplier for Auto or everyday traffic. All clean packets also
-decode through ordinary HDLC on upstream; this does not imply upstream has
-working FX.25 recovery.
+times faster than real time. This is a separate run from the paired benchmark,
+so its RSS should not be substituted into those comparisons. Two peak-RSS
+measurements do not establish long-term memory stability or whole-application
+resource usage.
 
 ## Remaining limits and publication status
 
