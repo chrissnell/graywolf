@@ -108,6 +108,21 @@
       expected.
     </p>
 
+    <h2>Persistent USB serial paths on Linux</h2>
+    <p>Detected serial devices include their existing
+      <code>/dev/serial/by-id/</code> aliases when available. Choose that entry
+      to save the persistent path rather than a numbered
+      <code>/dev/ttyUSB0</code> or <code>/dev/ttyACM0</code> path. The picker
+      displays the full alias and its currently resolved kernel path.</p>
+    <p>Kernel paths remain available and existing saved selections are not
+      rewritten. A persistent name does not make an unknown device suitable
+      for PTT: device recommendations, warnings and method confirmation still
+      apply. Discovery reads alias metadata without opening those ports.
+      Adapters without a unique USB identifier may lack a reliable by-id name;
+      verify the adapter identity or use an intentional custom udev alias.
+      This change applies to Linux serial devices; other platforms and PTT
+      methods retain their existing enumeration.</p>
+
     <h2>Entering a device path manually</h2>
 
     <p>

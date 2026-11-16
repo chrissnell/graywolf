@@ -536,7 +536,7 @@ func TestPttSerialRtsDtrRoundTrip(t *testing.T) {
 		for _, invert := range []bool{true, false} {
 			for _, dtrInvert := range []bool{true, false} {
 				body := map[string]any{
-					"channel_id": ch.ID, "method": method, "device_path": "/dev/ttyUSB0",
+					"channel_id": ch.ID, "method": method, "device_path": "/dev/serial/by-id/usb-Adapter_UNIQUE-if00-port0",
 					"invert": invert, "dtr_invert": dtrInvert,
 				}
 				buf, err := json.Marshal(body)
@@ -555,7 +555,8 @@ func TestPttSerialRtsDtrRoundTrip(t *testing.T) {
 					t.Fatal(err)
 				}
 				if rec.Code != http.StatusOK || got["method"] != method ||
-					got["invert"] != invert || got["dtr_invert"] != dtrInvert {
+					got["invert"] != invert || got["dtr_invert"] != dtrInvert ||
+					got["device_path"] != "/dev/serial/by-id/usb-Adapter_UNIQUE-if00-port0" {
 					t.Fatalf("round trip: %d %s", rec.Code, rec.Body.String())
 				}
 			}
