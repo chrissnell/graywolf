@@ -23,14 +23,14 @@ import (
 // The response DTO carries Callsign as plain string — an empty value
 // in the response means "inherits from station callsign".
 type BeaconRequest struct {
-	RequireFreshGPS  *bool   `json:"require_fresh_gps"`
-	GPSMaxAgeSeconds *uint32 `json:"gps_max_age_seconds"`
 	Type          string  `json:"type"`
 	Channel       uint32  `json:"channel"`
 	Callsign      *string `json:"callsign"`
 	Destination   string  `json:"destination"`
 	Path          string  `json:"path"`
 	UseGps        bool    `json:"use_gps"`
+	RequireFreshGPS  *bool   `json:"require_fresh_gps"`
+	GPSMaxAgeSeconds *uint32 `json:"gps_max_age_seconds"`
 	Latitude      float64 `json:"latitude"`
 	Longitude     float64 `json:"longitude"`
 	AltFt         float64 `json:"alt_ft"`

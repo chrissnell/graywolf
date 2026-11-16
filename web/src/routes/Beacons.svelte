@@ -336,8 +336,6 @@
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
       type: row.type || 'position',
-      require_fresh_gps:row.require_fresh_gps??false,
-      gps_max_age_seconds:row.gps_max_age_seconds||30,
       object_name: row.object_name || '',
       channel: String(row.channel),
       callsign: rowCall,
@@ -349,6 +347,8 @@
       send_path: row.send_path || 'rf',
       ambiguity: row.ambiguity ?? 0,
       pos_source: row.use_gps ? 'gps' : 'fixed',
+      require_fresh_gps:row.require_fresh_gps??false,
+      gps_max_age_seconds:row.gps_max_age_seconds||30,
       latitude: row.latitude != null ? String(row.latitude) : '',
       longitude: row.longitude != null ? String(row.longitude) : '',
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
