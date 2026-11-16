@@ -562,6 +562,7 @@ func rawTailMatches(args *RawTailSubscribeArgs, e packetlog.Entry) bool {
 
 func rawEntryToEnvelope(e packetlog.Entry) *RawTailEntry {
 	out := &RawTailEntry{
+		Notes:     e.Notes,
 		TS:        e.Timestamp,
 		Source:    e.Source,
 		Type:      e.Type,

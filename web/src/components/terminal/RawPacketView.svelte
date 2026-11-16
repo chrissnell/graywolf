@@ -11,6 +11,8 @@
   import { onMount, onDestroy } from 'svelte';
   import TerminalViewport from './TerminalViewport.svelte';
 
+  import { packetColors } from '../../lib/settings/packet-colors-store.svelte.js';
+
   import { createMonitorSession } from '../../lib/terminal/monitor.svelte.js';
 
   let { channel } = $props();
@@ -19,6 +21,15 @@
 
   onMount(() => {
     session = createMonitorSession({ channel });
+  });
+
+  $effect(() => {
+    if (session) session.setPacketColors(packetColors.enabled);
+  });
+  $effect(() => {
+    // Font loading can finish after packets arrive. Replay only the bounded
+    // monitor history when its viewport first attaches; never count it twice.
+    if (packetColors.enabled && session?.state.onDataRX) session.repaint();
   });
 
   onDestroy(() => {

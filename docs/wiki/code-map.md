@@ -430,3 +430,16 @@ transmitted data stays unacknowledged, or buffered data cannot be sent
 because the peer advertises a zero window, allowing the existing client
 supervisor to reconnect. This is not an idle receive timeout; a silent
 receive-only link remains open. Other platforms retain the existing behavior.
+
+## Optional packet traffic colors
+
+`web/src/lib/packetTraffic.js` classifies direction/source/notes and defines
+the six shipped themes' palettes; `packetTraffic.css` scopes highlights to
+`PacketLogViewer` only. `packet-colors-store.svelte.js` persists the opt-in
+locally via `packetColorPreference.js`; the Preferences switch follows Theme.
+`packetMonitorColors.js` formats only the read-only monitor, with sanitized
+ANSI and the same palette. `monitor.svelte.js` retains at most 500 bounded
+entries for recoloring on theme/setting changes; replay does not increment
+packet counts. RawTailEntry carries optional packet-log notes so RF-to-IS
+forwarding is distinguishable from Internet reception without guessing.
+The default/off paths preserve the existing viewer and plain monitor format.

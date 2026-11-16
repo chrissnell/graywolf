@@ -85,6 +85,25 @@
       how to drop one in via pull request.
     </p>
 
+    <h2>Packet colors</h2>
+<p>The <strong>Colorize packets</strong> switch appears immediately after the
+  theme selector. It is optional, off by default, and saved in this browser
+  or device only. It colors Dashboard/APRS Log packet rows and the read-only
+  live packet monitor: green for RF receive, lighter green for Internet
+  receive, red for RF transmit, lighter red for Internet transmit, yellow
+  for RF-to-IS, amber for IS-to-RF, and blue for digipeating. Unknown events
+  remain neutral. Explicit flow labels accompany every color.</p>
+<p>Light themes use pale backgrounds and dark text; Night themes use dark
+  backgrounds and light text. Header accents distinguish source, destination
+  and path without recoloring the payload. Grayscale and high-contrast themes
+  retain their monochrome intent. Turning the switch off restores the existing
+  display and plain monitor lines. Existing connected terminal sessions,
+  packet contents, API records and export data are not colorized or changed.</p>
+<p>TX colors identify locally recorded transmit/queue events, not remote RF
+  reception. Changing colors or themes repaints up to the most recent 500
+  monitor entries without recounting them; older terminal scrollback may be
+  cleared during that repaint. Normal streaming is unchanged while off.</p>
+
     <h2>Display size</h2>
 
     <p>

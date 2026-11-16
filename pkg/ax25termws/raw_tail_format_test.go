@@ -131,3 +131,13 @@ func TestSanitizeForTerminal_DropsCRLF(t *testing.T) {
 		t.Fatalf("expected %q, got %q", want, got)
 	}
 }
+
+func TestRawEntryToEnvelopePreservesTrafficContext(t *testing.T) {
+	for _, notes := range []string{"rf2is", "is-rx", "aprs-is", "is2rf", ""} {
+		entry := packetlog.Entry{Source: "igate", Direction: packetlog.DirIS, Notes: notes, Display: "A>B:hello"}
+		out := rawEntryToEnvelope(entry)
+		if out.Notes != notes || out.Source != entry.Source || out.Direction != string(entry.Direction) {
+			t.Fatalf("lost traffic metadata: %+v", out)
+		}
+	}
+}

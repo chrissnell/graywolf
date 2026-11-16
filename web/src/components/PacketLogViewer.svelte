@@ -24,6 +24,10 @@
     displaySegments,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
+  import { packetColors } from '../lib/settings/packet-colors-store.svelte.js';
+  import { themeState } from '../lib/settings/theme-store.svelte.js';
+  import { packetFlow, packetHeaderSegments, packetPalette, packetPaletteStyle } from '../lib/packetTraffic.js';
+  import '../lib/packetTraffic.css';
 
   let {
     packets = [],
@@ -126,6 +130,7 @@
 
 {#snippet timeCell(_value, entry)}
   <span class="pkt-time">{formatTime(entry.timestamp)}</span>
+  {#if packetColors.enabled}<span class="pkt-flow-marker" data-packet-flow={packetFlow(entry).id}>{packetFlow(entry).label}</span>{/if}
 {/snippet}
 
 {#snippet typeCell(_value, entry)}
@@ -203,8 +208,8 @@
 {/snippet}
 
 {#snippet rawPacketFooter(entry)}
-  <div class="pkt-foot">
-    <code class="pkt-raw">{#if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
+  <div class="pkt-foot" data-packet-flow={packetColors.enabled ? packetFlow(entry).id : undefined}>
+    <code class="pkt-raw">{#if packetColors.enabled}{#each packetHeaderSegments(entry.display) as part}<span class="pkt-field" data-packet-role={part.role}>{#if showNonPrintable}{#each displaySegments(part.text) as seg}{#if seg.ctrl}<span class="pkt-ctrl" title={seg.title}>{seg.label}</span>{:else}{seg.text}{/if}{/each}{:else}{part.text}{/if}</span>{/each}{:else if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
           title={seg.title}
         >{seg.label}</span>{:else}{seg.text}{/if}{/each}{:else}{entry.display}{/if}</code>
@@ -227,7 +232,7 @@
 
 <!-- display:contents so the wrapper is purely a DOM handle for the newest-first
      scroll/anchor tweaks and adds no layout of its own. -->
-<div bind:this={viewerWrap} style="display: contents;">
+<div bind:this={viewerWrap} class:packet-traffic-colors={packetColors.enabled} style={packetColors.enabled ? `display: contents;${packetPaletteStyle(packetPalette(themeState.theme))}` : 'display: contents;'}>
   <LogViewer
     entries={entries}
     {columns}

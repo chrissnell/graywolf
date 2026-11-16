@@ -9,8 +9,11 @@
 // Filter and saved-filter persistence live with the consuming view;
 // this module just owns the WebSocket and the byte stream.
 
+import { packetPalette } from '../packetTraffic.js';
+import { formatMonitorPacket } from '../packetMonitorColors.js';
+
 const READY_STATE_OPEN = 1;
-const MAX_LINE = 1024;
+const HISTORY_LIMIT = 500;
 
 function newID() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -21,15 +24,6 @@ function newID() {
 
 function wsScheme() {
   return location.protocol === 'https:' ? 'wss:' : 'ws:';
-}
-
-function fmt(entry) {
-  // Server already formats raw_tail entries as TNC2-style monitor
-  // lines and sanitizes non-printables. Client just frames each line
-  // with CRLF -- no timestamp, no extra prefix, just the packet, like
-  // a packet BBS monitor would show it.
-  const raw = (entry.raw ?? '').slice(0, MAX_LINE);
-  return raw + '\r\n';
 }
 
 export function createMonitorSession({ channel, initialFilter = '' } = {}) {
@@ -54,6 +48,41 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
 
   let ws = null;
   let enc = new TextEncoder();
+  let colorEnabled = false;
+  let history = [];
+  let themeObserver = null;
+  let contrastQuery = null;
+
+  function palette() {
+    const theme = typeof document !== 'undefined' ? document.documentElement.dataset.theme || 'graywolf' : 'graywolf';
+    return packetPalette(theme, contrastQuery?.matches || false);
+  }
+
+  function repaint() {
+    if (!state.onDataRX) return;
+    try {
+      state.onDataRX(enc.encode('\x1b[0m\x1b[2J\x1b[H'));
+      const colors = palette();
+      for (const entry of history) state.onDataRX(enc.encode(formatMonitorPacket(entry,colorEnabled,colors)));
+    } catch { /* viewport disposed */ }
+  }
+
+  function setPacketColors(enabled) {
+    const next = enabled === true;
+    if (colorEnabled === next) return;
+    colorEnabled = next;
+    repaint();
+  }
+
+  function themeChanged() { if (colorEnabled) repaint(); }
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
+    themeObserver = new MutationObserver(themeChanged);
+    themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  }
+  if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+    contrastQuery = window.matchMedia('(prefers-contrast: more)');
+    contrastQuery.addEventListener?.('change',themeChanged);
+  }
 
   function emit(text) {
     state.lineCount += 1;
@@ -95,7 +124,12 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
         return;
       }
       if (env.kind === 'raw_tail' && env.raw_tail) {
-        emit(fmt(env.raw_tail));
+        // Bound repaint history by both count and per-entry text size.
+        const entry = { raw: String(env.raw_tail.raw ?? '').slice(0,1024),
+          direction: String(env.raw_tail.direction ?? '').slice(0,16), source: String(env.raw_tail.source ?? '').slice(0,64), notes: String(env.raw_tail.notes ?? '').slice(0,64) };
+        history.push(entry);
+        if (history.length > HISTORY_LIMIT) history.shift();
+        emit(formatMonitorPacket(entry,colorEnabled,palette()));
       } else if (env.kind === 'error' && env.error) {
         state.errorMessage = env.error.message ?? env.error.code ?? 'monitor error';
       }
@@ -110,11 +144,15 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
   }
 
   function clearScreen() {
+    history = [];
     if (!state.onDataRX) return;
     try { state.onDataRX(enc.encode('\x1b[2J\x1b[H')); } catch { /* ignore */ }
   }
 
   function close() {
+    themeObserver?.disconnect();
+    contrastQuery?.removeEventListener?.('change',themeChanged);
+    history = [];
     try { ws?.close(1000, 'monitor closed'); } catch { /* ignore */ }
     ws = null;
   }
@@ -129,6 +167,8 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
 
   return {
     state,
+    setPacketColors,
+    repaint,
     sendData,
     setFilter,
     clearScreen,

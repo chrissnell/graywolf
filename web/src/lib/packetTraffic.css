@@ -1,0 +1,86 @@
+/* Packet-only presentation, gated by a local opt-in. No global log/theme changes. */
+.packet-traffic-colors .pkt-flow-marker { display: block; font-weight: 600; font-size: .75rem; color: var(--packet-foreground); }
+.packet-traffic-colors .pkt-srcdst .pkt-src { color: var(--packet-source); }
+.packet-traffic-colors .pkt-srcdst .pkt-dst { color: var(--packet-destination); }
+.packet-traffic-colors .pkt-raw .pkt-field { display: inline; color: var(--packet-foreground); }
+.packet-traffic-colors .pkt-raw .pkt-field[data-packet-role="source"] { color: var(--packet-source); }
+.packet-traffic-colors .pkt-raw .pkt-field[data-packet-role="destination"] { color: var(--packet-destination); }
+.packet-traffic-colors .pkt-raw .pkt-field[data-packet-role="path"] { color: var(--packet-path); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time { border-left: 6px solid var(--flow-edge); }
+.packet-traffic-colors .log-grid-footer { border-left: 6px solid var(--flow-edge); }
+.packet-traffic-colors .log-card { border-left: 6px solid var(--flow-edge); }
+.packet-traffic-colors .log-grid-cell,
+.packet-traffic-colors .log-grid-footer,
+.packet-traffic-colors .log-card { background: var(--flow-bg); color: var(--packet-foreground); }
+.packet-traffic-colors .pkt-foot .pkt-raw { color: var(--packet-foreground); }
+.packet-traffic-colors .log-body .pkt-reception { color: var(--packet-muted); }
+.packet-traffic-colors .pkt-b-origin,
+.packet-traffic-colors .pkt-b-reception { background: var(--flow-bg); color: var(--packet-foreground); border: 1px solid currentColor; }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="rx-rf"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="rx-rf"]) { --flow-bg: var(--packet-rx-rf-bg); --flow-edge: var(--packet-rx-rf-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="rx-is"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="rx-is"]) { --flow-bg: var(--packet-rx-is-bg); --flow-edge: var(--packet-rx-is-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="tx-rf"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="tx-rf"]) { --flow-bg: var(--packet-tx-rf-bg); --flow-edge: var(--packet-tx-rf-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="tx-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="tx-is"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="tx-is"]) { --flow-bg: var(--packet-tx-is-bg); --flow-edge: var(--packet-tx-is-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="rf-is"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="rf-is"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="rf-is"]) { --flow-bg: var(--packet-rf-is-bg); --flow-edge: var(--packet-rf-is-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="is-rf"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="is-rf"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="is-rf"]) { --flow-bg: var(--packet-is-rf-bg); --flow-edge: var(--packet-is-rf-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="digi"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="digi"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="digi"]) { --flow-bg: var(--packet-digi-bg); --flow-edge: var(--packet-digi-edge); }
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]),
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]) + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]) + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-cell.pkt-c-time:has([data-packet-flow="unknown"]) + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell + .log-grid-cell,
+.packet-traffic-colors .log-grid-footer:has([data-packet-flow="unknown"]),
+.packet-traffic-colors .log-card:has([data-packet-flow="unknown"]) { --flow-bg: var(--packet-unknown-bg); --flow-edge: var(--packet-unknown-edge); }
+@media (forced-colors: active) {
+  .packet-traffic-colors .log-grid-cell, .packet-traffic-colors .log-grid-footer, .packet-traffic-colors .log-card { background: Canvas; color: CanvasText; border-color: CanvasText; }
+  .packet-traffic-colors .pkt-raw .pkt-field, .packet-traffic-colors .pkt-flow-marker, .packet-traffic-colors .pkt-srcdst .pkt-src, .packet-traffic-colors .pkt-srcdst .pkt-dst { color: CanvasText; }
+}
