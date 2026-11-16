@@ -61,10 +61,10 @@ var (
 // SubmitSource describes the origin of a TX request for logging, dedup
 // scoping, and metrics.
 type SubmitSource struct {
-	Kind      string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
-	Detail    string
-	Priority  int
-	SkipDedup bool // bypass dedup window (e.g. operator-triggered send-now)
+	Kind       string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
+	Detail     string
+	Priority   int
+	SkipDedup  bool // bypass dedup window (e.g. operator-triggered send-now)
 }
 
 // Sender transmits one frame to the Rust modem. In production this is
