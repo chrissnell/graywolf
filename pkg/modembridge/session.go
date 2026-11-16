@@ -112,6 +112,10 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		default:
 			b.logger.Warn("frame channel full, dropping frame")
 		}
+	case *pb.IpcMessage_TransmitEncoding:
+		if b.cfg.OnTransmitEncoding != nil {
+			b.cfg.OnTransmitEncoding(p.TransmitEncoding)
+		}
 	case *pb.IpcMessage_StatusUpdate:
 		b.updateStatusCache(p.StatusUpdate)
 		if b.cfg.Metrics != nil {

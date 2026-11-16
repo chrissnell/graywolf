@@ -517,8 +517,15 @@ fn run_demod(
                             } else {
                                 config_state::txtail_ms()
                             };
-                            match config_state::build_tx_samples(&tf.data, txdelay, txtail, TARGET_SAMPLE_RATE) {
-                                Ok(samples) => {
+                            match config_state::build_tx_transmission(&tf.data, txdelay, txtail, TARGET_SAMPLE_RATE) {
+                                Ok(built) => {
+                                    let mut encoding = built.encoding;
+                                    encoding.frame_id = tf.frame_id;
+                                    encoding.channel = tf.channel;
+                                    if !encoding.fallback_reason.is_empty() {
+                                        warn!("channel {} frame {}: FX.25 frame too large; encoded ordinary AX.25", tf.channel, tf.frame_id);
+                                    }
+                                    let samples = built.samples;
                                     // Digirig Lite tone PTT: prepend a 500 ms
                                     // silent left-channel lead-in so the
                                     // right-channel keying tone (gated on at
@@ -549,6 +556,9 @@ fn run_demod(
                                     if let Err(e) = tx_worker.transmit(job) {
                                         warn!("transmit(channel={}): {}", tf.channel, e);
                                     } else {
+                                        let _ = handle.send(&IpcMessage {
+                                            payload: Some(ipc_message::Payload::TransmitEncoding(encoding)),
+                                        });
                                         config_state::increment_tx_frames();
                                     }
                                 }

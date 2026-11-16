@@ -4,6 +4,7 @@ Usage: python3 scripts/fx25/interop.py /path/to/direwolf [--generate]
 Build Dire Wolf's gen_packets/atest and `cargo build --example fx25_audio` first.
 """
 import hashlib
+import os
 import json
 import pathlib
 import subprocess
@@ -16,7 +17,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIX = ROOT / "graywolf-modem/testdata/fx25"
 DW = pathlib.Path(sys.argv[1]).resolve()
 GENERATE = "--generate" in sys.argv
-GW = ROOT / "target/debug/examples/fx25_audio"
+GW = pathlib.Path(os.environ.get("GRAYWOLF_FX25_TOOL", ROOT / "target/debug/examples/fx25_audio"))
 CAPS = [239,128,64,32,223,128,64,32,191,128,64]
 
 def run(args, **kw):
@@ -67,6 +68,15 @@ with tempfile.TemporaryDirectory() as tmp:
         out=run([DW/"build/src/atest","-B","1200","-h","-L","1","-G","1",wav]).decode()
         dump=re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)",out,re.M)
         assert bytes.fromhex("".join(dump)).hex()==v["frame"],mode
+    # Oversized supported-mode requests use ordinary HDLC, not truncation.
+    fallback_frame = bytes.fromhex(vectors[0]["frame"])[:16] + b"F" * 220
+    for mode in ["auto", "16", "32", "64"]:
+        wav = tmp / "production-fallback.wav"
+        run([GW, "encode-mode", fallback_frame.hex(), wav, mode])
+        out = run([DW/"build/src/atest", "-B", "1200", "-h", "-L", "1", "-G", "1", wav]).decode()
+        dump = re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)", out, re.M)
+        assert bytes.fromhex("".join(dump)) == fallback_frame, (mode, "fallback", out)
+        assert not re.search(r"audio level[^\n]*FX\.25", out), (mode, "not ordinary AX.25")
     audio_frames = []
     wave_chunks = []
     for tag, cap in enumerate(CAPS,1):
@@ -115,4 +125,4 @@ with tempfile.TemporaryDirectory() as tmp:
         (FIX/"SHA256SUMS").write_text("".join(hashlib.sha256((FIX/n).read_bytes()).hexdigest()+"  "+n+"\n" for n in ["direwolf.json","direwolf.wav","direwolf-damaged.wav"]))
     else:
         assert json.loads((FIX/"direwolf.json").read_text()) == fixture
-    print(f"PASS: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio + 4 production mode cases; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")
+    print(f"PASS: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio + 4 production mode cases + 4 ordinary AX.25 oversized fallbacks; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")

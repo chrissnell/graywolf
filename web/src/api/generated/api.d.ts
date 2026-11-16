@@ -3650,6 +3650,14 @@ export interface components {
             parity_bytes?: number;
             tag?: number;
         };
+        "packetlog.TXEncoding": {
+            data_bytes?: number;
+            encoding?: string;
+            fallback_reason?: string;
+            fx25_requested?: boolean;
+            parity_bytes?: number;
+            tag?: number;
+        };
         "pttdevice.AvailableDevice": {
             /** @description human-friendly label (USB product, GPIO chip) */
             description?: string;
@@ -3955,6 +3963,7 @@ export interface components {
             display?: string;
             /** @description DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable. */
             distance_mi?: number;
+            frame_id?: number;
             /** @description FX25 is present only for native RX after RS and embedded HDLC/FCS validation. */
             fx25?: components["schemas"]["packetlog.FX25Reception"];
             /**
@@ -3975,6 +3984,11 @@ export interface components {
             source?: string;
             /** @description Timestamp is the UTC RFC3339 time the packet was recorded. */
             timestamp?: string;
+            /**
+             * @description TXEncoding is the native modem's actual encoding, not inferred configuration.
+             *     It reports local encoding/queueing, not physical transmission or reception.
+             */
+            tx_encoding?: components["schemas"]["packetlog.TXEncoding"];
             /** @description Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully. */
             type?: string;
             /** @description Via is the callsign of the last digipeater that forwarded this packet (H-bit set); empty string for direct packets. */

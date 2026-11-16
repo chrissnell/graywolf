@@ -27,6 +27,7 @@ message IpcMessage {
     DeviceLevelUpdate device_level_update = 7;
     InputLevelScanResult input_level_scan_result = 8;
     TestSignalResult test_signal_result = 9;
+    TransmitEncoding transmit_encoding = 23;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -47,6 +48,19 @@ message IpcMessage {
 // ---------------------------------------------------------------------------
 // Rust → Go
 // ---------------------------------------------------------------------------
+
+// Actual encoding selected for a frame accepted by the native TX worker.
+// This acknowledges local encoding/queueing, not physical TX or RF reception.
+message TransmitEncoding {
+  uint64 frame_id = 1;
+  uint32 channel = 2;
+  string encoding = 3;         // "ax25" or "fx25"
+  uint32 tag = 4;
+  uint32 data_bytes = 5;
+  uint32 parity_bytes = 6;
+  bool fx25_requested = 7;
+  string fallback_reason = 8;  // "frame_too_large" when AX.25 replaces FX.25
+}
 
 // A successfully decoded AX.25 frame with demodulator metadata.
 message ReceivedFrame {

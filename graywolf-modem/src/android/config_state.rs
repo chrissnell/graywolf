@@ -51,17 +51,27 @@ pub fn set_fx25_config(enabled: bool, parity: u32, supported: bool) {
 }
 
 /// Android dispatch uses the same pure TX builders and scope checks as desktop.
+#[cfg(test)]
 pub fn build_tx_samples(
     frame: &[u8],
     txdelay: u32,
     txtail: u32,
     rate: u32,
 ) -> Result<Vec<i16>, crate::tx::TxError> {
+    Ok(build_tx_transmission(frame, txdelay, txtail, rate)?.samples)
+}
+
+pub fn build_tx_transmission(
+    frame: &[u8],
+    txdelay: u32,
+    txtail: u32,
+    rate: u32,
+) -> Result<crate::tx::BuiltTransmission, crate::tx::TxError> {
     if FX25_ENABLED.load(Ordering::Relaxed) {
         if !FX25_SUPPORTED.load(Ordering::Relaxed) {
             return Err(crate::tx::TxError::UnsupportedFx25);
         }
-        crate::tx::build_fx25_samples_with_parity(
+        crate::tx::build_fx25_transmission(
             frame,
             txdelay,
             txtail,
@@ -80,7 +90,11 @@ pub fn build_tx_samples(
             baud(),
             mark_freq(),
             space_freq(),
-        )
+        ).map(|samples| crate::tx::BuiltTransmission {
+            samples, encoding: crate::ipc::proto::TransmitEncoding {
+                encoding: "ax25".into(), ..Default::default()
+            },
+        })
     }
 }
 
@@ -220,6 +234,11 @@ mod fx25_tests {
                 .unwrap()
             );
         }
+        set_fx25_config(true, 64, true);
+        let fallback = build_tx_transmission(&vec![0;220],300,100,48000).unwrap();
+        assert_eq!(fallback.encoding.encoding,"ax25");
+        assert_eq!(fallback.encoding.fallback_reason,"frame_too_large");
+        assert_eq!(fallback.samples,crate::tx::build_samples(&vec![0;220],300,100,48000,1200,1200,2200).unwrap());
         set_fx25_config(true, 16, false);
         assert_eq!(
             build_tx_samples(&frame, 300, 100, 48000),

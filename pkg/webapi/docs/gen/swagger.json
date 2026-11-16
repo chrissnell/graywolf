@@ -11833,6 +11833,29 @@
                 }
             }
         },
+        "packetlog.TXEncoding": {
+            "type": "object",
+            "properties": {
+                "data_bytes": {
+                    "type": "integer"
+                },
+                "encoding": {
+                    "type": "string"
+                },
+                "fallback_reason": {
+                    "type": "string"
+                },
+                "fx25_requested": {
+                    "type": "boolean"
+                },
+                "parity_bytes": {
+                    "type": "integer"
+                },
+                "tag": {
+                    "type": "integer"
+                }
+            }
+        },
         "pttdevice.AvailableDevice": {
             "type": "object",
             "properties": {
@@ -12519,6 +12542,9 @@
                     "description": "DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.",
                     "type": "number"
                 },
+                "frame_id": {
+                    "type": "integer"
+                },
                 "fx25": {
                     "description": "FX25 is present only for native RX after RS and embedded HDLC/FCS validation.",
                     "allOf": [
@@ -12552,6 +12578,14 @@
                 "timestamp": {
                     "description": "Timestamp is the UTC RFC3339 time the packet was recorded.",
                     "type": "string"
+                },
+                "tx_encoding": {
+                    "description": "TXEncoding is the native modem's actual encoding, not inferred configuration.\nIt reports local encoding/queueing, not physical transmission or reception.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/packetlog.TXEncoding"
+                        }
+                    ]
                 },
                 "type": {
                     "description": "Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully.",

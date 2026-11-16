@@ -228,7 +228,7 @@
         <Select id="ch-fx25-parity" aria-label="FX.25 transmit parity" bind:value={form.fx25_mode} options={fx25ParityOptions} />
         <p>Automatic is recommended for everyday use. Choose a fixed parity mode for specific use cases or controlled testing.</p>
       {/if}
-      <p>1200-baud AFSK with 1200/2200 Hz tones. FX.25 reception is automatic. Oversized frames are rejected.</p>
+      <p>1200-baud AFSK with 1200/2200 Hz tones. FX.25 reception is automatic. Frames too large for the selected FX.25 mode use ordinary AX.25; the packet log identifies the fallback.</p>
     </FormField>
 
     <!-- ── Timing ─────────────────────────────────────────────────── -->

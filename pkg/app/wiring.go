@@ -393,6 +393,13 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 
 	// --- Modem bridge (construction; Start happens later) --------------
 	a.bridge = modembridge.New(modembridge.Config{
+		OnTransmitEncoding: func(m *pb.TransmitEncoding) {
+			a.plog.SetTXEncoding(m.FrameId, m.Channel, packetlog.TXEncoding{
+				Encoding: m.Encoding, Tag: m.Tag, DataBytes: m.DataBytes,
+				ParityBytes: m.ParityBytes, FX25Requested: m.Fx25Requested,
+				FallbackReason: m.FallbackReason,
+			})
+		},
 		BinaryPath:     resolvedModem,
 		ExistingSocket: a.cfg.ModemSocketPath,
 		Store:          a.store,
@@ -470,6 +477,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		e := packetlog.Entry{
 			Channel:   channel,
 			Direction: packetlog.DirTX,
+			FrameID:   source.FrameID,
 			Source:    source.Kind,
 			Display:   frame.String(),
 			Notes:     source.Detail,

@@ -61,10 +61,11 @@ var (
 // SubmitSource describes the origin of a TX request for logging, dedup
 // scoping, and metrics.
 type SubmitSource struct {
-	Kind       string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
-	Detail     string
-	Priority   int
-	SkipDedup  bool // bypass dedup window (e.g. operator-triggered send-now)
+	FrameID   uint64 // Assigned at dispatch; correlates native encoding metadata.
+	Kind      string // "kiss" | "agw" | "beacon" | "digipeater" | "igate"
+	Detail    string
+	Priority  int
+	SkipDedup bool // bypass dedup window (e.g. operator-triggered send-now)
 }
 
 // Sender transmits one frame to the Rust modem. In production this is
@@ -177,12 +178,12 @@ type Governor struct {
 	cfg    Config
 	logger *slog.Logger
 
-	mu     sync.Mutex
-	q      pqueue
-	seq    uint64
-	dedup  *dedup.Window[string, struct{}]
-	rates  map[uint32]*channelRate // per-channel send rate trackers
-	dcd    map[uint32]bool         // current DCD per channel
+	mu    sync.Mutex
+	q     pqueue
+	seq   uint64
+	dedup *dedup.Window[string, struct{}]
+	rates map[uint32]*channelRate // per-channel send rate trackers
+	dcd   map[uint32]bool         // current DCD per channel
 
 	wake   chan struct{}
 	stats  Stats
@@ -496,6 +497,7 @@ func (g *Governor) processOne(ctx context.Context) {
 		snap := make([]txHookEntry, len(g.hooks))
 		copy(snap, g.hooks)
 		g.mu.Unlock()
+		top.source.FrameID = frameID
 		for _, h := range snap {
 			h.fn(top.channel, top.frame, top.source)
 		}

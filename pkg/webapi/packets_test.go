@@ -191,3 +191,21 @@ func TestPacketsFX25MetadataIncludesZeroCorrections(t *testing.T) {
 		t.Fatal(fx)
 	}
 }
+
+func TestListPacketsTXEncodingReflectsNativeReport(t *testing.T) {
+	srv, _ := newTestServer(t)
+	log := packetlog.New(packetlog.Config{Capacity: 10})
+	log.Record(packetlog.Entry{FrameID: 3, Channel: 1, Direction: packetlog.DirTX, Source: "beacon"})
+	log.SetTXEncoding(3, 1, packetlog.TXEncoding{Encoding: "ax25", FX25Requested: true, FallbackReason: "frame_too_large"})
+	mux := http.NewServeMux()
+	RegisterPackets(srv, mux, log, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/packets", nil))
+	var got []packetDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].FrameID != 3 || got[0].TXEncoding == nil || got[0].TXEncoding.FallbackReason != "frame_too_large" {
+		t.Fatalf("%s", rec.Body.String())
+	}
+}

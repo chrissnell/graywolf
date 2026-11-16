@@ -300,11 +300,8 @@ func (b *Bridge) SendTransmitFrame(tf *pb.TransmitFrame) error {
 		if err := ch.ValidateFX25(); err != nil {
 			return err
 		}
-		if ch.FX25Encode {
-			if err := validateFX25FrameParity(tf.Data, ch.FX25ParityBytes()); err != nil {
-				return err
-			}
-		}
+		// Size is decided by the native encoder, which reports an explicit
+		// ordinary AX.25 fallback when the requested FX.25 mode cannot fit.
 	}
 	return b.sendIPC(&pb.IpcMessage{Payload: &pb.IpcMessage_TransmitFrame{TransmitFrame: tf}})
 }

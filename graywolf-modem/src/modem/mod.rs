@@ -358,6 +358,7 @@ impl Modem {
             | Some(Payload::AudioDeviceList(_))
             | Some(Payload::DeviceLevelUpdate(_))
             | Some(Payload::InputLevelScanResult(_))
+            | Some(Payload::TransmitEncoding(_))
             | Some(Payload::TestSignalResult(_)) => {
                 // Rust → Go only; ignore if echoed back.
             }
@@ -977,7 +978,7 @@ impl Modem {
                 eprintln!("graywolf-modem: FX.25 requires AFSK and cannot be combined with IL2P");
                 return;
             }
-            crate::tx::build_fx25_samples_with_parity(
+            crate::tx::build_fx25_transmission(
                 &tf.data, txdelay_ms, txtail_ms, acfg.sample_rate, ccfg.baud,
                 ccfg.mark_freq, ccfg.space_freq, ccfg.fx25_parity,
             )
@@ -985,15 +986,27 @@ impl Modem {
             crate::tx::build_samples(
                 &tf.data, txdelay_ms, txtail_ms, acfg.sample_rate, ccfg.baud,
                 ccfg.mark_freq, ccfg.space_freq,
-            )
+            ).map(|samples| crate::tx::BuiltTransmission {
+                samples, encoding: crate::ipc::proto::TransmitEncoding {
+                    encoding: "ax25".into(), ..Default::default()
+                },
+            })
         };
-        let mut samples = match built {
+        let built = match built {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("graywolf-modem: TransmitFrame: build_samples failed: {}", e);
                 return;
             }
         };
+
+        let mut samples = built.samples;
+        let mut encoding = built.encoding;
+        encoding.channel = tf.channel;
+        encoding.frame_id = tf.frame_id;
+        if !encoding.fallback_reason.is_empty() {
+            eprintln!("graywolf-modem: channel {} frame {}: FX.25 frame too large for requested mode; encoded ordinary AX.25", tf.channel, tf.frame_id);
+        }
 
         // VOX-keyed radios have no PTT line — the radio keys on audio
         // alone, and its VOX relay takes time to close. Without a lead-in
@@ -1093,6 +1106,9 @@ impl Modem {
             eprintln!("graywolf-modem: TransmitFrame: {}", e);
             return;
         }
+        let _ = self.handle.send(&IpcMessage {
+            payload: Some(Payload::TransmitEncoding(encoding)),
+        });
         *self.tx_frames.entry(tf.channel).or_default() += 1;
     }
 
@@ -3052,7 +3068,7 @@ mod fx25_acceptance {
         );
         assert_eq!(
             crate::tx::build_fx25_samples(&vec![0; 236], 300, 100, 48000, 1200, 1200, 2200),
-            Err(crate::tx::TxError::Fx25FrameTooLong)
+            crate::tx::build_samples(&vec![0; 236], 300, 100, 48000, 1200, 1200, 2200)
         );
     }
 }

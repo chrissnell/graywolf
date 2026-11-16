@@ -22,7 +22,7 @@
     packetToEntry,
     audioLevel,
     displaySegments,
-    receiveDecoding,
+    packetEncoding,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
 
@@ -131,7 +131,7 @@
 
 {#snippet typeCell(_value, entry)}
   {@const origin = originTag(entry)}
-  {@const reception = receiveDecoding(entry)}
+  {@const reception = packetEncoding(entry)}
   {#if entry.type || origin || reception}
     <div class="pkt-type-stack">
       {#if entry.type}
@@ -208,7 +208,7 @@
 {/snippet}
 
 {#snippet rawPacketFooter(entry)}
-  {@const reception = receiveDecoding(entry)}
+  {@const reception = packetEncoding(entry)}
   {#if reception}
     <div class="pkt-reception" data-testid="packet-reception">
       <span>{reception.detail}</span>
