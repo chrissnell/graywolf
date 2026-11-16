@@ -10,25 +10,25 @@ and [operator test instructions](fx25-hardware-test.md).
 | Check | Result |
 |---|---|
 | Exact independent wire vectors | 33/33; all standard tags 1–11, short/boundary/maximum, binary endings |
-| Graywolf audio → real Dire Wolf atest | 33/33 forced-tag cases plus 4/4 production-mode cases (auto/16/32/64), exact bytes, exactly one delivery |
+| Graywolf audio → real Dire Wolf atest | 33/33 forced-tag cases plus 4/4 production-mode cases (auto/16/32/64) and 4/4 oversized AX.25 fallback cases, exact bytes, exactly one delivery |
 | Real Dire Wolf gen_packets → Graywolf audio RX | 33/33, exact bytes, one delivery |
 | Symbol-damaged independent Dire Wolf tone recordings → Graywolf | 11/11 require FEC recovery, one delivery; parity/2 corrupted data symbols |
-| `cargo test --release --lib fx25` | 26 pass, including production dispatch (single/triple), mixed plain/FEC repeats, full parity/PTT airtime, noise/reset/error/rejection tests |
+| `cargo test --release --lib fx25` | 27 pass, including production dispatch (single/triple), mixed plain/FEC repeats, full parity/PTT airtime, noise/reset/error/rejection tests |
 | `cargo test --release --lib il2p` | 30 pass; shared RS source unchanged |
 | `cargo check --workspace` and default-target `cargo clippy --workspace -- -D warnings` | Pass on Linux x86_64 |
 | `cargo check --workspace --target x86_64-pc-windows-gnu` | Pass; existing unused `Read` warning in demod_ipc_bench |
 | `cargo check --lib --target aarch64-linux-android` | Pass; this is Android's shared library target, not the desktop CLI binary |
 | Linux ARM64 Rust modem / offline utility and Go app cross-build | Pass; Bookworm glibc 2.36 sysroot; startup smoke under QEMU (not physical acceptance) |
-| Go FX.25 validation / independent length-vector tests | Pass |
+| Go configuration, TX metadata, packet-log and DCD reconciliation regression tests | Pass |
 | Go vet native and `GOOS=linux GOARCH=arm GOARM=6 go vet ./...` | Pass |
 | `make docs-check docs-lint api-client-check` | Pass |
-| Web unit tests / build / API TypeScript check | 550 pass / build succeeds / type check succeeds |
+| Web unit tests / build / API TypeScript check | 551 pass (557 in the combined PTT test build) / build succeeds / type check succeeds |
 
 `.github/workflows/fx25.yml` runs focused offline tests natively on Linux,
 Windows and macOS plus an Android library target check. Check the actual
 workflow results on the fork branch; a configured job is not evidence of a pass.
-The initial `27ca74b5` build passed native Linux/Windows/macOS CI; follow-up
-changes repeat that matrix. Android host-stub FX.25 tests pass 27 cases,
+The final implementation `fae73a81` passed native Linux/Windows/macOS CI
+([run 43807290765](https://github.com/samwathegreat/graywolf/actions/runs/43807290765)). Android host-stub FX.25 tests pass 28 cases,
 including the separate Android TX dispatch helper. Its dispatcher now uses
 the same FX.25 builder as desktop and the shared verified RX metadata mapper.
 An APK, macOS installation, Windows sound device and Android radio/PTT have
@@ -97,14 +97,115 @@ Dire Wolf fixture (43.656 seconds per pass), AMD EPYC 9V74 x86_64 host:
 Commands: `time -v fx25_audio workload direwolf.wav 1` and the same with
 `30`. This is a synthetic throughput/memory check; it establishes neither
 Pi CPU usage nor RF/noise performance gains. The receiver block and dedup
-histories have explicit bounds. Collect Pi 1-pass/30-pass measurements using
-the supplied instructions before accepting the Pi workload requirement.
+histories have explicit bounds. The operator supplied the Pi measurements below.
 
-## Pending
+## Operator acceptance on the ARM64 Raspberry Pi station
 
-All seven physical matrix rows in `fx25-hardware-test.md`, actual Pi CPU/RSS,
-USB audio/serial PTT timing, external over-air decode in both directions,
-ordinary AX.25 regression over RF, per-transmission delivery counts and
-restart/configuration behavior remain pending operator evidence. Keep the
-work on the fork only. Do not open an upstream PR until local testing is
-complete and the operator explicitly requests it. No station was replaced and no transmission initiated.
+The operator tested native USB audio and independent RTS/DTR serial PTT on a
+disposable PacketRover installation (aarch64, Raspberry Pi OS/Debian Trixie,
+glibc 2.41). Dire Wolf was stopped on that test station. Its PacketRover UI
+remained available for sign-in; no PacketRover source change was made.
+The separate KS9N-10 station ran real Dire Wolf 1.8.1 on Debian x86_64.
+Its Graywolf application and tmux-managed Dire Wolf were paused for supervised
+position-packet sends and restored afterward. Its configuration hash and ALSA
+mixer snapshots were unchanged. No mixer levels were changed for these tests.
+
+| Physical check | Operator evidence/result |
+|---|---|
+| Dire Wolf → native Graywolf | Ordinary AX.25 plus fixed 16, 32 and 64 parity received; native log showed tags 0x02, 0x06 and 0x0A with the expected parity |
+| Repaired RF packets | Ambient receptions displayed nonzero repaired-symbol counts, including one and multiple symbols; this alone does not prove the same RF packets would fail an HDLC-only comparison |
+| Native Graywolf → Dire Wolf | Off, Auto, 16, 32 and 64 decoded on the separate receiver; operator supplied its tmux output and confirmed each test |
+| PTT | Operator confirmed actual keying and release; longer fixed-64 position packet decoded through its END64 marker |
+| Duplicates/repeats | Controlled sends delivered once; deliberately identical fixed-64 sends produced two separate receptions |
+| Restart/settings | Operator confirmed reception/transmission after restart and saved channel changes |
+| TX packet-log metadata | Native TX rows showed FX.25 tag/parity; external decode remained the RF evidence |
+| Oversized fallback / ordinary native TX | Operator confirmed complete END-FALLBACK payload decoded as ordinary AX.25, explicit local AX.25 fallback row, and ordinary native AX.25 TX |
+| Final dispatch regression | Updated build installed; operator reported “pass, near zero delay” after the DCD reconciliation fix |
+
+The long-frame receiver output did not independently print its correlation
+tag. Do not treat the expected tag calculated from size as an observed remote
+tag. Likewise, local metadata, API acceptance and counters are not proof of
+RF delivery. The final delay result is an operator observation, not an
+instrumented zero-millisecond latency measurement.
+
+### Exact tested source
+
+The feature branch remains separate from PTT PR #676. Disposable integration
+builds were local merges, not permanent integration branches or upstream PRs.
+
+| Build | FX.25 parent | PTT parent |
+|---|---|---|
+| b0e9a9c7e23467ba657134ac0bff99f82bc5a9b6 | c3741b996b5abd17cc03ff0ac9049a915f597ca1 | ddd72737e7da72c21130c850c405126be4b6e547 |
+| e50ecfc3c204d9748c7092471037802c7d1ce875 | ba50845e5081abb2ebf96679c9aff96a61d4c6a5 | be9bd8b6dd996da2a27d64f28db553356cc27dc9 |
+| d460a5df0588cb4afdeda8ba0cca7173f8e880d2 | fae73a8151a236f7bed9846ada9189bc91712c2a | be9bd8b6dd996da2a27d64f28db553356cc27dc9 |
+
+Final integration tree: `fc41cbe0163000f0eb2244550924754a5fafefba`.
+Delivered archive: `graywolf-fx25-ptt-linux-arm64-d460a5df.tar.gz`.
+SHA256: `58186e1f37370cb0cbaeb286c7d5b13cf5fc2e950db042bc17ec4ecca64281d3`.
+The archive includes exact source and BUILD provenance. It is a test build,
+not a published Graywolf release.
+
+The earlier combined build exposed queued frames delayed until a later RX
+carrier event, then sent back-to-back. The supporting DCD fix is documented
+in [implementation](fx25.md#carrier-sensing-and-queue-status); an isolated
+regression reproduced the stale-state behavior on earlier source. It does
+not bypass genuine busy-channel sensing. The final operator check passed.
+
+## Operator Pi workload and upstream baseline
+
+Offline recommended triple ensemble, 43.656 audio seconds per clean FX.25
+fixture pass; no sound device, PTT or RF:
+
+| Passes | Packets | Audio seconds | Wall seconds | User + system CPU seconds | Peak RSS KiB |
+|---:|---:|---:|---:|---:|---:|
+| 1 | 33 | 43.656 | 7.367 | 7.36 | 2968 |
+| 30 | 990 | 1309.665 | 224.329 | 224.28 | 3992 |
+
+No swaps; `vcgencmd get_throttled` reported `0x0`. Processing was about 5.8
+times faster than real time. Two peak-RSS measurements do not establish
+long-term memory stability or whole-application resource usage.
+
+A separately supplied benchmark package compared original upstream
+`bde16a1752ef96e8907aea9dc18c698e3e96a9d7` with the b0e9a9c7 combined build,
+with the same compiler/dependencies and decoder ensemble. Instrumented source
+commits were `075aecd92649c5d77aa2987129a6804ec84e749c` (upstream) and
+`2a6ed24ec249bf77ec30de83951b1c00124d3bdc` (new). Exact source archives and
+commands were included in that package, separate from the feature fixtures.
+Each trial ran three passes and verified 99 packet bytes; two rounds reversed
+mode order. New “disabled” means the test-only RX FEC switch, not the channel's
+TX toggle.
+
+| Fixture | Decoder | CPU seconds/audio second | Percent of one core | Peak RSS KiB |
+|---|---|---:|---:|---:|
+| Ordinary AX.25 | Original upstream | 0.16697 | 16.70 | 4360 |
+| Ordinary AX.25 | New, RX FEC disabled | 0.15809 | 15.81 | 4628 |
+| Ordinary AX.25 | New, RX FEC enabled | 0.16177 | 16.18 | 4632 |
+| FX.25 | Original upstream | 0.16393 | 16.39 | 4376 |
+| FX.25 | New, RX FEC disabled | 0.16115 | 16.11 | 4760 |
+| FX.25 | New, RX FEC enabled | 0.16661 | 16.66 | 4760 |
+
+Enabled versus new disabled differed by +2.33% for ordinary audio and +3.39%
+for FX.25 audio; enabled versus original upstream was -3.11% and +1.63%.
+These small changes may include measurement noise; they do not establish a
+speedup or a precise universal FEC overhead. The fixtures contain the same
+33 payloads, but ordinary audio lasts 23.098 seconds and forced-tag FX.25
+audio 43.656 seconds. Raw execution times therefore cannot be compared
+without normalizing by audio duration. That fixture's 1.89× airtime is not a
+general multiplier for Auto or everyday traffic. All clean packets also
+decode through ordinary HDLC on upstream; this does not imply upstream has
+working FX.25 recovery.
+
+## Remaining limits and publication status
+
+Unsupported-rate rejection passed automated tests; a separate physical UI
+rejection trial was not independently reported. No 300-baud, PSK, G3RUH,
+Windows, macOS or Android RF/PTT acceptance is claimed. Android library
+compilation is not an APK or device test. No controlled comparative RF/noise
+sensitivity or TX waveform-quality benchmark against Dire Wolf was performed.
+No claim of equal or superior overall modem performance follows from these
+interoperability checks.
+
+The required local RF checks have operator confirmation as described above.
+Keep the contribution on the fork until the operator explicitly requests an
+upstream PR. No upstream PR has been opened for this feature. Documentation
+in this branch does not update the upstream published handbook automatically.

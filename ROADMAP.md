@@ -10,7 +10,10 @@ re-expose them.
 Native TX/RX is wired for 1200-baud Bell 202 AFSK (1200/2200 Hz) only.
 See [FX.25 implementation and interoperability](docs/fx25.md) for standard
 formats, bounds, independent fixtures and hardware acceptance status.
-Other rates/modulations are deliberately excluded.
+Local operator RF/PTT checks passed for that scope, including ordinary AX.25
+fallback for oversized packets. Other rates/modulations are deliberately
+excluded. Ordinary 300-baud AFSK TX/RX code exists, but 300-baud FX.25 remains
+future work and needs its own integration and acceptance tests.
 
 ## IL2P forward error correction
 
@@ -27,18 +30,19 @@ Other rates/modulations are deliberately excluded.
 
 ## PSK transmit modulator
 
-- RX: `PskDemodulator` works, reachable via `modem_type=psk` at
-  `graywolf-modem/src/modem/mod.rs:1031`.
+- RX: `PskDemodulator` receiver code is present, reachable via
+  `modem_type=psk` in `graywolf-modem/src/modem/mod.rs`. This FX.25 work
+  did not validate PSK RF reception.
 - TX: no PSK modulator exists. Channels with `modem_type=psk` silently
   fall back to `afsk_mod::modulate` because `tx/mod.rs` ignores
   `modem_type` and always calls AFSK. Result: PSK channels receive
   V.26-A/B PSK but transmit AFSK on top of the same audio path —
-  guaranteed unreadable on the air.
+  not a matching PSK waveform.
 - Needed: `graywolf-modem/src/tx/psk_mod.rs` implementing V.26 A/B
   differential QPSK at the configured baud (default 2400), plus
   dispatch in `tx/mod.rs` keyed off `modem_type`.
 - Until done: `psk` is kept in the dropdown (RX-only is still useful
-  for monitor-only stations) but should grow a "(RX only)" annotation.
+  for monitor-only stations); the handbook explicitly marks TX absent.
 
 ## G3RUH 9600 baud (GFSK)
 
@@ -46,7 +50,7 @@ Other rates/modulations are deliberately excluded.
   `Demod9600` with G3RUH descrambler (poly `x^17 + x^12 + 1`),
   baseband FSK + low-pass, DPLL clock recovery, ported from direwolf
   `demod_9600.c`. Reachable via `modem_type` strings `"9600"`,
-  `"scramble"`, or `"baseband"` (`modem/mod.rs:1047`).
+  `"scramble"`, or `"baseband"` (`modem/mod.rs`). These receiver paths were not RF-validated here.
 - TX: no 9600 modulator. `tx/` has only `afsk_mod`.
 - UI: dropdown never sent any of the three working strings —
   `"gfsk"` fell through the match to the AFSK default. Dropdown
@@ -68,12 +72,17 @@ Other rates/modulations are deliberately excluded.
   laboratory or non-AX.25 use cases) or leave permanently dropped.
   Default recommendation: drop unless a real use case appears.
 
-## Surfaces walked back
+## Documentation and remaining wiring
 
-- `README.md:60`: FX.25 / IL2P FEC line — to be removed.
-- `web/src/routes/Channels.svelte:93-98`: `gfsk`, `fsk` removed from
-  `modemOptions`.
-- `web/src/lib/api.js`: mock channels updated from `gfsk*` to `afsk`
-  so dev mode no longer surfaces a non-existent modem in the UI.
-- `docs/wiki/glossary.md:24-25` and `docs/wiki/code-map.md:21-22`:
-  IL2P remains a codec library; FX.25 is wired only for 1200-baud Bell 202.
+The README and HTML handbook distinguish implemented RX from TX and limit
+FX.25 to 1200-baud Bell 202. They no longer advertise IL2P as live FEC or
+PSK/G3RUH as complete native transceivers. The former `gfsk` and `fsk` UI
+entries are removed; a receiver setting alone is not TX support. See the
+handbook's channel capability matrix and the wiki code map.
+
+Native backend selection still requires an input-device binding: literal
+output-only device wiring is unfinished. With a configured native receiver,
+TX does not require a successfully decoded incoming packet. Valid modem DCD
+status reconciles stale busy state after reconfiguration while retaining
+genuine carrier inhibition. These are distinct limits; do not bypass carrier
+sensing as a workaround.

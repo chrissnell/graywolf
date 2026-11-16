@@ -1,155 +1,171 @@
-# FX.25 Pi 4 test station (operator-run, all RF checks pending)
+# FX.25 supervised hardware testing
 
-Use a separate test station. Do not replace PacketRover or remove its Dire
-Wolf installation. The test archive is relocatable: it installs no service,
-changes no system binary and contains no automatic transmit script. It has
-`graywolf`, `graywolf-modem`, the offline `fx25_audio` utility, fixtures,
-`BUILD.txt`, checksums and these instructions. `BUILD.txt` gives the exact
-source commit, compiler versions and component version stamp. This is a
-branch test build, not a tagged release. Requires aarch64 Raspberry Pi OS
-Bookworm or later (glibc 2.36+, ALSA runtime); physical compatibility still
-needs confirmation. Do not install this ARM64 archive on x86 or Android.
-The implementation itself is shared across supported native modem platforms.
+Local operator RF/PTT checks passed on the disposable ARM64 Raspberry Pi
+station. See [validation](fx25-validation.md) for exact versions, results,
+CPU baseline and limitations. This guide describes repeatable testing;
+commands below do not send radio packets. Every RF transmission is initiated
+by the operator. Do not apply these installation commands to a working
+production station without a separate migration plan.
 
-## 1. Unpack and verify without changing the running station
+## Tested package and installation
 
-On the **test Pi**, copy the provided archive and its adjacent SHA256SUMS into
-an empty directory. Replace the archive filename below with the delivered
-filename. Commands in this document are for you to run; none runs remotely.
+The latest test archive combines FX.25 with the updated independent serial
+RTS/DTR PTT PR #676. The feature branch itself contains no PTT PR changes.
+Exact constituent commits and the archive checksum are in the validation
+record and package `BUILD.txt`. This is a branch build, not a release.
+Requires aarch64, glibc 2.36 or later and ALSA runtime libraries. The actual
+operator station reported aarch64 and glibc 2.41. This archive is not for
+x86 or Android, although the native FX.25 implementation is shared.
 
-```sh
-uname -m                         # must report aarch64
-getconf GNU_LIBC_VERSION          # must be glibc 2.36 or later
-sha256sum -c SHA256SUMS
-tar -xzf graywolf-fx25-linux-arm64.tar.gz
-cd graywolf-fx25-linux-arm64
-sha256sum -c SHA256SUMS
-cat BUILD.txt
-ldd ./graywolf-modem              # no "not found" dependencies
-./graywolf version
-```
-
-If the downloaded archive is named with a commit suffix, use that exact name
-in `tar -xzf`; the internal directory is still `graywolf-fx25-linux-arm64`.
-You need permission to use USB audio and the USB serial device (normally the
-`audio` and `dialout` groups). Preserve your already-tested PTT wiring and
-settings. This branch contains only upstream/main plus FX.25; it does not
-include the independent RTS/DTR polarity PR #676. If your hardware requires
-that PR, stop before RF testing and request a disposable integration build;
-record both exact commits. Do not permanently combine the branches.
-
-## 2. Offline workload first (no audio devices, no PTT)
+On the **disposable test Pi**, upload to `/tmp`, then run this single block.
+It installs paired binaries and leaves Graywolf stopped for an explicit
+operator start. PacketRover's UI remains available for sign-in. No mixer
+commands are included. Enter appliance maintenance mode first if `/usr` is
+read-only.
 
 ```sh
-/usr/bin/time -v ./fx25_audio workload fixtures/direwolf.wav 1 2>workload-1.txt
-/usr/bin/time -v ./fx25_audio workload fixtures/direwolf.wav 30 2>workload-30.txt
-./fx25_audio decode fixtures/direwolf-damaged.wav > recovered.txt
-wc -l recovered.txt              # must be 11; each line ends in fx25
-cat workload-1.txt workload-30.txt
+(
+  set -eu
+  cd /tmp
+  test "$(uname -m)" = aarch64
+  echo '58186e1f37370cb0cbaeb286c7d5b13cf5fc2e950db042bc17ec4ecca64281d3  graywolf-fx25-ptt-linux-arm64-d460a5df.tar.gz' | sha256sum -c -
+  tar -xzf graywolf-fx25-ptt-linux-arm64-d460a5df.tar.gz
+  cd /tmp/graywolf-fx25-ptt-linux-arm64-d460a5df
+  sha256sum -c SHA256SUMS
+  cat BUILD.txt
+  sudo test -w /usr/bin
+  sudo systemctl stop packetrover-direwolf.service graywolf.service
+  if pgrep -x graywolf || pgrep -x graywolf-modem || pgrep -x direwolf; then
+    echo 'Radio process still running; installation stopped.'
+    exit 1
+  fi
+  sudo install -o root -g root -m 0755 graywolf /usr/bin/graywolf
+  sudo install -o root -g root -m 0755 graywolf-modem /usr/bin/graywolf-modem
+  cmp graywolf /usr/bin/graywolf
+  cmp graywolf-modem /usr/bin/graywolf-modem
+  /usr/bin/graywolf version
+)
 ```
 
-Install the OS `time` package if `/usr/bin/time` is unavailable. Expected
-workload counts: 33 and 990 frames respectively. Compare user+system CPU time
-to reported audio seconds; compare maximum RSS for 1 vs 30 passes. Send both
-outputs, Pi OS version, temperature/throttling state (`vcgencmd get_throttled`)
-and the version stamp. These are measurements to collect, not predeclared
-performance thresholds or claims of RF gain. Investigate sustained memory
-increase or inability to keep up with real-time before radio testing.
+If the archive has already been extracted, inspect that directory rather than
+overwriting unrelated files. `/tmp` is staging, not a service executable path:
+systemd's `PrivateTmp` can hide it from services. On this appliance the existing
+service uses `/usr/bin/graywolf` and `/usr/bin/graywolf-modem`. Check the actual
+unit before reusing this procedure on another installation.
 
-## 3. Establish native operation on the test station
-
-Record which services are active, then stop **only on the test Pi**, manually.
-If your units have different names, substitute them. Keep the independent
-Dire Wolf receiver/transmitter on the other station running.
+## Offline checks (no audio devices or PTT)
 
 ```sh
-systemctl is-active graywolf direwolf > services-before-test.txt || true
-sudo systemctl stop graywolf
-sudo systemctl stop direwolf
-pgrep -a -f '(^|/)(direwolf|graywolf)( |$)' || true
-./graywolf --config "$PWD/test-config.db" \
-  --history-db "$PWD/test-history.db" \
-  --modem "$PWD/graywolf-modem" --http 0.0.0.0:8081 \
-  2>&1 | tee test-station.log
+(
+  set -eu
+  cd /tmp/graywolf-fx25-ptt-linux-arm64-d460a5df
+  test -x /usr/bin/time || { echo 'Install the OS time package first.'; exit 1; }
+  ./fx25_audio decode fixtures/direwolf-damaged.wav > /tmp/fx25-recovered.txt
+  wc -l /tmp/fx25-recovered.txt
+  cat /tmp/fx25-recovered.txt
+  for passes in 1 30; do
+    /usr/bin/time -v ./fx25_audio workload fixtures/direwolf.wav "$passes" \
+      > "/tmp/fx25-workload-${passes}.out" \
+      2> "/tmp/fx25-workload-${passes}.time"
+  done
+  cat /tmp/fx25-workload-{1,30}.{out,time}
+  vcgencmd get_throttled
+)
 ```
 
-Use a **fresh test-config.db**. Keep scheduled beacons, digipeating,
-APRS-IS-to-RF gating and remote transmit actions off. Visit
-`http://TEST_PI_ADDRESS:8081`, complete initial authentication, set your own
-licensed callsign, and select USB audio devices. In **Channels**, create/edit
-a native modem-backed channel: AFSK, 1200 baud, mark 1200, space 2200, your
-USB input/output. Configure the same already-tested serial PTT method and
-polarity on the **PTT** page. Do not click manual PTT or Beacon Now yet.
-Verify the modem log/version and process path name this extracted binary.
-Verify `pgrep -a direwolf` is empty on the Graywolf test Pi. A channel backed
-by a KISS TNC is not a native-modem test.
+Expected: 11 damaged-fixture recoveries, each ending in `fx25`; 33 and 990
+workload frames. Use CPU seconds divided by audio seconds, not raw wall time,
+when comparing recordings of different durations. See validation for the
+completed paired upstream baseline. These are offline measurements, not RF
+proof or whole-application CPU/RAM measurements.
 
-## 4. RF tests (you initiate every transmission)
+## Establish native operation
 
-In Graywolf's channel editor, FX.25 transmit defaults off. When enabled,
-**Automatic is recommended for everyday use. Choose a fixed parity mode for
-specific use cases or controlled testing.** Use the 16/32/64 selector to test
-each family toward Dire Wolf, then restore Automatic. RX always recognizes
-all supported families independently of this selector. Fixed-mode capacity
-failures are explicit and must not silently produce ordinary AX.25.
+Before starting, ensure saved scheduled beacons, digipeating and Internet-to-RF
+gating are disabled for this supervised test. Starting an existing station
+configuration can otherwise activate its normal automation. Then manually run:
 
-
-Use an appropriate test frequency, station identification and radio/audio
-levels. Do not enable any repeating schedule merely to run this matrix.
-Create a raw RF-only beacon with a unique sequence marker, e.g.
-`>FX25 TEST 001`, a long interval, and the selected native channel. The
-current UI calls the manual button **Beacon Now** (handbook: Send Now).
-Keep the beacon disabled: the manual Beacon Now action explicitly ignores
-the Enabled scheduling flag, so you do not need to enable a schedule.
-Use the manual-send control only when ready. Keep an event log of each
-deliberate send and every external decode.
-
-| Check | Operator action and required evidence | Status |
-|---|---|---|
-| Native FX.25 TX → Dire Wolf | Enable FX.25 transmit in channel editor, save; initiate one beacon. On separate Dire Wolf receiver, enable FX.25 debug (`-d x`) and record correlation tag, successful FEC/HDLC/FCS decode and exact packet. Include a longer packet to exercise longer parity airtime. | Pending |
-| Dire Wolf FX.25 TX → native RX | On the separate station select `FX25TX 16`, then 32 and 64, transmit identifiable packets one at a time. Graywolf test Pi must have Dire Wolf stopped and native audio active. Record exact payloads and single delivery. Its FX.25 TX toggle does not control RX. | Pending |
-| Ordinary AX.25 both directions | Disable FX.25 transmit in Graywolf; set Dire Wolf `FX25TX 0`. Send one ordinary packet each way and verify external decode. Restore FX.25 afterward and confirm ordinary RX still works. | Pending |
-| PTT duration/release | Observe physical keying through the complete longest FX.25 transmission and release after tail. Record separate receiver success; a local TX-done/counter alone is insufficient. | Pending |
-| No duplicates / legitimate repeats | Record packet log and independent receiver for one send, then deliberately repeat the same payload after the first transmission finishes. Expect one delivered event per send, two events total. Check subscriber/packet log events rather than unique station-map rows. | Pending |
-| Restart/configuration | Stop test app with Ctrl-C, restart identical command, repeat both directions. Toggle FX.25 off/on with save and repeat. Verify unsupported 300-baud/PSK combination is rejected in editor/API. | Pending |
-
-For the separate Dire Wolf station, its normal channel-0 configuration uses:
-
-```text
-CHANNEL 0
-MODEM 1200
-FX25TX 16
+```sh
+(
+  set -eu
+  sudo systemctl start packetrover-aprs.service graywolf.service
+  systemctl is-active packetrover-aprs.service graywolf.service
+  systemctl is-active packetrover-direwolf.service || true
+  pgrep -a -x graywolf
+  pgrep -a -x graywolf-modem
+  pgrep -a -x direwolf || true
+  sudo ss -ltnp
+)
 ```
 
-The example explicitly requests 16 parity bytes; it is not the default.
-Dire Wolf normally defaults FX.25 TX off for APRS. `FX25TX 1` selects its
-automatic mode. Change only `FX25TX` to 32, 64 or 0 for the corresponding supervised test;
-use that station's existing audio/PTT config and normal manual TX client.
-No instruction here automatically sends a radio packet. The packet log must show FX.25 for both clean and repaired verified
-codewords. Check “FEC decoded · 0 symbols repaired” for a clean codeword;
-the inspector shows the tag, RS mode and parity. The old `none` limitation
-is removed in the replacement build. Do not infer successful FEC decoding
-from the channel TX setting alone.
+Open PacketRover's UI and use its Graywolf sign-in link. Confirm the native
+channel uses the installed modem, USB input/output, AFSK 1200 baud and
+1200/2200 Hz tones. A KISS channel is not a native test. Configure the
+already-tested serial PTT method and independent RTS/DTR polarity on the PTT
+page. Preserve audio/mixer levels. Dire Wolf must not be running on the test
+Pi; the separate Dire Wolf station is the independent receiver/transmitter.
 
-Record: BUILD commit, OS/architecture, USB device names, channel settings,
-PTT method, exact marker/frame, sender timestamp, receiver timestamp/tag,
-received-event count, receiver audio capture if available, and outcome.
-Keep RF reception evidence separate from API responses, queue completion,
-local counters and offline tests. All matrix rows remain pending until you
-provide their results; no upstream PR will be opened until local testing is complete and you explicitly request it.
+## Supervised RF matrix
+
+Use an appropriate frequency, identification and normal audio/radio levels.
+Create a **disabled position beacon** using the sending station's actual
+GPS/coordinates, no digipeater path, and a unique test marker in its comment.
+Do not use a status packet: it can change the station's persistent APRS status.
+Do not copy the other station's coordinates into the Pi's beacon. Beacon Now
+ignores the Enabled scheduling flag, so leave the schedule disabled.
+
+Initiate one packet at a time and wait for external reception before sending
+another. Beacon Now means **queued**, not received over RF. If PTT is delayed,
+inspect carrier/queue state rather than repeatedly clicking. Genuine busy
+carrier still inhibits TX. The final tested build reconciles stale DCD after
+audio reconfiguration and does not require a decoded packet to release TX.
+
+| Check | Operator action/evidence |
+|---|---|
+| Graywolf → Dire Wolf | Test FX.25 off, then Auto, 16, 32 and 64; save settings before each manual send. Record exact external payload and FX.25 identification |
+| Dire Wolf → Graywolf | On the separate station test `FX25TX 0`, 16, 32 and 64 using its existing audio/PTT setup. Record ordinary AX.25 or verified FX.25 badge, tag, parity and correction count in native Graywolf |
+| Longer frame / PTT | Add a longer position comment ending in a unique marker; send with fixed 64. Observe actual keying/release and complete remote payload through the ending marker |
+| Oversized fallback | Use a position comment too large for fixed 64. Expect explicit AX.25 fallback locally and complete ordinary AX.25 remote decode, without truncation |
+| Delivery count | One event per deliberate send; repeat an identical payload after the first finishes and confirm a second event |
+| Restart/configuration | Restart Graywolf after confirming schedules remain disabled; manually repeat RX/TX and saved off/on changes |
+| Unsupported configuration | Verify editor/API rejects FX.25 with unsupported rate, tones or modulation. This passed automated checks; a physical editor trial was not independently reported |
+
+Auto is recommended for everyday use. Fixed parity modes are useful for
+specific use cases and testing. The selector controls TX only; native RX
+recognizes all eleven standard tag/block formats regardless of TX settings.
+Auto follows Dire Wolf `FX25TX 1` size selection, not measured signal quality.
+Dire Wolf normally defaults FX.25 TX off for APRS (`FX25TX 0`); 16 explicitly
+requests 16 parity bytes, not the default. Oversized packets fall back to
+ordinary AX.25 in both Auto and fixed Graywolf modes. See [limits](fx25.md).
+
+The log shows **FEC decoded · N symbols repaired** for verified RX, including
+zero on clean codewords. Actual native TX shows encoding/tag/parity or
+**AX.25 fallback** after local queue acceptance. These TX labels are not remote
+reception evidence. Correction counts cover codeword symbols, including
+parity; nonzero counts alone do not establish an RF sensitivity comparison.
+
+Capture the separate Dire Wolf tmux pane without changing its configuration:
+
+```sh
+sudo -u direwolf tmux -S /run/direwolf/tmux.sock capture-pane -p -S -500 \
+  > /tmp/direwolf-fx25-capture.txt
+```
+
+Choose the correct pane with `-t` if multiple panes exist. Record build/commit,
+settings, exact markers, both stations' observations and per-send counts.
+Preserve logs/screenshots separately from local API responses and counters.
 
 ## Recovery
 
-Ctrl-C the foreground test app. Leave the extracted directory/test databases
-in place for diagnosis or remove them later; no system binary was replaced.
-Manually restart only the services that were active in `services-before-test.txt`:
+This disposable installation replaced its binaries deliberately. Re-image it
+when testing ends, as planned. To stop testing first, disable schedules and
+stop Graywolf; if a radio remains keyed, manually unkey/disconnect PTT before
+restarting anything. For an earlier return, reinstall the known-good paired
+app/modem package and restore the intended station configuration before
+starting radio services. Do not start native Graywolf and Dire Wolf against
+the same audio/PTT hardware simultaneously.
 
-```sh
-# Run only the appropriate lines for your recorded prior service state:
-sudo systemctl start direwolf
-sudo systemctl start graywolf
-```
-
-If a radio remains keyed, unkey it/disconnect PTT before restarting software.
-The untouched installed binaries/configuration are the recovery path. Do not
-point the test build at the installed production configuration database.
+On the separate production station, restore its original Graywolf and Dire
+Wolf services/configuration after supervised testing. The completed test
+script did this and verified unchanged ALSA mixer state and config hash.
+Neither permanent station migration nor an upstream PR is part of these tests.
