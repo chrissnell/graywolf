@@ -196,16 +196,12 @@
     }
     const m = methodOptionForDevice(dev);
     dialogContext = { kind: 'add', channelId: channelsNeedingPttList[0].id, item: { device_path: dev.path } };
-    if (m && dev.recommended) {
-      // Recommended: skip Dialog A, jump straight into Dialog B with
-      // method + device preselected.
-      dialogMethodChosen = m;
-      dialogDeviceOpen = true;
-    } else {
-      // Other / unknown: open Dialog A so the operator picks a method.
-      dialogMethodChosen = m || null;
-      dialogMethodOpen = true;
-    }
+    // Detection identifies the port, not its wiring or inactive levels.
+    // Always confirm the method before opening the device dialog: saving an
+    // assumed RTS-only configuration can leave DTR at an active level.
+    dialogMethodChosen = m || null;
+    dialogDeviceOpen = false;
+    dialogMethodOpen = true;
   }
 
   function openChangeMethod(item) {
