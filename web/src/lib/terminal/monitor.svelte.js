@@ -10,6 +10,7 @@
 // this module just owns the WebSocket and the byte stream.
 
 import { packetPalette } from '../packetTraffic.js';
+import { isSignalTheme } from '../themes/registry.js';
 import { formatMonitorPacket } from '../packetMonitorColors.js';
 
 const READY_STATE_OPEN = 1;
@@ -48,7 +49,8 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
 
   let ws = null;
   let enc = new TextEncoder();
-  let colorEnabled = false;
+  function currentTheme() { return typeof document !== 'undefined' ? document.documentElement.dataset.theme || 'graywolf' : 'graywolf'; }
+  let colorEnabled = isSignalTheme(currentTheme());
   let history = [];
   let themeObserver = null;
   let contrastQuery = null;
@@ -67,14 +69,12 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
     } catch { /* viewport disposed */ }
   }
 
-  function setPacketColors(enabled) {
-    const next = enabled === true;
-    if (colorEnabled === next) return;
+  function themeChanged() {
+    const next = isSignalTheme(currentTheme());
+    const wasEnabled = colorEnabled;
     colorEnabled = next;
-    repaint();
+    if (wasEnabled || next) repaint();
   }
-
-  function themeChanged() { if (colorEnabled) repaint(); }
   if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined') {
     themeObserver = new MutationObserver(themeChanged);
     themeObserver.observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
@@ -167,7 +167,6 @@ export function createMonitorSession({ channel, initialFilter = '' } = {}) {
 
   return {
     state,
-    setPacketColors,
     repaint,
     sendData,
     setFilter,

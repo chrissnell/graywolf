@@ -5,7 +5,7 @@ import { compileModule } from 'svelte/compiler';
 
 // Exercise the production rune module with Svelte's server transform: its
 // state remains observable, while sockets/DOM are controlled offline fakes.
-test('monitor defaults plain, bounds repaint history and never recounts it',async()=>{
+test('monitor follows theme selection, bounds repaint history and never recounts it',async()=>{
  const file=new URL(`./monitor-test-${process.pid}.tmp.mjs`,import.meta.url);
  const originals=Object.fromEntries(['WebSocket','location','document','window','MutationObserver'].map(k=>[k,globalThis[k]]));
  let socket, observer;
@@ -22,15 +22,15 @@ test('monitor defaults plain, bounds repaint history and never recounts it',asyn
   monitor.state.onDataRX=bytes=>output.push(new TextDecoder().decode(bytes));
   for(let i=0;i<510;i++)socket.onmessage({data:JSON.stringify({kind:'raw_tail',raw_tail:{raw:`A>B:packet-${i}`,direction:'IS',source:'igate',notes:'rf2is'}})});
   assert.equal(output[0],'A>B:packet-0\r\n');assert.equal(monitor.state.lineCount,510);
-  output.length=0;monitor.setPacketColors(true);
+  output.length=0;globalThis.document.documentElement.dataset.theme='signal-dark';observer.fn();
   assert.equal(output.length,501);assert.ok(output[1].includes('RF → IS'));
   assert.ok(output[1].includes('packet-10'));assert.ok(output.at(-1).includes('packet-509'));
   assert.equal(monitor.state.lineCount,510);
-  output.length=0;globalThis.document.documentElement.dataset.theme='graywolf';observer.fn();
+  output.length=0;globalThis.document.documentElement.dataset.theme='signal-light';observer.fn();
   assert.equal(output.length,501);assert.equal(monitor.state.lineCount,510);
-  output.length=0;monitor.setPacketColors(false);
+  output.length=0;globalThis.document.documentElement.dataset.theme='graywolf';observer.fn();
   assert.equal(output[1],'A>B:packet-10\r\n');assert.equal(output.at(-1),'A>B:packet-509\r\n');
-  output.length=0;monitor.clearScreen();monitor.setPacketColors(true);
+  output.length=0;monitor.clearScreen();globalThis.document.documentElement.dataset.theme='signal-dark';observer.fn();
   assert.equal(output.length,2); // clear + repaint clear; no old packet restored
   monitor.close();assert.equal(socket.closed,true);assert.equal(observer.closed,true);
  } finally {

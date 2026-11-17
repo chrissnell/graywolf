@@ -5,6 +5,7 @@
   import { SearchAddon } from '@xterm/addon-search';
   import '@xterm/xterm/css/xterm.css';
 
+  import { isSignalTheme } from '../../lib/themes/registry.js';
   import { buildTheme } from '../../lib/terminal/theme.js';
   import { PRESETS } from '../../lib/terminal/presets.ts';
   import { createEolNormalizer } from '../../lib/terminal/lineendings.js';
@@ -45,9 +46,20 @@
     for (const [k, v] of Object.entries(overrides)) node.style.setProperty(k, v);
   }
 
-  function reapplyTheme() {
+  function terminalFont() {
+    return isSignalTheme(document.documentElement.dataset.theme)
+      ? '"JetBrains Mono", "SauceCodeProNF", monospace'
+      : '"SauceCodeProNF", "Source Code Pro", Menlo, Consolas, monospace';
+  }
+
+  async function reapplyTheme() {
     if (!term || !host) return;
     term.options.theme = buildTheme(host);
+    const font = terminalFont();
+    if (font.startsWith('"JetBrains Mono"')) {
+      try { await document.fonts?.load('18px "JetBrains Mono"'); } catch { /* use fallback */ }
+    }
+    if (term && mounted && font === terminalFont()) term.options.fontFamily = font;
   }
 
 
@@ -69,6 +81,7 @@
     try {
       if (typeof document !== 'undefined' && document.fonts && document.fonts.load) {
         await document.fonts.load('12px "SauceCodeProNF"');
+        if (isSignalTheme(document.documentElement.dataset.theme)) await document.fonts.load('18px "JetBrains Mono"');
         await document.fonts.ready;
       }
     } catch {
@@ -96,7 +109,7 @@
       // screenReaderMode populates xterm's off-screen accessibility
       // tree for SR users.
       screenReaderMode: true,
-      fontFamily: '"SauceCodeProNF", "Source Code Pro", Menlo, Consolas, monospace',
+      fontFamily: terminalFont(),
       fontSize,
       theme: buildTheme(host),
       scrollback: 5000,

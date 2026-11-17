@@ -1,0 +1,36 @@
+/* Signal Light: interface colors. Packet palette: src/lib/packetTraffic.js. */
+:root:root[data-theme="signal-light"] {
+  --color-bg: #F3F6F8;
+  --color-surface: #FFFFFF;
+  --color-surface-raised: #E9EFF3;
+  --color-border: #CCD6DF;
+  --color-border-subtle: #DFE6EC;
+  --color-text: #182B25;
+  --color-text-muted: #4B5D6B;
+  --color-text-dim: #586B7A;
+  --color-text-inverse: #FFFFFF;
+  --color-primary: #087F78;
+  --color-primary-hover: #066B65;
+  --color-primary-muted: #E0F3EF;
+  --color-primary-fg: #FFFFFF;
+  --color-accent: #087F78;
+  --color-success: #237A48;
+  --color-success-fill: #237A48;
+  --color-success-muted: #E5F4EA;
+  --color-success-fg: #FFFFFF;
+  --color-warning: #906600;
+  --color-warning-muted: #FFF4D6;
+  --color-warning-fg: #FFFFFF;
+  --color-danger: #B4233B;
+  --color-danger-hover: #971D32;
+  --color-danger-muted: #FBE8EB;
+  --color-danger-fg: #FFFFFF;
+  --color-info: #236BA8;
+  --color-info-muted: #E7F1FC;
+  --color-info-fg: #FFFFFF;
+  --color-btn-bg: #FFFFFF;
+  --color-btn-bg-hover: #E9EFF3;
+  --color-btn-border: #B8C6D1;
+  --signal-selected-bg: #087F78;
+  --signal-selected-fg: #FFFFFF;
+}

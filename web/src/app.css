@@ -22,7 +22,8 @@
   --success: var(--color-success);
   --error: var(--color-danger);
   --warning: var(--color-warning);
-  --font-sans: var(--font-mono);
+  --font-ui: var(--font-mono);
+  --font-sans: var(--font-ui);
   --sidebar-width: 220px;
   /* Compact left rail shown in place of the full sidebar on small
      landscape phones (GH #419). Kept narrow so the map keeps almost the
@@ -61,7 +62,7 @@ html, body, #app {
   height: 100%;
   background: var(--color-bg);
   color: var(--color-text);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 14px;
   line-height: 1.5;
   /* Disable Android WebView text autosizing ("font boosting"), which
@@ -81,7 +82,7 @@ a:hover {
 }
 
 input, select, textarea, button {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: 14px;
 }
 
@@ -161,3 +162,6 @@ input, select, textarea, button {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-btn-bg-hover);
 }
+
+/* Technical data retains fixed-width glyphs in mixed-typography themes. */
+code, pre { font-family: var(--font-mono); }

@@ -7,7 +7,6 @@
   import { uiScaleState, UI_SCALE_OPTIONS } from '../lib/settings/ui-scale-store.svelte.js';
   import { THEMES } from '../lib/themes/registry.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import { packetColors } from '../lib/settings/packet-colors-store.svelte.js';
 
   const themeOptions = THEMES.map((t) => ({ value: t.id, label: t.name }));
 
@@ -36,11 +35,6 @@
     <code>graywolf/web/themes/README.md</code>
     for how to add one in a pull request.
   </p>
-</Box>
-
-<Box title="Packet display">
-  <Toggle checked={packetColors.enabled} onCheckedChange={(v) => packetColors.setEnabled(v)} label="Enhanced packet view" />
-  <p class="packet-colors-hint">Optional traffic colors, flow labels and header text highlights for the Dashboard, APRS Logs and live packet monitor, plus clearer packet separation in Dashboard and APRS Logs. Off by default. Saved on this device only. Flow labels remain readable in grayscale and high-contrast themes.</p>
 </Box>
 
 <Box title="Display size">

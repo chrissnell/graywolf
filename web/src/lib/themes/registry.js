@@ -16,3 +16,8 @@ const IDS = new Set(THEMES.map((t) => t.id));
 export function isValidTheme(id) {
   return typeof id === 'string' && IDS.has(id);
 }
+
+// Presentation capability follows the selected saved theme, never a second preference.
+export function isSignalTheme(id) {
+  return THEMES.some(theme => theme.id === id && theme.enhancedPackets === true);
+}

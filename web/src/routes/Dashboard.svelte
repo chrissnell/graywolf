@@ -1,4 +1,7 @@
 <script>
+  import { isSignalTheme } from '../lib/themes/registry.js';
+  import { themeState } from '../lib/settings/theme-store.svelte.js';
+  import { hasNativeInput, channelAudioPeak, dashboardBeacons, kissChannelStatus } from '../lib/dashboardPresentation.js';
   import { onMount } from 'svelte';
   import { Button, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
@@ -16,6 +19,12 @@
   let stationCallsign = $state('');
   let audioDevices = $state([]);
   let pollTimer = $state(null);
+  let kissInterfaces = $state([]);
+  let kissAvailable = $state(false);
+  const signalTheme = $derived(isSignalTheme(themeState.theme));
+  const kissOnly = $derived(status?.channels?.length > 0 && status.channels.every(ch => !hasNativeInput(ch)));
+  const kissRxReady = $derived(status?.channels?.some(ch => kissChannelStatus(ch, kissInterfaces, kissAvailable).connected) ?? false);
+  const kissTxReady = $derived(status?.channels?.some(ch => kissChannelStatus(ch, kissInterfaces, kissAvailable).txReady) ?? false);
 
   let offline = $derived(!$online);
 
@@ -43,16 +52,9 @@
   let txActive = $state({});
   let sendingBeacon = $state({});
 
-  // Group enabled beacons by channel
-  let beaconsByChannel = $derived(
-    beacons.reduce((acc, b) => {
-      if (b.enabled) {
-        if (!acc[b.channel]) acc[b.channel] = [];
-        acc[b.channel].push(b);
-      }
-      return acc;
-    }, {})
-  );
+  // Keep Internet-only beacons on the Beacons page, even if a stale channel
+  // association remains in an older configuration. Reuse the label helper.
+  const beaconsByChannel = $derived(dashboardBeacons(beacons));
 
   // Same auto-refresh / auto-scroll switches as the APRS Logs page, rendered
   // in the packet feed's own toolbar via Chonky's LogViewer toolbarToggles.
@@ -95,16 +97,21 @@
   });
 
   async function loadData() {
-    const [pkts, pos, st] = await Promise.allSettled([
+    const [pkts, pos, st, kiss] = await Promise.allSettled([
       api.get('/packets?limit=20'),
       api.get('/position'),
       api.get('/status'),
+      signalTheme ? api.get('/kiss') : Promise.resolve(null),
     ]);
     // Auto-refresh gates only the packet feed (its toolbar owns the toggle),
     // so the operator can freeze the log to read it while the status cards
     // and position keep updating. See the toolbarToggles wiring below.
     if (pkts.status === 'fulfilled' && logPrefsState.autoRefresh) packets = pkts.value || [];
     if (pos.status === 'fulfilled') position = pos.value;
+    if (signalTheme) {
+      kissAvailable = kiss.status === 'fulfilled' && Array.isArray(kiss.value);
+      kissInterfaces = kissAvailable ? kiss.value : [];
+    }
     if (st.status === 'fulfilled' && st.value) {
       // Track RX/TX activity changes for flash indicators
       if (st.value.channels) {
@@ -150,7 +157,7 @@
       await api.post(`/beacons/${beaconId}/send`);
       // Flash TX indicator immediately for the beacon's channel
       const bcn = beacons.find(b => b.id === beaconId);
-      if (bcn) {
+      if (bcn && bcn.send_path !== 'is_only') {
         txActive = { ...txActive, [bcn.channel]: true };
         setTimeout(() => { txActive = { ...txActive, [bcn.channel]: false }; }, 3000);
       }
@@ -225,6 +232,8 @@
 
 <PageHeader title="Dashboard" subtitle="Live station overview" />
 
+<div class:signal-dashboard={signalTheme}>
+
 {#if offline}
   <div class="conn-lost" role="alert">
     <span class="conn-dot"></span>
@@ -234,6 +243,10 @@
 
 {#if !offline}
   <div class="readiness-row">
+    {#if signalTheme && kissOnly}
+      <div class="ready-chip" class:ok={kissRxReady}><span class="ready-dot">{kissRxReady ? '●' : '○'}</span><span>KISS {kissRxReady ? 'Connected' : kissAvailable ? 'Not connected' : 'Status unavailable'}</span></div>
+      <div class="ready-chip" class:ok={kissTxReady}><span class="ready-dot">{kissTxReady ? '●' : '○'}</span><span>KISS TX {kissTxReady ? 'Ready' : 'Not ready'}</span></div>
+    {:else}
     <div class="ready-chip" class:ok={hasInput}>
       <span class="ready-dot">{hasInput ? '\u25CF' : '\u25CB'}</span>
       <span>RX {hasInput ? 'Ready' : 'No Input'}</span>
@@ -242,6 +255,7 @@
       <span class="ready-dot">{hasOutput ? '\u25CF' : '\u25CB'}</span>
       <span>TX Audio {hasOutput ? 'Ready' : 'No Output'}</span>
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -250,45 +264,55 @@
   {#if status?.channels?.length}
     {#each status.channels as ch}
       {@const channelBeacons = beaconsByChannel[ch.id] || []}
-      {@const audioPeak = ch.device_peak_dbfs || ch.audio_peak}
-      <div class="ch-card">
+      {@const native = hasNativeInput(ch)}
+      {@const audioPeak = signalTheme ? channelAudioPeak(ch) : ch.device_peak_dbfs || ch.audio_peak}
+      {@const kissStatus = kissChannelStatus(ch, kissInterfaces, kissAvailable)}
+      <div class="ch-card" class:many-beacons={channelBeacons.length > 1} class:kiss-only={!native}>
         <div class="ch-header">
           <span class="ch-title">CH{ch.id}: {ch.name}</span>
-          <span class="ch-modem">{ch.modem_type.toUpperCase()} {ch.bit_rate} bd</span>
+          <span class="ch-modem">{#if signalTheme && !native}{kissStatus.label}{:else}{ch.modem_type.toUpperCase()} {ch.bit_rate} bd{/if}</span>
         </div>
 
         <div class="ch-indicators">
-          <span class="indicator" class:active={ch.dcd_state}>
-            <span class="ind-dot dcd"></span> DCD
+          <span class="indicator" class:active={(!signalTheme || native) && ch.dcd_state} title={signalTheme && !native ? 'DCD is not reported by KISS' : 'Data carrier detect'}>
+            <span class="ind-dot dcd"></span> DCD{signalTheme && !native ? ' —' : ''}
           </span>
-          <span class="indicator" class:active={rxActive[ch.id]}>
+          <span class="indicator" class:active={rxActive[ch.id]} title="Recent received-frame activity">
             <span class="ind-dot rx"></span> RX
           </span>
-          <span class="indicator" class:active={txActive[ch.id]}>
+          <span class="indicator" class:active={txActive[ch.id]} title="Recent local transmit activity; not proof of remote reception">
             <span class="ind-dot tx"></span> TX
           </span>
         </div>
 
         <div class="ch-audio">
-          <div class="level-bar">
-            <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
-          </div>
-          <span class="level-value">{formatPeak(audioPeak)}</span>
+          {#if signalTheme && !native}
+            <span class="kiss-audio-note">External KISS TNC · audio level unavailable</span>
+          {:else if signalTheme && audioPeak === null}
+            <span class="kiss-audio-note">Audio level unavailable</span>
+          {:else}
+            {#if signalTheme}<span class="audio-caption">RX Audio</span>{/if}
+            <div class="level-bar">
+              <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+            </div>
+            <span class="level-value">{formatPeak(audioPeak)}</span>
+          {/if}
         </div>
 
         <div class="ch-stats">
           <span>RX: <strong>{ch.rx_frames || 0}</strong></span>
           <span>TX: <strong>{ch.tx_frames || 0}</strong></span>
-          <span title="Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.">Bad FCS: <strong>{ch.rx_bad_fcs || 0}</strong></span>
+          <span title={signalTheme && !native ? 'Bad-FCS counts are not reported by the KISS TNC' : 'Frames received but rejected by FCS/CRC check. High values indicate marginal signal or interference.'}>Bad FCS: <strong>{signalTheme && !native ? '—' : ch.rx_bad_fcs || 0}</strong></span>
         </div>
 
         {#if channelBeacons.length > 0}
-          <div class="ch-beacons">
+          <div class="ch-beacons" aria-label={`Beacons for ${ch.name}`}>
             {#each channelBeacons as bcn}
               <Button
                 variant="primary"
                 onclick={() => sendBeaconNow(bcn.id)}
                 disabled={sendingBeacon[bcn.id]}
+                title={`Beacon Now: ${beaconLabel(bcn, stationCallsign)}`}
               >
                 {sendingBeacon[bcn.id] ? 'Sent!' : `Beacon Now: ${beaconLabel(bcn, stationCallsign)}`}
               </Button>
@@ -356,7 +380,36 @@
   {/if}
 </div>
 
+</div>
+
 <style>
+  .signal-dashboard .channel-grid { grid-template-columns: 1fr; container-type: inline-size; }
+  .signal-dashboard .ch-card { background: var(--color-surface); gap: 12px; min-width: 0; }
+  .signal-dashboard .ch-header { flex-wrap: wrap; gap: 6px 16px; min-width: 0; }
+  .signal-dashboard .ch-title { overflow-wrap: anywhere; }
+  .signal-dashboard .ch-indicators { flex-wrap: wrap; gap: 12px; }
+  .signal-dashboard .indicator { color: var(--color-text-muted); }
+  .signal-dashboard .ind-dot { background: var(--color-border); border: 1px solid var(--color-text-dim); flex-shrink: 0; }
+  .signal-dashboard .indicator.active .ind-dot { box-shadow: none; border-color: transparent; }
+  .signal-dashboard .indicator.active .ind-dot.tx { background: var(--color-danger); }
+  .signal-dashboard .ch-audio { min-width: 0; flex-wrap: wrap; }
+  .audio-caption, .kiss-audio-note { font-size: .8rem; color: var(--color-text-muted); }
+  .signal-dashboard .ch-stats { flex-wrap: wrap; gap: 6px 20px; }
+  .signal-dashboard .ch-beacons { min-width: 0; align-items: stretch; }
+  .signal-dashboard .ch-beacons :global(button) { max-width: 100%; white-space: normal; overflow-wrap: anywhere; font-family: var(--font-ui); }
+  .signal-dashboard .stat-card { background: var(--color-surface); border-radius: var(--radius); }
+  .signal-dashboard .stat-value { font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+  .signal-dashboard .stat-label { font-size: .8rem; letter-spacing: 0; }
+  @container (min-width: 920px) {
+    .signal-dashboard .ch-card { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(140px, 1fr) auto fit-content(16rem); align-items: center; }
+    .signal-dashboard .ch-header { grid-column: 1; grid-row: 1; flex-direction: column; align-items: flex-start; }
+    .signal-dashboard .ch-audio { grid-column: 2; grid-row: 1; }
+    .signal-dashboard .ch-indicators { grid-column: 3; grid-row: 1; }
+    .signal-dashboard .ch-stats { grid-column: 1 / -1; grid-row: 2; }
+    .signal-dashboard .ch-beacons { grid-column: 4; grid-row: 1; justify-content: flex-end; }
+    .signal-dashboard .ch-card.many-beacons .ch-beacons { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
+  }
+
   /* ── lost-connection banner ───────────────────── */
   .conn-lost {
     display: flex;

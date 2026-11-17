@@ -42,29 +42,29 @@ export function packetHeaderSegments(value = '') {
 
 const IDS = Object.keys(TRAFFIC_LABELS);
 const LIGHT = [
-  ['#e5f1e8','#35764b'], ['#f0f7f1','#79a586'], ['#f8e5e7','#a74753'], ['#fdf1f2','#c3858b'],
-  ['#fff3cf','#967321'], ['#ffebd5','#a15b12'], ['#e5effb','#356fa3'], ['#f0f0f0','#777777'],
+  ['#E5F4EA','#237A48'], ['#F0F8F2','#4D7C5B'], ['#FBE8EB','#B4233B'], ['#FFF1F3','#A95065'],
+  ['#FFF4D6','#906600'], ['#FFF0E1','#A65316'], ['#E7F1FC','#236BA8'], ['#EDF1F5','#596779'],
 ];
 const DARK = [
-  ['#0d3320','#40d880'], ['#335f47','#c0e4cd'], ['#501a24','#ff7187'], ['#714552','#ffd0dc'],
-  ['#4c400c','#f4d34e'], ['#5a2d10','#ffab64'], ['#103f6b','#6ec0ff'], ['#26323c','#788695'],
+  ['#163A2B','#58D68B'], ['#254D3C','#ACDBBE'], ['#48232E','#FF8197'], ['#54313D','#F4B7C5'],
+  ['#443B1E','#E8C967'], ['#492F20','#F0AD73'], ['#193A55','#82BDF0'], ['#293442','#A6B4C6'],
 ];
 
 export function packetPalette(theme = 'graywolf', highContrast = false) {
-  const night = theme.endsWith('-night');
+  const night = theme === 'signal-dark' || theme.endsWith('-night');
   const mono = theme.startsWith('grayscale') || theme.startsWith('high-contrast') || highContrast;
   const contrast = highContrast || theme.startsWith('high-contrast');
-  const foreground = mono ? (night ? '#ffffff' : '#000000') : (night ? '#f5f8fa' : '#18231e');
-  const background = night ? (contrast ? '#000000' : '#0a0a0a') : '#ffffff';
+  const foreground = mono ? (night ? '#ffffff' : '#000000') : (night ? '#F1F5F9' : '#182B25');
+  const background = night ? (contrast ? '#000000' : '#17212D') : '#ffffff';
   const colors = night ? DARK : LIGHT;
   const flows = Object.fromEntries(IDS.map((id, i) => [id, {
     background: mono ? (contrast ? background : (night ? ['#202020','#383838','#242424','#404040','#292929','#353535','#303030','#252525'][i] : ['#e6e6e6','#f4f4f4','#e9e9e9','#f7f7f7','#ececec','#eeeeee','#e0e0e0','#f0f0f0'][i])) : colors[i][0],
     edge: mono ? foreground : colors[i][1],
   }]));
-  return { foreground, background, muted: mono ? foreground : (night ? '#d5dfe4' : '#48515a'),
-    source: mono ? foreground : (night ? '#ffe2b0' : '#7a3800'),
-    destination: mono ? foreground : (night ? '#c7eaff' : '#175079'),
-    path: mono ? foreground : (night ? '#eddcff' : '#64437e'), flows };
+  return { foreground, background, muted: mono ? foreground : (night ? '#CBD5E1' : '#43534D'),
+    source: mono ? foreground : (night ? '#F9D49B' : '#703A12'),
+    destination: mono ? foreground : (night ? '#BAE1FA' : '#1C4D75'),
+    path: mono ? foreground : (night ? '#DFC9F4' : '#613F7A'), flows };
 }
 
 export function packetPaletteStyle(palette) {
