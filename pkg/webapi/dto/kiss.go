@@ -29,6 +29,7 @@ const (
 // rejects obviously-wrong non-zero values up front so the error lands
 // at the API boundary instead of the SQLite boundary.
 type KissRequest struct {
+	DisplayName string `json:"display_name"`
 	Type    string `json:"type"`
 	TcpPort int    `json:"tcp_port"`
 	// LocalOnly, when set on a tcp (server-listen) interface, binds the
@@ -211,6 +212,7 @@ func (r KissRequest) ToModel() configstore.KissInterface {
 		enabled = *r.Enabled
 	}
 	ki := configstore.KissInterface{
+		DisplayName:         r.DisplayName,
 		InterfaceType:       r.Type,
 		Device:              r.SerialDevice,
 		BaudRate:            r.BaudRate,
@@ -278,6 +280,7 @@ func (r KissRequest) ToUpdate(id uint32) configstore.KissInterface {
 // can surface a "reconfigure me" banner on rows whose Channel was
 // nulled by a Phase 5 cascade delete.
 type KissResponse struct {
+	DisplayName string `json:"display_name"`
 	ID      uint32 `json:"id"`
 	Type    string `json:"type"`
 	TcpPort int    `json:"tcp_port"`
@@ -337,6 +340,7 @@ func isLoopbackHost(host string) bool {
 
 func KissFromModel(m configstore.KissInterface) KissResponse {
 	out := KissResponse{
+		DisplayName:         m.DisplayName,
 		ID:                  m.ID,
 		Type:                m.InterfaceType,
 		SerialDevice:        m.Device,

@@ -87,6 +87,21 @@
       <div class="caption">A TCP KISS interface configured on port 8071</div>
     </div>
 
+    <h2 id="display-names">Interface Display Names</h2>
+
+    <p>Set <strong>Display Name (optional)</strong> when adding or editing a KISS
+      interface to identify its purpose, for example &ldquo;Local Dire Wolf&rdquo;
+      or &ldquo;UHF TNC&rdquo;. The interface list shows this name alongside its
+      connection details. With no display name, the Name column shows a dash.</p>
+    <p>This is a local label only. It does not change the internal interface name
+      or ID, RF callsign/SSID, channel, endpoint or KISS framing. Names do not need
+      to be unique. Saving an interface, including a name-only edit, restarts its
+      connection, so make changes when a brief interruption is acceptable.</p>
+    <p>The API field is <code>display_name</code>. The browser trims surrounding
+      whitespace. The interface PUT endpoint replaces the configuration: include
+      the existing display name when retaining it; an empty or omitted field
+      clears it. The dedicated enable/disable endpoint retains the name.</p>
+
     <h2 id="interface-types">Interface Types</h2>
 
     <div class="box">

@@ -1579,6 +1579,8 @@ definitions:
         type: integer
       channel:
         type: integer
+      display_name:
+        type: string
       enabled:
         description: |-
           Enabled gates whether graywolf runs this interface. When false the
@@ -1650,6 +1652,8 @@ definitions:
         type: integer
       connected_since:
         type: integer
+      display_name:
+        type: string
       enabled:
         description: |-
           Enabled mirrors KissInterface.Enabled so the Kiss page can show a
