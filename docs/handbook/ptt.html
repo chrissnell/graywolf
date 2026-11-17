@@ -236,7 +236,12 @@
             <tr>
               <td><code>invert</code></td>
               <td><code>false</code></td>
-              <td>Reverse PTT polarity (for backwards-wired rigs)</td>
+              <td>Reverse PTT polarity. For <code>serial_rts_dtr</code>, this controls RTS only; DTR uses <code>dtr_invert</code>.</td>
+            </tr>
+            <tr>
+              <td><code>dtr_invert</code></td>
+              <td><code>false</code></td>
+              <td>DTR polarity for <code>serial_rts_dtr</code> only. False means TX HIGH / RX LOW; true means TX LOW / RX HIGH. For single-line <code>serial_dtr</code>, use <code>invert</code>.</td>
             </tr>
           </tbody>
         </table>
