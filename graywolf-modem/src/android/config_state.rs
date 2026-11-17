@@ -39,6 +39,8 @@ static CHANNEL_ID: AtomicU32 = AtomicU32::new(DEFAULT_CHANNEL_ID);
 static BAUD: AtomicU32 = AtomicU32::new(1200);
 static MARK_FREQ: AtomicU32 = AtomicU32::new(1200);
 static SPACE_FREQ: AtomicU32 = AtomicU32::new(2200);
+// RX reconfiguration consumes one coherent tuple between audio chunks.
+static RX_DSP: std::sync::Mutex<(u32, u32, u32)> = std::sync::Mutex::new((1200, 1200, 2200));
 
 static FX25_ENABLED: AtomicBool = AtomicBool::new(false);
 static FX25_PARITY: AtomicU32 = AtomicU32::new(0);
@@ -90,9 +92,12 @@ pub fn build_tx_transmission(
             baud(),
             mark_freq(),
             space_freq(),
-        ).map(|samples| crate::tx::BuiltTransmission {
-            samples, encoding: crate::ipc::proto::TransmitEncoding {
-                encoding: "ax25".into(), ..Default::default()
+        )
+        .map(|samples| crate::tx::BuiltTransmission {
+            samples,
+            encoding: crate::ipc::proto::TransmitEncoding {
+                encoding: "ax25".into(),
+                ..Default::default()
             },
         })
     }
@@ -124,16 +129,41 @@ pub fn set_from_configure(channel: u32, input_device_id: u32) {
     }
 }
 
-/// Capture DSP parameters from ConfigureChannel for later use by TransmitFrame.
+/// Rebuild RX state when the configured baud/tones change; called between chunks.
+/// Shared with host-stub tests, so Android's production RX path is exercised.
+pub fn sync_rx_demod(
+    demod: &mut crate::demod_afsk_multi::MultiAfskDemodulator,
+    active: &mut (u32, u32, u32),
+    sample_rate: u32,
+) {
+    let next = *RX_DSP.lock().unwrap_or_else(|p| p.into_inner());
+    if next != *active {
+        *demod = crate::demod_afsk_multi::MultiAfskDemodulator::new(
+            sample_rate,
+            next.0,
+            next.1,
+            next.2,
+            0,
+            &crate::demod_afsk_multi::RECOMMENDED_3DEMOD,
+        );
+        *active = next;
+    }
+}
+
+/// Capture one coherent RX configuration, and retain existing TX parameter accessors.
 pub fn set_channel_dsp(baud: u32, mark_freq: u32, space_freq: u32) {
+    let mut snapshot = RX_DSP.lock().unwrap_or_else(|p| p.into_inner());
     if baud != 0 {
         BAUD.store(baud, Ordering::Relaxed);
+        snapshot.0 = baud;
     }
     if mark_freq != 0 {
         MARK_FREQ.store(mark_freq, Ordering::Relaxed);
+        snapshot.1 = mark_freq;
     }
     if space_freq != 0 {
         SPACE_FREQ.store(space_freq, Ordering::Relaxed);
+        snapshot.2 = space_freq;
     }
 }
 
@@ -235,10 +265,13 @@ mod fx25_tests {
             );
         }
         set_fx25_config(true, 64, true);
-        let fallback = build_tx_transmission(&vec![0;220],300,100,48000).unwrap();
-        assert_eq!(fallback.encoding.encoding,"ax25");
-        assert_eq!(fallback.encoding.fallback_reason,"frame_too_large");
-        assert_eq!(fallback.samples,crate::tx::build_samples(&vec![0;220],300,100,48000,1200,1200,2200).unwrap());
+        let fallback = build_tx_transmission(&vec![0; 220], 300, 100, 48000).unwrap();
+        assert_eq!(fallback.encoding.encoding, "ax25");
+        assert_eq!(fallback.encoding.fallback_reason, "frame_too_large");
+        assert_eq!(
+            fallback.samples,
+            crate::tx::build_samples(&vec![0; 220], 300, 100, 48000, 1200, 1200, 2200).unwrap()
+        );
         set_fx25_config(true, 16, false);
         assert_eq!(
             build_tx_samples(&frame, 300, 100, 48000),
@@ -249,6 +282,42 @@ mod fx25_tests {
             build_tx_samples(&frame, 300, 100, 48000).unwrap(),
             crate::tx::build_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap()
         );
+        set_channel_dsp(300, 1600, 1800);
+        set_fx25_config(true, 32, crate::fx25::supports_afsk(300, 1600, 1800));
+        let hf = build_tx_transmission(&frame, 300, 100, 48000).unwrap();
+        assert_eq!(hf.encoding.encoding, "fx25");
+        assert_eq!(
+            hf.samples,
+            crate::tx::build_fx25_samples_with_parity(&frame, 300, 100, 48000, 300, 1600, 1800, 32)
+                .unwrap()
+        );
+        set_fx25_config(false, 32, true);
+        assert_eq!(
+            build_tx_samples(&frame, 300, 100, 48000).unwrap(),
+            crate::tx::build_samples(&frame, 300, 100, 48000, 300, 1600, 1800).unwrap()
+        );
+        let mut rx = crate::demod_afsk_multi::MultiAfskDemodulator::new(
+            48000,
+            1200,
+            1200,
+            2200,
+            0,
+            &crate::demod_afsk_multi::RECOMMENDED_3DEMOD,
+        );
+        let mut active = (1200, 1200, 2200);
+        sync_rx_demod(&mut rx, &mut active, 48000);
+        assert_eq!(active, (300, 1600, 1800));
+        let mut received = Vec::new();
+        for sample in hf.samples {
+            rx.process_sample(sample as i32);
+            received.extend(rx.take_frames());
+        }
+        assert_eq!(received.len(), 1);
+        assert_eq!(received[0].data, frame);
+        assert!(received[0].fx25.is_some());
+        set_channel_dsp(1200, 1200, 2200);
+        sync_rx_demod(&mut rx, &mut active, 48000);
+        assert_eq!(active, (1200, 1200, 2200));
         set_fx25_config(false, 0, true);
     }
 }

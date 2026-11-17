@@ -182,7 +182,7 @@
           <thead><tr><th>Mode</th><th>Native RX</th><th>Native TX</th><th>FX.25</th></tr></thead>
           <tbody>
             <tr><td><strong>AFSK 1200</strong>, Bell 202 (1200/2200 Hz)</td><td>Implemented; operator RF checks passed</td><td>Implemented; operator RF/PTT checks passed</td><td>TX and automatic RX; 16/32/64 parity</td></tr>
-            <tr><td><strong>AFSK 300</strong>, HF tones</td><td>Existing implementation</td><td>Existing implementation</td><td>Not supported; possible future work</td></tr>
+            <tr><td><strong>AFSK 300</strong>, HF tones</td><td>Existing implementation</td><td>Existing implementation</td><td><strong>Experimental, testers only</strong>; automatic RX, opt-in TX off by default; 1600/1800 Hz; no on-air acceptance</td></tr>
             <tr><td><strong>QPSK 2400 / 8PSK 4800</strong></td><td>Receiver implementation present; not validated by the FX.25 tests</td><td><strong>Not implemented</strong></td><td>Not supported</td></tr>
             <tr><td><strong>G3RUH 9600</strong></td><td>Receiver implementation present; not validated by the FX.25 tests</td><td><strong>Not implemented</strong></td><td>Not supported</td></tr>
             <tr><td><strong>Plain FSK</strong></td><td>Not implemented</td><td>Not implemented</td><td>Not supported</td></tr>
@@ -360,21 +360,34 @@
     before transmitting.</p>
 
     <h2 id="forward-error-correction">Forward Error Correction</h2>
+    <div class="callout warning"><div class="callout-body"><p>
+      <strong>Experimental 300-baud FX.25: testers only.</strong>
+      Tag and 16/32/64 parity bytes alone occupy about 0.64/1.07/1.92 seconds,
+      before block padding and extra framing. Total overhead depends on frame
+      length and mode; there is no universal multiplier. Longer packets consume
+      shared-channel capacity. Prefer coordinated quiet-channel tests; on busy
+      channels leave FX.25 TX off unless a measured delivery benefit justifies
+      its airtime cost. No 300-baud RF sensitivity or performance gain is claimed.
+      See <a href="https://github.com/samwathegreat/graywolf/blob/feature/fx25-afsk300/docs/fx25-300.md">scope, calculations and automated results</a>.
+    </p></div></div>
+
 
     <div class="callout info">
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
-        <p><strong>FX.25 is currently implemented only for native 1200-baud
-          Bell 202 AFSK transmit and receive (1200/2200 Hz tones).</strong>
-          It is not supported at 300 baud, 9600 baud, or on PSK/G3RUH modes.
-          300-baud FX.25 is possible future work. An external KISS TNC controls
+        <p><strong>FX.25 supports native 1200-baud Bell 202 AFSK (1200/2200 Hz).
+          Experimental 300-baud AFSK (1600/1800 Hz) is for testers only,
+          without hardware or on-air acceptance.</strong>
+          FX.25 remains unsupported at 9600 baud and on PSK/G3RUH modes. An external KISS TNC controls
           its own on-air encoding; these settings do not enable FEC in that TNC.</p>
       </div>
     </div>
 
     <p>
       Native FX.25 reception is automatic alongside ordinary AX.25 on
-      1200-baud AFSK channels with 1200/2200 Hz Bell 202 tones. The FX.25
+      1200-baud AFSK channels with 1200/2200 Hz Bell 202 tones, and experimental
+      300-baud AFSK channels with 1600/1800 Hz tones. RX itself adds no transmit
+      airtime, but configured forwarding may transmit newly decoded packets. The FX.25
       transmit toggle affects transmission only.
     </p>
 
@@ -383,7 +396,7 @@
         <table>
           <tr>
             <td><code>fx25_encode</code></td>
-            <td>Enable standard Reed-Solomon FX.25 on native 1200-baud Bell 202 AFSK transmit</td>
+            <td>Explicitly enable FX.25 TX on native 1200-baud Bell 202 or experimental 300-baud AFSK; defaults off</td>
           </tr>
           <tr><td><code>fx25_mode</code></td><td><code>auto</code> (recommended), <code>16</code>, <code>32</code>, or <code>64</code>; TX only</td></tr>
           <tr>
@@ -408,7 +421,11 @@
           channels, and simultaneous FX.25/IL2P transmit settings are rejected.
           In Channels, edit the native channel, select AFSK and 1200 baud,
           set mark/space to 1200/2200 Hz, then enable FX.25 transmit and save.
-          TX defaults off. Automatic is recommended for everyday use; fixed
+          For experimental 300-baud testing, select 300 baud and 1600/1800 Hz instead.
+          A confirmation is required before saving a new 300-baud FX.25 TX opt-in
+          or changing its parity/output configuration. Cancel leaves it unsaved.
+          Legacy inert 300-baud FX.25 TX flags are cleared once on upgrade;
+          explicit new opt-ins survive restart. TX defaults off. Automatic is the normal 1200-baud recommendation; fixed
           16/32/64-parity modes are available for specific use cases or controlled
           testing. The selector affects TX only; RX recognizes all supported modes.
           The packet log shows a verified FX.25 badge, tag/parity and repaired-symbol

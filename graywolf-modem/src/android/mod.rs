@@ -299,10 +299,12 @@ fn run_demod(
                 0,
                 &RECOMMENDED_3DEMOD,
             );
+            let mut active_dsp = (1200,1200,2200);
             let mut first_frame_logged = false;
             while !stop_dsp.load(Ordering::Relaxed) {
                 match rx.recv_timeout(Duration::from_millis(250)) {
                     Ok(chunk) => {
+                        config_state::sync_rx_demod(&mut demod, &mut active_dsp, TARGET_SAMPLE_RATE);
                         for frame in feed_chunk(&mut demod, &chunk) {
                             if !first_frame_logged {
                                 info!("poc-b: first_frame_decoded");
@@ -446,7 +448,7 @@ fn run_demod(
                             config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
                             config_state::set_fx25_config(cc.fx25_encode, cc.fx25_parity,
                                 cc.modem_type == "afsk" && !cc.il2p_encode &&
-                                (cc.baud, cc.mark_freq, cc.space_freq) == (1200,1200,2200));
+                                crate::fx25::supports_afsk(cc.baud, cc.mark_freq, cc.space_freq));
                             // If this channel already uses Digirig tone PTT,
                             // re-pre-warm the sink at the (possibly new) mark
                             // frequency. Covers the ConfigurePtt-before-

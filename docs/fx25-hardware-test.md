@@ -1,4 +1,8 @@
-# FX.25 supervised hardware testing
+# FX.25 supervised hardware testing (1200-baud baseline)
+
+The recorded acceptance and package below are **1200 baud only**. The separate
+[experimental 300-baud draft](fx25-300.md) has no hardware/on-air acceptance;
+its checklist must be completed by an appropriately equipped tester.
 
 Local operator RF/PTT checks passed on the disposable ARM64 Raspberry Pi
 station. See [validation](fx25-validation.md) for exact versions, results,

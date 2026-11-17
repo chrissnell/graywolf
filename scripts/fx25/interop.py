@@ -17,6 +17,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 FIX = ROOT / "graywolf-modem/testdata/fx25"
 DW = pathlib.Path(sys.argv[1]).resolve()
 GENERATE = "--generate" in sys.argv
+BAUD = int(sys.argv[sys.argv.index("--baud")+1]) if "--baud" in sys.argv else 1200
+assert BAUD in (300,1200)
+assert not (BAUD == 300 and GENERATE), "300-baud tests use temporary waveforms; do not overwrite 1200 fixtures"
+os.environ["GRAYWOLF_FX25_BAUD"] = str(BAUD)
 GW = pathlib.Path(os.environ.get("GRAYWOLF_FX25_TOOL", ROOT / "target/debug/examples/fx25_audio"))
 CAPS = [239,128,64,32,223,128,64,32,191,128,64]
 
@@ -53,7 +57,7 @@ with tempfile.TemporaryDirectory() as tmp:
             wav = tmp / "graywolf.wav"
             run([GW,"encode",frame.hex(),wav,tag])
             # Real Dire Wolf atest enforces exactly one delivery and emits hex.
-            out = run([DW/"build/src/atest","-B","1200","-h","-d","x","-L","1","-G","1",wav]).decode()
+            out = run([DW/"build/src/atest","-B",str(BAUD),"-h","-d","x","-L","1","-G","1",wav]).decode()
             # Hex dumps include offsets/newlines; check first/last payload by
             # full extraction below, using atest's known hex-dump layout.
             import re
@@ -65,7 +69,7 @@ with tempfile.TemporaryDirectory() as tmp:
         v=vectors[0]
         wav=tmp/"production-mode.wav"
         run([GW,"encode-mode",v["frame"],wav,mode])
-        out=run([DW/"build/src/atest","-B","1200","-h","-L","1","-G","1",wav]).decode()
+        out=run([DW/"build/src/atest","-B",str(BAUD),"-h","-L","1","-G","1",wav]).decode()
         dump=re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)",out,re.M)
         assert bytes.fromhex("".join(dump)).hex()==v["frame"],mode
     # Oversized supported-mode requests use ordinary HDLC, not truncation.
@@ -73,7 +77,7 @@ with tempfile.TemporaryDirectory() as tmp:
     for mode in ["auto", "16", "32", "64"]:
         wav = tmp / "production-fallback.wav"
         run([GW, "encode-mode", fallback_frame.hex(), wav, mode])
-        out = run([DW/"build/src/atest", "-B", "1200", "-h", "-L", "1", "-G", "1", wav]).decode()
+        out = run([DW/"build/src/atest", "-B", str(BAUD), "-h", "-L", "1", "-G", "1", wav]).decode()
         dump = re.findall(r"^\s*[0-9a-fA-F]{3}: ((?: [0-9a-fA-F]{2})+)", out, re.M)
         assert bytes.fromhex("".join(dump)) == fallback_frame, (mode, "fallback", out)
         assert not re.search(r"audio level[^\n]*FX\.25", out), (mode, "not ordinary AX.25")
@@ -82,12 +86,12 @@ with tempfile.TemporaryDirectory() as tmp:
     for tag, cap in enumerate(CAPS,1):
         for kind, length in [("short",1),("boundary",max(1,cap//2-21)),("maximum",cap-23)]:
             payload = "x" * length + "~"
-            text = f"KS9N>APRS:{payload}\n"
+            text = f"{'N0CALL-7' if BAUD == 300 else 'KS9N'}>APRS:{payload}\n"
             wav = tmp / "direwolf.wav"
-            out = run([DW/"build/src/gen_packets","-B","1200","-X",100+tag,"-o",wav,"-"],input=text.encode())
+            out = run([DW/"build/src/gen_packets","-B",str(BAUD),"-X",100+tag,"-o",wav,"-"],input=text.encode())
             assert b"Falling back" not in out
             # gen_packets deliberately retains the input newline as payload.
-            expected = "82a0a4a64040e096a6729c4040e103f0" + (payload+"\n").encode().hex()
+            expected = ("82a0a4a64040e09c6086829898ef03f0" if BAUD == 300 else "82a0a4a64040e096a6729c4040e103f0") + (payload+"\n").encode().hex()
             got = run([GW,"decode",wav]).decode().splitlines()
             assert got==[expected+" fx25"], (tag,kind,got)
             audio_frames.append(dict(tag=tag,case=kind,frame=expected))
@@ -105,12 +109,15 @@ with tempfile.TemporaryDirectory() as tmp:
         wire = bytearray.fromhex(v["wire"])
         parity = 16 if tag<=4 else 32 if tag<=8 else 64
         for n in range(parity//2): wire[8+n] ^= n+1
-        pcm = run([modulator],input=b"\x7e"*45+wire+b"\x7e"*15)
+        pcm = run([modulator,str(BAUD)],input=b"\x7e"*(12 if BAUD == 300 else 45)+wire+b"\x7e"*(4 if BAUD == 300 else 15))
         wav=tmp/"damaged.wav"
         with wave.open(str(wav),"wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000); w.writeframes(pcm)
         got=run([GW,"decode",wav]).decode().splitlines()
         assert got==[v["frame"]+" fx25"],(tag,got)
+        if BAUD == 300:
+            detail=json.loads(run([GW,"decode-detail",wav]).decode().strip())
+            assert detail["tag"]==tag and detail["corrected"]==parity//2, detail
         damaged_frames.append(dict(tag=tag,frame=v["frame"]))
         damaged_chunks.append(pcm)
     fixture = dict(direwolf_commit=PIN,wire_vectors=vectors,audio_frames=audio_frames,damaged_frames=damaged_frames)
@@ -123,6 +130,6 @@ with tempfile.TemporaryDirectory() as tmp:
         with wave.open(str(FIX/"direwolf-damaged.wav"),"wb") as w:
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000); w.writeframes(b"".join(damaged_chunks))
         (FIX/"SHA256SUMS").write_text("".join(hashlib.sha256((FIX/n).read_bytes()).hexdigest()+"  "+n+"\n" for n in ["direwolf.json","direwolf.wav","direwolf-damaged.wav"]))
-    else:
+    elif BAUD == 1200:
         assert json.loads((FIX/"direwolf.json").read_text()) == fixture
-    print(f"PASS: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio + 4 production mode cases + 4 ordinary AX.25 oversized fallbacks; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")
+    print(f"PASS {BAUD} baud: {len(vectors)} exact wire vectors; {len(vectors)} Graywolf -> Dire Wolf audio + 4 production mode cases + 4 ordinary AX.25 oversized fallbacks; {len(audio_frames)} Dire Wolf -> Graywolf audio; 11 symbol-damaged Dire Wolf -> Graywolf FEC recoveries")

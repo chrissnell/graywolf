@@ -201,7 +201,9 @@ impl MultiAfskDemodulator {
             sample_counter: 0,
             pending_plain: std::collections::VecDeque::new(),
             hold_samples: (samples_per_sec as f64 / baud as f64 * 2040.0 * 1.25).ceil() as u64,
-            retention_samples: samples_per_sec as u64 * 3,
+            retention_samples: (samples_per_sec as u64 * 3).max(
+                (samples_per_sec as f64 / baud as f64 * 2040.0 * 1.25).ceil() as u64,
+            ),
         }
     }
 
@@ -451,5 +453,38 @@ mod fx25_comparison {
             }
             eprintln!("{name}: FX.25-enabled {expected_fec}, identical HDLC-only {expected_hdlc}");
         }
+    }
+}
+
+#[cfg(test)]
+mod fx25_300_retention_tests {
+    use super::*;
+    #[test]
+    fn fx25_300_late_same_event_is_deduplicated_but_later_repeat_is_kept() {
+        let mut d = MultiAfskDemodulator::new(48000, 300, 1600, 1800, 0, &RECOMMENDED_3DEMOD);
+        let mut frame = DecodedFrame {
+            chan: 0,
+            subchan: 0,
+            slice: 0,
+            data: vec![1, 2, 3],
+            retry: crate::types::RetryType::None,
+            fx25: None,
+            quality: 100,
+            audio_level_mark: 0.0,
+            audio_level_space: 0.0,
+            speed_error: 0.0,
+            sample_offset: 48000,
+        };
+        d.sample_counter = 48000;
+        d.deliver_frame(frame.clone());
+        assert_eq!(d.take_frames().len(), 1);
+        // Long 300-baud FEC can finish >3 seconds after embedded HDLC.
+        d.sample_counter = 48000 * 6;
+        d.deliver_frame(frame.clone());
+        assert!(d.take_frames().is_empty());
+        // Identical contents at a distinct reception time are not suppressed.
+        frame.sample_offset = 48000 * 6;
+        d.deliver_frame(frame);
+        assert_eq!(d.take_frames().len(), 1);
     }
 }

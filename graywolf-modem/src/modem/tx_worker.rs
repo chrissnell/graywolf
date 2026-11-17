@@ -581,8 +581,9 @@ mod tests {
 
     #[test]
     fn fx25_ptt_cycle_waits_for_full_parity_airtime() {
+        for (baud, mark, space) in [(1200,1200,2200),(300,1600,1800)] {
         let samples =
-            crate::tx::build_fx25_samples(&vec![0; 235], 0, 0, 48000, 1200, 1200, 2200).unwrap();
+            crate::tx::build_fx25_samples(&vec![0; 235], 0, 0, 48000, baud, mark, space).unwrap();
         let n = samples.len();
         let expected = Duration::from_nanos(n as u64 * 1_000_000_000 / 48000);
         let mut ptt = MockPtt::default();
@@ -599,6 +600,7 @@ mod tests {
         );
         assert_eq!(*sink.submit_log.lock().unwrap(), vec![n]);
         assert_eq!(*log.lock().unwrap(), vec![PttCall::Key, PttCall::Unkey]);
+        }
     }
 
     #[test]

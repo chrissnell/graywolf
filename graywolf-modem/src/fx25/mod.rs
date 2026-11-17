@@ -1,4 +1,4 @@
-//! Standard FX.25 encapsulation (1200-baud Bell 202 integration only).
+//! Standard FX.25 encapsulation (1200 baud; experimental 300-baud AFSK).
 //!
 //! Wire parameters: FX.25 draft 0.01 (2006-09-01) and Dire Wolf
 //! eda1383f5fa9d8ba3cb27f99db1d2c79494404c9, fx25_{init,send,rec}.c.
@@ -31,6 +31,13 @@ pub const FX25_TAGS: [(u64, usize, usize, usize); 16] = [
     (0x93210201E8F4C706, 0, 0, 0),
 ];
 pub const TAG_BITS: usize = 64;
+
+/// Production AFSK configurations with FX.25 integration. 300 baud is experimental.
+/// RX is automatic; the channel's independent FX.25 TX switch defaults to false.
+pub fn supports_afsk(baud: u32, mark: u32, space: u32) -> bool {
+    matches!((baud, mark, space), (1200, 1200, 2200) | (300, 1600, 1800))
+}
+
 
 fn codec(check: usize) -> &'static rs::RsCodec {
     static CODECS: OnceLock<[rs::RsCodec; 3]> = OnceLock::new();

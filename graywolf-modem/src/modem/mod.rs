@@ -3066,12 +3066,117 @@ mod fx25_acceptance {
             crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap();
         assert_eq!(audio.len(), (45 * 8 + wire.len() * 8 + 15 * 8) * 40);
         assert_eq!(
-            crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 300, 1600, 1800),
+            crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 600, 1600, 1800),
             Err(crate::tx::TxError::UnsupportedFx25)
         );
         assert_eq!(
             crate::tx::build_fx25_samples(&vec![0; 236], 300, 100, 48000, 1200, 1200, 2200),
             crate::tx::build_samples(&vec![0; 236], 300, 100, 48000, 1200, 1200, 2200)
         );
+    }
+    #[test]
+    fn fx25_300_automatic_rx_mixed_repeats_modes_and_full_airtime() {
+        let frame = unhex("82a0a4a64040609c60868298986f03f078");
+        for rate in [44100, 48000] {
+            for ensemble in ["single", "triple"] {
+                let config = ChannelConfig {
+                    baud: 300,
+                    mark_freq: 1600,
+                    space_freq: 1800,
+                    demod_ensemble: ensemble.into(),
+                    num_slicers: 9,
+                    fx25_encode: false,
+                    ..Default::default()
+                };
+                let mut demod = create_demod(&config, rate);
+                let plain =
+                    crate::tx::build_samples(&frame, 300, 100, rate, 300, 1600, 1800).unwrap();
+                assert_eq!(collect(&mut demod, plain.iter().copied()).len(), 1);
+                for parity in [0, 16, 32, 64] {
+                    let fec = crate::tx::build_fx25_transmission(
+                        &frame, 300, 100, rate, 300, 1600, 1800, parity,
+                    )
+                    .unwrap();
+                    let decoded = collect(
+                        &mut demod,
+                        fec.samples.iter().chain(fec.samples.iter()).copied(),
+                    );
+                    assert_eq!(decoded.len(), 2, "{rate} {ensemble} parity {parity}");
+                    for f in decoded {
+                        assert_eq!(f.data, frame);
+                        let m = f.fx25.expect("automatic RX despite TX disabled");
+                        assert_eq!(m.parity_bytes, fec.encoding.parity_bytes);
+                        assert_eq!(m.corrected_symbols, 0);
+                    }
+                    if rate == 48000 {
+                        let wire = crate::fx25::encode_with_parity(&frame, parity).unwrap();
+                        assert_eq!(fec.samples.len(), (12 + wire.len() + 4) * 8 * 160);
+                    }
+                }
+                let fallback = crate::tx::build_fx25_transmission(
+                    &vec![0; 300],
+                    300,
+                    100,
+                    rate,
+                    300,
+                    1600,
+                    1800,
+                    64,
+                )
+                .unwrap();
+                assert_eq!(fallback.encoding.encoding, "ax25");
+                assert_eq!(
+                    fallback.samples,
+                    crate::tx::build_samples(&vec![0; 300], 300, 100, rate, 300, 1600, 1800)
+                        .unwrap()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fx25_300_uncorrectable_parity_preserves_plain_and_recovers_after_truncation() {
+        let frame = unhex("82a0a4a64040609c60868298986f03f078");
+        let mut wire = crate::fx25::encode(&frame, Some(1)).unwrap();
+        for b in &mut wire[8 + 239..] {
+            *b ^= 255;
+        }
+        let mut line = 0;
+        let bits: Vec<u8> = std::iter::repeat_n(0x7e, 12)
+            .chain(wire)
+            .chain(std::iter::repeat_n(0x7e, 4))
+            .flat_map(|b| (0..8).map(move |s| (b >> s) & 1))
+            .map(|bit| {
+                if bit == 0 {
+                    line ^= 1;
+                }
+                line
+            })
+            .collect();
+        let mut bad = crate::tx::afsk_mod::modulate(&bits, 48000, 300, 1600, 1800).unwrap();
+        bad.extend(std::iter::repeat_n(0, 48000 * 10));
+        for ensemble in ["single", "triple"] {
+            let cfg = ChannelConfig {
+                baud: 300,
+                mark_freq: 1600,
+                space_freq: 1800,
+                demod_ensemble: ensemble.into(),
+                num_slicers: 9,
+                ..Default::default()
+            };
+            let mut d = create_demod(&cfg, 48000);
+            let f = collect(&mut d, bad.iter().copied());
+            assert_eq!(f.len(), 1, "{ensemble}");
+            assert_eq!(f[0].data, frame);
+            assert!(f[0].fx25.is_none());
+            let fec =
+                crate::tx::build_fx25_samples(&frame, 300, 100, 48000, 300, 1600, 1800).unwrap();
+            let _ = collect(&mut d, fec[..fec.len() / 2].iter().copied());
+            let _ = collect(&mut d, std::iter::repeat_n(0, 48000 * 10));
+            let f = collect(&mut d, fec);
+            assert_eq!(f.len(), 1);
+            assert_eq!(f[0].data, frame);
+            assert!(f[0].fx25.is_some());
+        }
     }
 }

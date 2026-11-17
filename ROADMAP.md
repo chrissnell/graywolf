@@ -7,13 +7,14 @@ re-expose them.
 
 ## FX.25 forward error correction
 
-Native TX/RX is wired for 1200-baud Bell 202 AFSK (1200/2200 Hz) only.
-See [FX.25 implementation and interoperability](docs/fx25.md) for standard
-formats, bounds, independent fixtures and hardware acceptance status.
-Local operator RF/PTT checks passed for that scope, including ordinary AX.25
-fallback for oversized packets. Other rates/modulations are deliberately
-excluded. Ordinary 300-baud AFSK TX/RX code exists, but 300-baud FX.25 remains
-future work and needs its own integration and acceptance tests.
+Native TX/RX is wired for 1200-baud Bell 202 AFSK (1200/2200 Hz).
+A separate tester-only draft integrates experimental 300-baud AFSK
+(1600/1800 Hz), automatic RX and explicit opt-in TX off by default. Hardware,
+on-air, HF performance and PTT acceptance at 300 baud are still required.
+See [300-baud scope and automated results](docs/fx25-300.md) and
+[the 1200-baud baseline](docs/fx25.md). Existing 1200-baud operator results do
+not establish acceptance of the experimental rate. Other modulations remain
+excluded.
 
 ## IL2P forward error correction
 
@@ -75,7 +76,7 @@ future work and needs its own integration and acceptance tests.
 ## Documentation and remaining wiring
 
 The README and HTML handbook distinguish implemented RX from TX and limit
-FX.25 to 1200-baud Bell 202. They no longer advertise IL2P as live FEC or
+FX.25 to 1200-baud Bell 202 plus explicitly experimental 300-baud AFSK. They no longer advertise IL2P as live FEC or
 PSK/G3RUH as complete native transceivers. The former `gfsk` and `fsk` UI
 entries are removed; a receiver setting alone is not TX support. See the
 handbook's channel capability matrix and the wiki code map.

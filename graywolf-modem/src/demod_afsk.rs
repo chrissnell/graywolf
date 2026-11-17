@@ -172,6 +172,10 @@ pub struct AfskDemodulator {
     hdlc: Vec<HdlcDecoder>,
     fx25: Vec<crate::fx25::Fx25Receiver>,
     fx25_previous: Vec<bool>,
+    // Actual bit-sampling times during a 300-baud codeword. Nominal baud
+    // backdating drifts under clock error and can split one HDLC/FEC event.
+    fx25_bit_samples: Vec<Vec<u64>>,
+    fx25_track_samples: bool,
     fx25_enabled: bool,
     samples_per_bit: f64,
     sample_rate: u32,
@@ -249,7 +253,9 @@ impl AfskDemodulator {
                 .map(|_| crate::fx25::Fx25Receiver::new())
                 .collect(),
             fx25_previous: vec![false; num_slicers],
-            fx25_enabled: (baud, mark_freq, space_freq) == (1200, 1200, 2200),
+            fx25_bit_samples: vec![Vec::new(); num_slicers],
+            fx25_track_samples: baud == 300,
+            fx25_enabled: crate::fx25::supports_afsk(baud, mark_freq, space_freq),
             samples_per_bit: samples_per_sec as f64 / baud as f64,
             sample_rate: samples_per_sec,
             recent_frames: std::collections::VecDeque::new(),
@@ -717,6 +723,12 @@ impl AfskDemodulator {
             if self.fx25_enabled {
                 let bit = raw_bit == self.fx25_previous[slice];
                 self.fx25_previous[slice] = raw_bit;
+                if self.fx25_track_samples {
+                    let history = &mut self.fx25_bit_samples[slice];
+                    if self.fx25[slice].in_progress() {
+                        if history.len() < 2040 { history.push(self.sample_counter); }
+                    } else { history.clear(); }
+                }
                 if let Some(mut recovered) = self.fx25[slice].process_bit(bit) {
                     let frame = &mut recovered.frame;
                     frame.chan = self.chan;
@@ -726,9 +738,12 @@ impl AfskDemodulator {
                     frame.audio_level_mark = self.state.alevel_mark_peak;
                     frame.audio_level_space = self.state.alevel_space_peak;
                     frame.retry = RetryType::Fx25;
-                    frame.sample_offset = self.sample_counter.saturating_sub(
+                    let sampled_end = self.fx25_bit_samples[slice].len()
+                        .checked_sub(recovered.trailing_bits + 1)
+                        .and_then(|i| self.fx25_bit_samples[slice].get(i)).copied();
+                    frame.sample_offset = sampled_end.unwrap_or_else(|| self.sample_counter.saturating_sub(
                         (recovered.trailing_bits as f64 * self.samples_per_bit).round() as u64,
-                    );
+                    ));
                     if let Some((plain, _)) = self.pending_plain.iter().find(|(plain, _)|
                         plain.data == frame.data && plain.sample_offset.abs_diff(frame.sample_offset) <= (self.samples_per_bit * 3.0).ceil() as u64)
                     {
@@ -853,7 +868,7 @@ impl AfskDemodulator {
     fn deliver_frame(&mut self, frame: DecodedFrame) {
         // Retain only the maximum FX.25 recovery latency, with a strict
         // count cap. Event matching itself stays within three symbol times.
-        let retention = self.sample_rate as u64 * 3;
+        let retention = (self.sample_rate as u64 * 3).max(self.fx25_hold_samples());
         while self
             .recent_frames
             .front()
@@ -956,6 +971,7 @@ impl AfskDemodulator {
             .map(|_| crate::fx25::Fx25Receiver::new())
             .collect();
         self.fx25_previous = vec![false; n];
+        self.fx25_bit_samples = vec![Vec::new(); n];
         self.recent_frames.clear();
         self.pending_plain.clear();
         self.hdlc = (0..n)
@@ -968,5 +984,39 @@ impl AfskDemodulator {
         for h in &mut self.hdlc {
             h.set_fix_bits(level);
         }
+    }
+}
+
+#[cfg(test)]
+mod fx25_300_retention_tests {
+    use super::*;
+    #[test]
+    fn fx25_300_late_same_event_is_deduplicated_but_later_repeat_is_kept() {
+        let mut d =
+            AfskDemodulator::new(48000, 300, 1600, 1800, crate::types::AfskProfile::A, 0, 0);
+        let mut frame = DecodedFrame {
+            chan: 0,
+            subchan: 0,
+            slice: 0,
+            data: vec![1, 2, 3],
+            retry: crate::types::RetryType::None,
+            fx25: None,
+            quality: 100,
+            audio_level_mark: 0.0,
+            audio_level_space: 0.0,
+            speed_error: 0.0,
+            sample_offset: 48000,
+        };
+        d.sample_counter = 48000;
+        d.deliver_frame(frame.clone());
+        assert_eq!(d.take_frames().len(), 1);
+        // Long 300-baud FEC can finish >3 seconds after embedded HDLC.
+        d.sample_counter = 48000 * 6;
+        d.deliver_frame(frame.clone());
+        assert!(d.take_frames().is_empty());
+        // Identical contents at a distinct reception time are not suppressed.
+        frame.sample_offset = 48000 * 6;
+        d.deliver_frame(frame);
+        assert_eq!(d.take_frames().len(), 1);
     }
 }

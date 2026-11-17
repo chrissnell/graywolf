@@ -10,8 +10,13 @@ func TestFX25Scope(t *testing.T) {
 	if err := good.ValidateFX25(); err != nil {
 		t.Fatal(err)
 	}
+	hf := good
+	hf.BitRate, hf.MarkFreq, hf.SpaceFreq = 300, 1600, 1800
+	if err := hf.ValidateFX25(); err != nil {
+		t.Fatal(err)
+	}
 	cases := []Channel{good, good, good, good, good, good}
-	cases[0].BitRate = 300
+	cases[0].BitRate = 600
 	cases[1].ModemType = "9600"
 	cases[2].MarkFreq = 1600
 	cases[3].SpaceFreq = 1800

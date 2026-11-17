@@ -1,4 +1,7 @@
-# FX.25 validation record
+# FX.25 validation record (1200-baud baseline)
+
+These results do not establish acceptance of the experimental 300-baud branch.
+See [300-baud status and limitations](fx25-300.md).
 
 Base: upstream/main `bde16a1752ef96e8907aea9dc18c698e3e96a9d7`.
 Reference: Dire Wolf `eda1383f5fa9d8ba3cb27f99db1d2c79494404c9`.

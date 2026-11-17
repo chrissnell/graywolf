@@ -47,7 +47,7 @@ The table above is the existing AFSK benchmark, not an FX.25 RF sensitivity stud
 
 - **Software Modem** - Rust DSP with native AX.25 audio processing. The AFSK benchmark above and the FX.25 validation record describe separate tests; neither establishes performance for every modulation, platform or RF condition.
 
-  Native FX.25 TX/RX is supported for **1200-baud Bell 202 AFSK only**, with ordinary AX.25 size fallback and per-packet encoding metadata. Ordinary 300-baud AFSK code paths also exist, but 300-baud FX.25 is future work. PSK and G3RUH have receiver implementations but no matching native transmitters; IL2P is a codec library without live integration. See the [modem capability matrix](docs/handbook/channels.html) and [FX.25 validation record](docs/fx25-validation.md).
+  Native FX.25 TX/RX supports **1200-baud Bell 202 AFSK**. This tester-only draft also adds **experimental 300-baud FX.25** (1600/1800 Hz), with automatic RX and opt-in TX off by default. No 300-baud hardware/on-air acceptance is claimed; see [experimental scope, airtime and testing](docs/fx25-300.md). Both use ordinary AX.25 size fallback and per-packet encoding metadata. PSK and G3RUH have receiver implementations but no matching native transmitters; IL2P is a codec library without live integration. See the [modem capability matrix](docs/handbook/channels.html) and [FX.25 validation record](docs/fx25-validation.md).
 
 - **Live Map** - Like having a private aprs.fi for your station.  Real-time APRS map with trails, digipeater paths, weather overlays, and beautiful animated NEXRAD weather radar, all rendered on our private vector basemap.  You can download maps for your state/province/country for offline use!
 

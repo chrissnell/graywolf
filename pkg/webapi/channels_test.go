@@ -568,3 +568,53 @@ func TestChannelsFX25ConfigurationAPI(t *testing.T) {
 		t.Fatal("disable must retain selected mode")
 	}
 }
+
+func TestChannelsExperimental300FX25OptInAPI(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	body := `{"name":"experimental HF test","input_device_id":1,"modem_type":"afsk","bit_rate":300,"mark_freq":1600,"space_freq":1800,"profile":"A","num_slicers":1,"fix_bits":"none","enabled":false}`
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/channels", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var row dto.ChannelResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row.FX25Encode {
+		t.Fatal("300-baud TX must default off")
+	}
+	path := "/api/channels/" + strconv.Itoa(int(row.ID))
+	for _, enabled := range []bool{true, false} {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatal(err)
+		}
+		payload["fx25_encode"] = enabled
+		payload["fx25_mode"] = "32"
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("PUT", path, strings.NewReader(string(raw))))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%d %s", rec.Code, rec.Body.String())
+		}
+		saved, err := srv.store.GetChannel(context.Background(), row.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.FX25Encode != enabled || saved.FX25Mode != "32" || saved.BitRate != 300 {
+			t.Fatal("opt-in did not persist")
+		}
+	}
+	bad := strings.Replace(body, `"bit_rate":300`, `"bit_rate":600,"fx25_encode":true`, 1)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/channels", strings.NewReader(bad)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported rate accepted: %d %s", rec.Code, rec.Body.String())
+	}
+}

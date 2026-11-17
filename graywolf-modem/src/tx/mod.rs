@@ -44,7 +44,7 @@ pub fn build_samples(
     afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)
 }
 
-/// Build native Bell 202 FX.25 audio. Oversized frames use ordinary AX.25,
+/// Build native AFSK FX.25 audio (1200 baud; experimental 300 baud). Oversized frames use ordinary AX.25,
 /// matching Dire Wolf. Unsupported rates/parity still return errors.
 pub fn build_fx25_samples(
     frame: &[u8],
@@ -94,7 +94,7 @@ pub fn build_fx25_transmission(
     frame: &[u8], txdelay_ms: u32, txtail_ms: u32, sample_rate: u32,
     baud: u32, mark_freq: u32, space_freq: u32, parity: u32,
 ) -> Result<BuiltTransmission, TxError> {
-    if (baud, mark_freq, space_freq) != (1200, 1200, 2200) {
+    if !crate::fx25::supports_afsk(baud, mark_freq, space_freq) {
         return Err(TxError::UnsupportedFx25);
     }
     if !matches!(parity, 0 | 16 | 32 | 64) {
@@ -331,7 +331,7 @@ mod fx25_transmit_metadata_tests {
             let b=build_fx25_transmission(&frame,300,100,48000,1200,1200,2200,parity).unwrap();
             assert_eq!(b.encoding.fallback_reason,"frame_too_large");
         }
-        assert!(matches!(build_fx25_transmission(&[0;100],300,100,48000,300,1600,1800,0),Err(TxError::UnsupportedFx25)));
+        assert!(matches!(build_fx25_transmission(&[0;100],300,100,48000,600,1600,1800,0),Err(TxError::UnsupportedFx25)));
         assert!(matches!(build_fx25_transmission(&[0;100],300,100,48000,1200,1200,2200,15),Err(TxError::UnsupportedFx25Parity)));
         assert!(matches!(build_fx25_transmission(&[0;14],300,100,48000,1200,1200,2200,0),Err(TxError::InvalidFx25Frame)));
     }

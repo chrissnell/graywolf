@@ -106,9 +106,11 @@ export function validateForm(form) {
     }
   }
   if (!['auto','16','32','64'].includes(form.fx25_mode || 'auto')) e.fx25_encode = 'Invalid FX.25 parity selection.';
+  const fx25Supported = (Number(form.bit_rate) === 1200 && Number(form.mark_freq) === 1200 && Number(form.space_freq) === 2200) ||
+    (Number(form.bit_rate) === 300 && Number(form.mark_freq) === 1600 && Number(form.space_freq) === 1800);
   if (form.fx25_encode && (!isModemType || form.modem_type !== 'afsk' ||
-      Number(form.bit_rate) !== 1200 || Number(form.mark_freq) !== 1200 || Number(form.space_freq) !== 2200 || form.il2p_encode)) {
-    e.fx25_encode = 'FX.25 requires native 1200-baud AFSK, 1200/2200 Hz tones, and IL2P disabled.';
+      !fx25Supported || form.il2p_encode)) {
+    e.fx25_encode = 'FX.25 requires native AFSK: 1200 baud (1200/2200 Hz) or experimental 300 baud (1600/1800 Hz), with IL2P disabled.';
   }
   const isTxEnabled = isModemType && form.output_device_id !== '0';
   if (isTxEnabled) {
@@ -116,4 +118,16 @@ export function validateForm(form) {
     if (isNaN(p) || p < 0 || p > 255) e.persist = 'Must be 0–255';
   }
   return e;
+}
+
+
+// Confirmation is UI-only; API callers explicitly opt in with fx25_encode=true.
+export const FX25_300_WARNING = 'Experimental 300-baud FX.25 TX: testers only; not hardware/on-air validated. At 300 baud the 8-byte tag plus 16/32/64 parity bytes alone occupy about 0.64/1.07/1.92 seconds per frame. Block padding and extra framing add more; the total depends on packet length and mode. For example, a 60-byte test frame with Auto and 300/100 ms key-up/tail takes about 4.91 seconds versus 2.09 seconds as ordinary AX.25. Longer transmissions consume shared-channel capacity and may increase collisions. Prefer coordinated trials on quiet channels; leave TX off on busy channels unless the tradeoff is justified. Automatic RX itself adds no transmit airtime.';
+
+export function experimentalFx25TxNeedsConfirmation(form, original) {
+  if (!form.fx25_encode || form.channel_type !== 'modem' || Number(form.bit_rate) !== 300) return false;
+  return !original?.fx25_encode || Number(original.bit_rate) !== 300 ||
+    Number(original.mark_freq) !== 1600 || Number(original.space_freq) !== 1800 ||
+    (original.fx25_mode || 'auto') !== (form.fx25_mode || 'auto') ||
+    Number(original.output_device_id || 0) !== Number(form.output_device_id || 0);
 }

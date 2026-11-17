@@ -15,7 +15,27 @@ fn hex(b: &[u8]) -> String {
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    let baud: u32 = std::env::var("GRAYWOLF_FX25_BAUD")
+        .unwrap_or_else(|_| "1200".into())
+        .parse()
+        .unwrap();
+    let (mark, space) = if baud == 300 {
+        (1600, 1800)
+    } else {
+        (1200, 2200)
+    };
     match args[1].as_str() {
+        "airtime" => {
+            let frame = unhex(&args[2]);
+            let parity = args[3].parse().unwrap();
+            let plain = tx::build_samples(&frame, 300, 100, 48000, baud, mark, space).unwrap();
+            let fec =
+                tx::build_fx25_transmission(&frame, 300, 100, 48000, baud, mark, space, parity)
+                    .unwrap();
+            println!("{{\"plain_seconds\":{},\"fx25_seconds\":{},\"encoding\":\"{}\",\"tag\":{},\"parity\":{}}}",
+                plain.len() as f64 / 48000.0, fec.samples.len() as f64 / 48000.0,
+                fec.encoding.encoding, fec.encoding.tag, fec.encoding.parity_bytes);
+        }
         "encode" | "encode-mode" => {
             let frame = unhex(&args[2]);
             let tag = if args[1] == "encode" {
@@ -30,26 +50,30 @@ fn main() {
                     args[4].parse().unwrap()
                 };
                 tx::build_fx25_samples_with_parity(
-                    &frame, 300, 100, 48000, 1200, 1200, 2200, parity,
+                    &frame, 300, 100, 48000, baud, mark, space, parity,
                 )
                 .unwrap()
             } else if let Some(tag) = tag {
                 let wire = fx25::encode(&frame, Some(tag)).expect("frame does not fit");
                 let mut line = 0;
-                let bits: Vec<u8> = std::iter::repeat_n(0x7e, 45)
-                    .chain(wire)
-                    .chain(std::iter::repeat_n(0x7e, 15))
-                    .flat_map(|b| (0..8).map(move |s| (b >> s) & 1))
-                    .map(|b| {
-                        if b == 0 {
-                            line ^= 1;
-                        }
-                        line
-                    })
-                    .collect();
-                tx::afsk_mod::modulate(&bits, 48000, 1200, 1200, 2200).unwrap()
+                let bits: Vec<u8> =
+                    std::iter::repeat_n(0x7e, (300usize * baud as usize).div_ceil(8000).max(1))
+                        .chain(wire)
+                        .chain(std::iter::repeat_n(
+                            0x7e,
+                            (100usize * baud as usize).div_ceil(8000).max(1),
+                        ))
+                        .flat_map(|b| (0..8).map(move |s| (b >> s) & 1))
+                        .map(|b| {
+                            if b == 0 {
+                                line ^= 1;
+                            }
+                            line
+                        })
+                        .collect();
+                tx::afsk_mod::modulate(&bits, 48000, baud, mark, space).unwrap()
             } else {
-                tx::build_fx25_samples(&frame, 300, 100, 48000, 1200, 1200, 2200).unwrap()
+                tx::build_fx25_samples(&frame, 300, 100, 48000, baud, mark, space).unwrap()
             };
             let spec = hound::WavSpec {
                 channels: 1,
@@ -63,30 +87,39 @@ fn main() {
             }
             writer.finalize().unwrap();
         }
-        "decode" => {
+        "decode" | "decode-detail" => {
             let mut wav = hound::WavReader::open(&args[2]).unwrap();
             let spec = wav.spec();
             assert_eq!(spec.channels, 1);
             let mut demod = MultiAfskDemodulator::new(
                 spec.sample_rate,
-                1200,
-                1200,
-                2200,
+                baud,
+                mark,
+                space,
                 0,
                 &RECOMMENDED_3DEMOD,
             );
             for sample in wav.samples::<i16>() {
                 demod.process_sample(sample.unwrap() as i32);
                 for f in demod.take_frames() {
-                    println!(
-                        "{} {}",
-                        hex(&f.data),
-                        if f.retry == RetryType::Fx25 {
-                            "fx25"
-                        } else {
-                            "ax25"
-                        }
-                    );
+                    if args[1] == "decode-detail" {
+                        println!(
+                            "{{\"frame\":\"{}\",\"tag\":{},\"corrected\":{}}}",
+                            hex(&f.data),
+                            f.fx25.as_ref().map(|m| m.tag).unwrap_or(0),
+                            f.fx25.as_ref().map(|m| m.corrected_symbols).unwrap_or(0)
+                        );
+                    } else {
+                        println!(
+                            "{} {}",
+                            hex(&f.data),
+                            if f.retry == RetryType::Fx25 {
+                                "fx25"
+                            } else {
+                                "ax25"
+                            }
+                        );
+                    }
                 }
             }
         }
@@ -96,9 +129,9 @@ fn main() {
             assert_eq!(spec.channels, 1);
             let mut demod = MultiAfskDemodulator::new(
                 spec.sample_rate,
-                1200,
-                1200,
-                2200,
+                baud,
+                mark,
+                space,
                 0,
                 &RECOMMENDED_3DEMOD,
             );

@@ -2121,7 +2121,10 @@ Source: [`../../web/src/components/messages/MessageThread.svelte`](../../web/src
 
 ## Native FX.25 scope and transmission evidence
 
-FX.25 TX/RX is restricted to Bell 202 AFSK 1200 baud, 1200/2200 Hz tones.
+FX.25 TX/RX supports Bell 202 AFSK 1200 baud (1200/2200 Hz), plus
+experimental 300 baud (1600/1800 Hz). The 300-baud draft is tester-only, with
+automatic RX and explicit opt-in TX off by default. No 300-baud physical
+acceptance is claimed; UI opt-in requires an airtime/experimental confirmation.
 Unsupported FX.25 configuration is rejected. An oversized frame in an
 otherwise supported configuration uses explicitly reported ordinary AX.25
 fallback; it is never truncated. TX selection and metadata come from the

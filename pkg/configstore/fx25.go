@@ -12,8 +12,10 @@ func (c Channel) ValidateFX25() error {
 	if !c.FX25Encode {
 		return nil
 	}
-	if c.InputDeviceID == nil || c.ModemType != "afsk" || c.BitRate != 1200 || c.MarkFreq != 1200 || c.SpaceFreq != 2200 {
-		return fmt.Errorf("FX.25 requires a native 1200-baud AFSK channel with 1200/2200 Hz tones")
+	supported := (c.BitRate == 1200 && c.MarkFreq == 1200 && c.SpaceFreq == 2200) ||
+		(c.BitRate == 300 && c.MarkFreq == 1600 && c.SpaceFreq == 1800)
+	if c.InputDeviceID == nil || c.ModemType != "afsk" || !supported {
+		return fmt.Errorf("FX.25 requires native AFSK: 1200 baud with 1200/2200 Hz tones, or experimental 300 baud with 1600/1800 Hz tones")
 	}
 	if c.IL2PEncode {
 		return fmt.Errorf("FX.25 and IL2P encoding cannot both be enabled")
