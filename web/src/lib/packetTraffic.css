@@ -12,6 +12,15 @@
 .packet-traffic-colors .log-grid-cell,
 .packet-traffic-colors .log-grid-footer,
 .packet-traffic-colors .log-card { background: var(--flow-bg); color: var(--packet-foreground); }
+/* Separate complete packets, keeping each header and footer together. Margins
+   expose the theme's log background and interrupt the colored left accent. */
+.packet-traffic-colors .log-grid-footer ~ .log-grid-cell,
+.packet-traffic-colors .log-card + .log-card {
+  margin-top: 5px;
+  border-top: 1px solid var(--color-border);
+}
+.packet-traffic-colors .log-grid-footer,
+.packet-traffic-colors .log-card { border-bottom: none; }
 .packet-traffic-colors .pkt-foot .pkt-raw { color: var(--packet-foreground); }
 .packet-traffic-colors .log-body .pkt-reception { color: var(--packet-muted); }
 .packet-traffic-colors .pkt-b-origin,
