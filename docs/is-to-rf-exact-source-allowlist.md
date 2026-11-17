@@ -21,7 +21,11 @@ does **not** authorize an unrelated non-message source.
 Also ensure the APRS-IS **server filter** actually delivers that
 source's packets, **Enable IS→RF gating** is on, and a TX-capable channel
 is selected. The server filter only controls reception; it does not
-authorize RF transmission.
+authorize RF transmission. For this example, enter `b/N6110L` or append it
+to existing subscriptions separated by a space. An empty field is not a
+receive-disable switch: normal APRS-IS messaging and associated positions
+may still arrive, and Graywolf adds subscriptions for enabled tactical
+callsigns automatically. Local RF reception is unaffected.
 
 Safety checks remain in force: the first matching transmit rule wins
 (default deny), the iGate's own exact source is never retransmitted,

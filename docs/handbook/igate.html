@@ -200,23 +200,23 @@
 
     <ul>
       <li><strong>Server filter</strong> &mdash; a coarse, network-level filter
-        sent to the APRS-IS server at login. It controls what traffic the server
-        forwards to you, reducing bandwidth. Uses
+        sent to the APRS-IS server at login. It requests additional traffic beyond the server&rsquo;s normal messaging
+        delivery, reducing bandwidth compared with a broad subscription. Uses
         <a href="http://www.aprs-is.net/javAPRSFilter.aspx">APRS-IS filter syntax</a>
         (e.g., <code>r/35.0/-106.0/100</code> for a 100&nbsp;km radius,
-        <code>b/NW5W-12</code> for a single station). If left empty, no packets
-        are received from APRS-IS.</li>
+        <code>b/NW5W-12</code> for a single station). An empty field requests no additional traffic itself; normal APRS-IS
+        messaging and associated positions may still arrive, and enabled
+        tactical callsigns still add automatic subscriptions.</li>
       <li><strong>IS&rarr;RF gating rules</strong> &mdash; fine-grained, local rules
         that decide which received packets are actually transmitted on RF.
         If no rules are defined, nothing is gated.</li>
     </ul>
 
     <p>
-      Both layers are needed because APRS-IS filter syntax cannot express
-      everything the gating rules can. For example, there is no server-side
-      filter for &ldquo;messages addressed to a specific callsign&rdquo; &mdash;
-      you would need to pull all messages (<code>t/m</code>) and filter locally
-      with a Message Dest rule.
+      These layers have different purposes: a server subscription such as
+      <code>b/N6110L</code> requests a source&rsquo;s traffic, while a local
+      exact Callsign Allow rule authorizes eligible packets from that source
+      for RF forwarding. Receiving a packet never grants RF permission by itself.
     </p>
 
     <h3>IS&rarr;RF Eligibility and Loop Prevention</h3>
@@ -264,8 +264,19 @@
 
     <p>
       The <strong>APRS-IS Server Filter</strong> field is the filter string sent
-      to the APRS-IS server at login. If left empty, no packets are received.
-      Separate clauses with spaces.
+      to the APRS-IS server at login, with enabled tactical <code>g/</code>
+      clauses appended automatically. Separate clauses with spaces.
+      For one exact source, enter <code>b/N6110L</code>; append it to any
+      existing subscriptions you want to keep.
+    </p>
+
+    <p>
+      Leaving this field empty does not disable all reception. Standard APRS-IS
+      messaging traffic and associated positions may still be delivered.
+      Graywolf uses a no-match subscription only when the effective filter,
+      including automatic tactical subscriptions, is empty; this does not
+      suppress the server&rsquo;s normal messaging support. Local RF reception
+      is independent of this setting.
     </p>
 
     <div class="callout info">

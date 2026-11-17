@@ -809,16 +809,22 @@
     Two independent controls: the <strong>server filter</strong> tells the APRS-IS
     server which packets to send you, and the <strong>APRS-IS → RF gating rules</strong>
     decide which of those packets get re-transmitted on RF. Nothing is transmitted
-    unless <strong>IS→RF gating</strong> is switched on below. Every packet the
-    server sends you appears on the live map regardless of the gating rules.
+    unless <strong>IS→RF gating</strong> is switched on below. Received position reports can appear on the live map even when the
+    gating rules reject them for RF transmission.
   </p>
   <Box>
     <form onsubmit={handleSave}>
-      <FormField label="APRS-IS Server Filter" id="ig-filter" error={serverFilterError} hint="Sent to the APRS-IS server at login to control what it forwards to you (e.g. r/35.0/-106.0/100 for a 100 km radius). Everything the server sends — including packets rejected by the transmit rules below — is shown on the live map. If empty, no packets are received.">
+      <FormField label="APRS-IS Server Filter" id="ig-filter" error={serverFilterError} hint="Requests additional traffic from APRS-IS (e.g. b/N6110L for one exact source, or r/35.0/-106.0/100 for a 100 km radius). This filter controls reception; the rules below separately authorize RF forwarding.">
         {#snippet children(describedBy)}
           <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
         {/snippet}
       </FormField>
+      <p class="field-note">
+        Leaving this field empty does not stop all APRS-IS reception. Normal
+        APRS-IS messaging traffic and associated positions may still arrive,
+        and enabled tactical callsigns still add their automatic subscriptions.
+        Local RF reception is unaffected.
+      </p>
       <p class="field-note">
         Filter syntax reference:
         <a href="https://www.aprs-is.net/javAPRSFilter.aspx" target="_blank" rel="noopener noreferrer">
