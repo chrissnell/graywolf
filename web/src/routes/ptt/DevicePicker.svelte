@@ -47,7 +47,7 @@
                 <Badge variant={typeBadgeVariant(d.type)}>{d.type}</Badge>
               </div>
               {#if d.path}
-                <span class="path" title={d.path}>{truncatePath(d.path)}</span>
+                <span class="path" title={d.path}>{d.path.startsWith('/dev/serial/by-id/') ? d.path : truncatePath(d.path)}</span>
               {/if}
               {#if d.usb_vendor && d.usb_product}
                 <span class="usb">USB {d.usb_vendor}:{d.usb_product}</span>
@@ -75,7 +75,7 @@
                 <Badge variant={typeBadgeVariant(d.type)}>{d.type}</Badge>
               </div>
               {#if d.path}
-                <span class="path" title={d.path}>{truncatePath(d.path)}</span>
+                <span class="path" title={d.path}>{d.path.startsWith('/dev/serial/by-id/') ? d.path : truncatePath(d.path)}</span>
               {/if}
               {#if d.warning}
                 <span class="warning">{d.warning}</span>
@@ -115,7 +115,8 @@
   .device-card.selected { border-color: var(--accent, #3b82f6); background: var(--bg-selected, #eff6ff); }
   .device-card-muted { opacity: 0.85; }
   .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-  .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-secondary, #555); }
+  .row strong { min-width: 0; overflow-wrap: anywhere; }
+  .path { white-space: normal; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--text-secondary, #555); }
   .usb { font-size: 11px; color: var(--text-muted, #888); }
   .warning { font-size: 12px; color: #b45309; }
   .empty { padding: 12px; color: var(--text-muted, #888); text-align: center; }

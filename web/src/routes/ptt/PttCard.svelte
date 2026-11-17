@@ -64,6 +64,11 @@
       <dt>Keying</dt>
       <dd class="muted">Right-channel tone, left-channel audio</dd>
     {/if}
+    {#if item.method === 'serial_rts_dtr'}
+      <dt>TX / RX</dt>
+      <dd>RTS {item.invert ? 'LOW / HIGH' : 'HIGH / LOW'};
+        DTR {item.dtr_invert ? 'LOW / HIGH' : 'HIGH / LOW'}</dd>
+    {/if}
     {#if item.method === 'cm108'}
       <dt>GPIO Pin</dt>
       <dd>GPIO {item.gpio_pin} (pin {item.gpio_pin + 10})</dd>

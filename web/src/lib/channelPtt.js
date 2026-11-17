@@ -17,6 +17,7 @@ const METHOD_LABELS = {
   digirig_tone: 'Digirig Lite Tone PTT',
   serial_rts: 'Serial RTS',
   serial_dtr: 'Serial DTR',
+  serial_rts_dtr: 'Serial RTS + DTR',
   gpio: 'GPIO',
   cm108: 'CM108',
   rigctld: 'rigctld',

@@ -46,3 +46,10 @@ test('tolerates a non-array device list', () => {
     type: 'gpio',
   });
 });
+
+test('selecting a persistent alias saves that alias rather than its kernel target', () => {
+  const path = '/dev/serial/by-id/usb-Adapter_UNIQUE-if00-port0';
+  const d = { path, type: 'serial', description: 'Adapter — persistent ID (currently /dev/ttyUSB0)' };
+  assert.equal(resolveDevice([d], path, 'serial'), d);
+  assert.equal(resolveDevice([d], path, 'serial').path, path);
+});

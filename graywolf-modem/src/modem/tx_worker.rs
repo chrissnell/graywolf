@@ -202,7 +202,7 @@ impl TxWorker {
     /// mpsc is FIFO, this also flushes every earlier message before
     /// returning — tests get a race-free barrier for free.
     #[cfg(test)]
-    pub(super) fn driver_count(&self) -> usize {
+    pub(crate) fn driver_count(&self) -> usize {
         let (tx, rx) = channel();
         self.sender
             .send(TxMessage::QueryDriverCount(tx))
@@ -231,8 +231,22 @@ fn worker_loop(rx: std::sync::mpsc::Receiver<TxMessage>, stop: Arc<AtomicBool>) 
             Ok(TxMessage::Transmit(job)) => {
                 process_job(&mut sinks, &mut drivers, &mut pending_devices, job);
             }
-            Ok(TxMessage::RegisterDriver { channel, driver }) => {
-                drivers.insert(channel, driver);
+            Ok(TxMessage::RegisterDriver {
+                channel,
+                mut driver,
+            }) => {
+                // Drop/unkey the old driver first, then restore the new
+                // serial driver's inactive levels (polarity may have changed).
+                drivers.remove(&channel);
+                match driver.on_registered() {
+                    Ok(()) => {
+                        drivers.insert(channel, driver);
+                    }
+                    Err(e) => eprintln!(
+                        "graywolf-modem: PTT registration channel={}: {}",
+                        channel, e
+                    ),
+                }
             }
             Ok(TxMessage::ReleaseDriver { channel }) => {
                 drivers.remove(&channel);

@@ -149,7 +149,7 @@ type ChannelResponse struct {
 // render a "PTT" indicator block (parallel to the backing row) without
 // fanning out to the PTT endpoint per card.
 //
-// Method is the PttConfig.Method enum (none|serial_rts|serial_dtr|gpio|
+// Method is the PttConfig.Method enum (none|serial_rts|serial_dtr|serial_rts_dtr|gpio|
 // cm108|rigctld|vox|digirig_tone). Configured is true iff Method is non-empty and not
 // "none" — the convenience flag the UI uses to colour the badge and
 // drive the "PTT not configured" hint.
@@ -320,7 +320,7 @@ func pttDetail(p configstore.PttConfig, method string) string {
 			return fmt.Sprintf("line %d · %s", p.GpioLine, p.Device)
 		}
 		return fmt.Sprintf("line %d", p.GpioLine)
-	case "serial_rts", "serial_dtr":
+	case "serial_rts", "serial_dtr", "serial_rts_dtr":
 		if p.Device != "" {
 			return p.Device
 		}

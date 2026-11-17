@@ -94,6 +94,9 @@ func enumerateSerial() []AvailableDevice {
 			})
 		}
 	}
+	if runtime.GOOS == "linux" {
+		devs = withSerialByID(devs, "/dev/serial/by-id")
+	}
 	return devs
 }
 

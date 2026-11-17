@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
+	"google.golang.org/protobuf/proto"
+
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 )
 
 // fakeConn implements sessionConn over two io.Pipes (one per direction).
@@ -548,5 +550,52 @@ func TestStateTransitions(t *testing.T) {
 	b.setState(StateStarting)
 	if b.State() != StateStarting {
 		t.Fatalf("after setState: %s", b.State())
+	}
+}
+
+// Verify persisted dual-line polarity reaches the actual protobuf wire,
+// including updates back to false (GORM must not omit zero-valued fields).
+func TestPushConfigurationSerialRtsDtr(t *testing.T) {
+	store := seedStore(t)
+	defer store.Close()
+	ctx := context.Background()
+	channels, err := store.ListChannels(ctx)
+	if err != nil || len(channels) != 1 {
+		t.Fatalf("channels: %v %v", channels, err)
+	}
+	b := New(Config{Store: store, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	for _, invert := range []bool{true, false} {
+		for _, dtrInvert := range []bool{true, false} {
+			cfg := &configstore.PttConfig{
+				ChannelID: channels[0].ID, Method: "serial_rts_dtr",
+				Device: "/dev/ttyUSB0", Invert: invert, DtrInvert: dtrInvert,
+			}
+			if err := store.UpsertPttConfig(ctx, cfg); err != nil {
+				t.Fatal(err)
+			}
+			var got *pb.ConfigurePtt
+			_, err := b.pushConfiguration(ctx, func(m *pb.IpcMessage) error {
+				// Exercise marshal/unmarshal too, not just Go struct assignment.
+				wire, err := proto.Marshal(m)
+				if err != nil {
+					return err
+				}
+				var decoded pb.IpcMessage
+				if err := proto.Unmarshal(wire, &decoded); err != nil {
+					return err
+				}
+				if p := decoded.GetConfigurePtt(); p != nil {
+					got = p
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got == nil || got.Method != cfg.Method || got.Device != cfg.Device ||
+				got.Invert != invert || got.DtrInvert != dtrInvert {
+				t.Fatalf("polarity %v/%v: got %v", invert, dtrInvert, got)
+			}
+		}
 	}
 }

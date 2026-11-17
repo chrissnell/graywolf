@@ -49,6 +49,7 @@
     digirig_tone: 'Digirig Lite Tone PTT',
     serial_rts: 'Serial RTS',
     serial_dtr: 'Serial DTR',
+    serial_rts_dtr: 'Serial RTS + DTR',
     gpio: 'GPIO',
     cm108: 'CM108',
     rigctld: 'Hamlib rigctld (CAT)',
@@ -195,16 +196,12 @@
     }
     const m = methodOptionForDevice(dev);
     dialogContext = { kind: 'add', channelId: channelsNeedingPttList[0].id, item: { device_path: dev.path } };
-    if (m && dev.recommended) {
-      // Recommended: skip Dialog A, jump straight into Dialog B with
-      // method + device preselected.
-      dialogMethodChosen = m;
-      dialogDeviceOpen = true;
-    } else {
-      // Other / unknown: open Dialog A so the operator picks a method.
-      dialogMethodChosen = m || null;
-      dialogMethodOpen = true;
-    }
+    // Detection identifies the port, not its wiring or inactive levels.
+    // Always confirm the method before opening the device dialog: saving an
+    // assumed RTS-only configuration can leave DTR at an active level.
+    dialogMethodChosen = m || null;
+    dialogDeviceOpen = false;
+    dialogMethodOpen = true;
   }
 
   function openChangeMethod(item) {
@@ -280,6 +277,7 @@
       gpio_pin: payload?.gpio_pin ?? 0,
       gpio_line: payload?.gpio_line ?? 0,
       invert: !!payload?.invert,
+      dtr_invert: !!payload?.dtr_invert,
     };
     if (m.wire.ptt_method != null) body.ptt_method = m.wire.ptt_method;
     try {
@@ -482,6 +480,7 @@
   initialGpioLine={dialogContext?.item?.gpio_line ?? 0}
   initialGpioPin={dialogContext?.item?.gpio_pin ?? 3}
   initialInvert={dialogContext?.item?.invert || false}
+  initialDtrInvert={dialogContext?.item?.dtr_invert || false}
   onSave={handleDeviceSave}
   onBack={handleDeviceBack}
   onCancel={() => { dialogDeviceOpen = false; dialogContext = null; }}

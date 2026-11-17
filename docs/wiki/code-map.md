@@ -114,7 +114,7 @@ The TX-funnel rule lives in [invariant 16](invariants.md).
 
 | Package | Purpose |
 |---|---|
-| `pttdevice` | Enumerates serial ports, gpiochip devices, CM108 HID devices on the Go side. On macOS/Windows it shells out to `graywolf-modem --list-cm108` (`cm108_modem.go`). |
+| `pttdevice` | Enumerates serial ports, gpiochip devices, CM108 HID devices on the Go side. Linux serial discovery adds existing by-id aliases via `serial_by_id.go`, using metadata only and retaining kernel selections and VID/PID warnings. The picker wraps full persistent paths; `devicePayload.js` preserves the selected alias. On macOS/Windows it shells out to `graywolf-modem --list-cm108` (`cm108_modem.go`). |
 
 PTT *driving* is on the Rust side; see the `tx/ptt_*.rs` files above.
 The split is enforced by [invariant 9](invariants.md).

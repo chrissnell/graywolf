@@ -97,6 +97,21 @@ Source: [`../../pkg/pttdevice/`](../../pkg/pttdevice/);
 [`../../proto/graywolf.proto`](../../proto/graywolf.proto)
 (`ConfigurePtt`).
 
+### 9d. Serial dual-line PTT polarity
+`serial_rts` and `serial_dtr` retain their single-line `invert` behavior.
+`serial_rts_dtr` uses the same shared port and driver, with `invert`
+controlling RTS and `dtr_invert` controlling DTR independently. The latter
+defaults false through GORM AutoMigrate and protobuf field 13. Both fields
+travel through the REST DTO and modembridge. Every enabled line is inverted
+between TX and RX. Startup, driver disposal, and failed line operations
+attempt RX on all enabled lines; a failed key never proceeds to audio.
+Unix updates both bits with one masked TIOCMSET; Windows attempts both
+EscapeCommFunction calls even if one fails.
+Linux simulation: `scripts/test_serial_ptt_sim.sh` runs the production Unix
+serial adapter against a temporary device with simulated modem-control
+ioctls, including one-shot I/O errors. It needs a C compiler and normal
+Rust build dependencies; it never accesses real serial hardware.
+
 ### 9a. PTT is one-row-per-channel; PUT supports atomic rekey
 
 *Why:* `PttConfig.ChannelID` carries a uniqueIndex, so an operator changing the channel field on an existing PTT means *move*, not copy. `PUT /api/ptt/{channel}` matches the body's `channel_id` against the URL's: same → in-place upsert; different → atomic rekey in a single GORM transaction (`Store.RekeyPttConfig`), with `ErrPttChannelTaken` mapped to HTTP 400 on collision. The bridge reload (`notifyBridgeForChannel` → `ReconfigureAudioDevice`) is global, so a single notify covers both vacated and newly-targeted channels.

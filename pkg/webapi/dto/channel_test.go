@@ -195,6 +195,13 @@ func TestChannelPttFromModel(t *testing.T) {
 			detail:     "/dev/ttyUSB0",
 		},
 		{
+			name:       "serial_rts_dtr surfaces device path",
+			in:         configstore.PttConfig{Method: "serial_rts_dtr", Device: "/dev/ttyUSB0"},
+			method:     "serial_rts_dtr",
+			configured: true,
+			detail:     "/dev/ttyUSB0",
+		},
+		{
 			name:       "rigctld surfaces host:port",
 			in:         configstore.PttConfig{Method: "rigctld", Device: "127.0.0.1:4532"},
 			method:     "rigctld",

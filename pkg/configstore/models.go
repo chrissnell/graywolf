@@ -97,12 +97,13 @@ type PttConfig struct {
 	ID         uint32    `gorm:"primaryKey;autoIncrement" json:"id"`
 	ChannelID  uint32    `gorm:"not null;uniqueIndex" json:"channel_id"`
 	Channel    *Channel  `gorm:"foreignKey:ChannelID;references:ID;constraint:OnDelete:CASCADE,OnUpdate:CASCADE" json:"-"`
-	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|gpio|cm108|android|vox|digirig_tone|none
+	Method     string    `gorm:"not null;default:'none'" json:"method"` // serial_rts|serial_dtr|serial_rts_dtr|gpio|cm108|android|vox|digirig_tone|none
 	Device     string    `json:"device_path"`
-	GpioPin    uint32    `json:"gpio_pin"`                             // CM108 HID GPIO pin (1-indexed, default 3). cm108 method only.
-	PttMethod  uint32    `gorm:"not null;default:0" json:"ptt_method"` // Android transport when Method=="android": PttMethod enum 1..5 (1 CP2102N_RTS, 2 CM108_HID, 3 AIOC_CDC_DTR, 4 VOX, 5 DIGIRIG_TONE). 0 = unset / non-android.
-	GpioLine   uint32    `gorm:"not null;default:0" json:"gpio_line"`  // gpiochip method: 0-indexed line offset
-	Invert     bool      `gorm:"not null;default:false" json:"invert"` // reverse polarity for rigs wired backwards
+	GpioPin    uint32    `json:"gpio_pin"`                                 // CM108 HID GPIO pin (1-indexed, default 3). cm108 method only.
+	PttMethod  uint32    `gorm:"not null;default:0" json:"ptt_method"`     // Android transport when Method=="android": PttMethod enum 1..5 (1 CP2102N_RTS, 2 CM108_HID, 3 AIOC_CDC_DTR, 4 VOX, 5 DIGIRIG_TONE). 0 = unset / non-android.
+	GpioLine   uint32    `gorm:"not null;default:0" json:"gpio_line"`      // gpiochip method: 0-indexed line offset
+	Invert     bool      `gorm:"not null;default:false" json:"invert"`     // reverse polarity for rigs wired backwards
+	DtrInvert  bool      `gorm:"not null;default:false" json:"dtr_invert"` // serial_rts_dtr only; Invert controls RTS.
 	SlotTimeMs uint32    `gorm:"not null;default:10" json:"slot_time_ms"`
 	Persist    uint32    `gorm:"not null;default:63" json:"persist"`
 	DwaitMs    uint32    `gorm:"not null;default:0" json:"dwait_ms"`

@@ -7,6 +7,7 @@
 const METHOD_TO_TYPE = {
   serial_rts: 'serial',
   serial_dtr: 'serial',
+  serial_rts_dtr: 'serial',
   gpio: 'gpio',
   cm108: 'cm108',
 };

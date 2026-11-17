@@ -108,6 +108,21 @@
       expected.
     </p>
 
+    <h2>Persistent USB serial paths on Linux</h2>
+    <p>Detected serial devices include their existing
+      <code>/dev/serial/by-id/</code> aliases when available. Choose that entry
+      to save the persistent path rather than a numbered
+      <code>/dev/ttyUSB0</code> or <code>/dev/ttyACM0</code> path. The picker
+      displays the full alias and its currently resolved kernel path.</p>
+    <p>Kernel paths remain available and existing saved selections are not
+      rewritten. A persistent name does not make an unknown device suitable
+      for PTT: device recommendations, warnings and method confirmation still
+      apply. Discovery reads alias metadata without opening those ports.
+      Adapters without a unique USB identifier may lack a reliable by-id name;
+      verify the adapter identity or use an intentional custom udev alias.
+      This change applies to Linux serial devices; other platforms and PTT
+      methods retain their existing enumeration.</p>
+
     <h2>Entering a device path manually</h2>
 
     <p>
@@ -165,6 +180,11 @@
               <td>USB-to-serial adapter</td>
             </tr>
             <tr>
+              <td><code>serial_rts_dtr</code></td>
+              <td>Drive RTS and DTR together with independent polarities</td>
+              <td>USB-to-serial adapter</td>
+            </tr>
+            <tr>
               <td><code>gpio</code></td>
               <td>Linux GPIO pin via gpiochip character device</td>
               <td>Raspberry Pi GPIO header</td>
@@ -216,7 +236,12 @@
             <tr>
               <td><code>invert</code></td>
               <td><code>false</code></td>
-              <td>Reverse PTT polarity (for backwards-wired rigs)</td>
+              <td>Reverse PTT polarity. For <code>serial_rts_dtr</code>, this controls RTS only; DTR uses <code>dtr_invert</code>.</td>
+            </tr>
+            <tr>
+              <td><code>dtr_invert</code></td>
+              <td><code>false</code></td>
+              <td>DTR polarity for <code>serial_rts_dtr</code> only. False means TX HIGH / RX LOW; true means TX LOW / RX HIGH. For single-line <code>serial_dtr</code>, use <code>invert</code>.</td>
             </tr>
           </tbody>
         </table>
@@ -361,6 +386,41 @@ ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
         </p>
       </div>
     </div>
+
+    <h3>Confirm wiring before saving</h3>
+    <p>Configuring a detected device first opens the method selector, even
+      for a recommended adapter. Detection preselects the device and suggests
+      a method; it cannot determine your interface wiring. Select RTS, DTR,
+      or RTS + DTR, then choose the signal levels before the final Save.
+      Advancing to the device dialog does not save or activate PTT.</p>
+    <p>The final Save opens the serial port and applies the configured receive
+      levels. Adapter or operating-system behavior during port opening may
+      still cause a brief line transition; this flow does not guarantee
+      glitch-free hardware opening.</p>
+
+    <h3>RTS and DTR together</h3>
+    <p>Select <strong>Serial RTS + DTR</strong> to drive both lines on one
+      device. The Serial signal levels selector lists all four combinations with
+      explicit transmit and receive levels. Choose RTS: TX HIGH / RX LOW and
+      DTR: TX LOW / RX HIGH to match Dire Wolf
+      <code>PTT /dev/ttyUSB0 RTS -DTR</code>:</p>
+    <table><thead><tr><th>State</th><th>RTS</th><th>DTR</th></tr></thead>
+      <tbody><tr><td>TX</td><td>HIGH</td><td>LOW</td></tr>
+      <tr><td>RX</td><td>LOW</td><td>HIGH</td></tr></tbody></table>
+    <p>The API configuration is <code>method: "serial_rts_dtr"</code>,
+      <code>invert: false</code> (RTS), and <code>dtr_invert: true</code>.
+      Both flags default to false (active high). Existing
+      <code>serial_rts</code> and <code>serial_dtr</code> configurations
+      keep their existing <code>invert</code> behavior and leave the other
+      line alone.</p>
+    <p>Graywolf drives enabled lines to RX on startup and normal driver
+      disposal, and attempts RX again after a line-control error. Unix
+      changes both bits in one operation; Windows changes them sequentially.
+      Hardware or driver failures, forced process termination, and the
+      adapter's behavior during open/close can still prevent unkeying.
+      Verify startup, transmit, receive, and shutdown levels with your
+      actual adapter before connecting the radio's PTT input. Do not assign
+      another channel or program to either line used by this method.</p>
 
     <h2>GPIO PTT (Raspberry Pi)</h2>
 

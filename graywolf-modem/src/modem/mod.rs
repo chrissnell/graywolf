@@ -2569,6 +2569,7 @@ mod tests {
             gpio_pin: 0,
             gpio_line: 0,
             ptt_method,
+            dtr_invert: false,
         };
         // Desktop vox method → VOX.
         assert!(ptt_uses_vox(&cfg("vox", 0)));
@@ -2599,6 +2600,7 @@ mod tests {
             gpio_pin: 0,
             gpio_line: 0,
             ptt_method,
+            dtr_invert: false,
         };
         let sample_rate = 48_000u32;
         let expected_len =
@@ -2647,6 +2649,7 @@ mod tests {
             gpio_pin: 0,
             gpio_line: 0,
             ptt_method: 0,
+            dtr_invert: false,
         };
         let sample_rate = 48_000u32;
         let expected_len = (sample_rate as u64 * DIGIRIG_TONE_LEAD_MS as u64 / 1000) as usize;
@@ -2695,6 +2698,7 @@ mod tests {
                 gpio_pin: 0,
                 gpio_line: 0,
                 ptt_method: 0,
+                dtr_invert: false,
             })),
         };
         assert!(!modem.handle_ipc(msg));
@@ -2728,6 +2732,7 @@ mod tests {
                 gpio_pin: 3,
                 gpio_line: 0,
                 ptt_method: 0,
+                dtr_invert: false,
             })),
         };
         assert!(!modem.handle_ipc(msg));
@@ -2770,6 +2775,7 @@ mod tests {
                 gpio_pin: 3,
                 gpio_line: 0,
                 ptt_method: 0,
+                dtr_invert: false,
             })),
         };
         assert!(!modem.handle_ipc(msg));
@@ -2806,6 +2812,7 @@ mod tests {
                 gpio_pin: 3,
                 gpio_line: 0,
                 ptt_method: 0,
+                dtr_invert: false,
             })),
         };
         assert!(!modem.handle_ipc(msg));

@@ -1861,6 +1861,9 @@ definitions:
         type: integer
       device_path:
         type: string
+      dtr_invert:
+        description: DtrInvert controls DTR only for serial_rts_dtr; Invert controls RTS.
+        type: boolean
       dwait_ms:
         type: integer
       gpio_line:
@@ -1893,6 +1896,9 @@ definitions:
         type: integer
       device_path:
         type: string
+      dtr_invert:
+        description: DtrInvert controls DTR only for serial_rts_dtr; Invert controls RTS.
+        type: boolean
       dwait_ms:
         type: integer
       gpio_line:

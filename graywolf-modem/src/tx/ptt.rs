@@ -64,7 +64,7 @@
 //! ## Internal abstraction
 //!
 //! [`SerialLinePtt`] is written against [`ModemControlLines`] — a tiny
-//! two-method trait — so tests can verify fd-sharing semantics with an
+//! small hardware interface — so tests can verify fd-sharing semantics with an
 //! in-memory fake instead of touching real hardware, and so the Unix
 //! and Windows adapters can slot in behind `#[cfg]` without the
 //! higher-level code caring.
@@ -156,6 +156,7 @@ pub(crate) enum PttMethod {
     DigirigTone,
     SerialRts,
     SerialDtr,
+    SerialRtsDtr,
     Cm108,
     Gpio,
     /// Hamlib rigctld over TCP. `device` is `"host:port"`.
@@ -180,6 +181,7 @@ impl PttMethod {
             "digirig_tone" => Some(Self::DigirigTone),
             "serial_rts" => Some(Self::SerialRts),
             "serial_dtr" => Some(Self::SerialDtr),
+            "serial_rts_dtr" => Some(Self::SerialRtsDtr),
             "cm108" => Some(Self::Cm108),
             "gpio" => Some(Self::Gpio),
             "rigctld" => Some(Self::Rigctld),
@@ -193,6 +195,13 @@ impl PttMethod {
 /// channel by [`PortRegistry::build_driver`] and held inside an
 /// `Arc<Mutex<..>>` by the modem so the TX worker can serialise key/unkey.
 pub(crate) trait PttDriver: Send {
+    /// Called on the TX worker after the previous driver has been dropped.
+    /// Serial drivers reapply RX because the old driver's Drop can change
+    /// the same shared port using the old polarity.
+    fn on_registered(&mut self) -> Result<(), String> {
+        Ok(())
+    }
+
     /// Assert the PTT line (put the radio into transmit).
     fn key(&mut self) -> Result<(), String>;
 
@@ -219,6 +228,10 @@ impl PttDriver for NonePtt {
 pub(crate) enum SerialLine {
     Rts,
     Dtr,
+    /// Both lines on one port; the primary invert flag controls RTS.
+    RtsDtr {
+        dtr_invert: bool,
+    },
 }
 
 /// Minimal hardware-facing interface the serial PTT driver actually
@@ -228,6 +241,18 @@ pub(crate) enum SerialLine {
 pub(crate) trait ModemControlLines: Send {
     fn write_rts(&mut self, level: bool) -> Result<(), String>;
     fn write_dtr(&mut self, level: bool) -> Result<(), String>;
+
+    /// Set enabled lines without touching disabled ones. Always attempt both,
+    /// even if the first fails. Unix overrides this with one masked ioctl.
+    fn write_lines(&mut self, rts: Option<bool>, dtr: Option<bool>) -> Result<(), String> {
+        let rts_result = rts.map_or(Ok(()), |level| self.write_rts(level));
+        let dtr_result = dtr.map_or(Ok(()), |level| self.write_dtr(level));
+        match (rts_result, dtr_result) {
+            (Err(a), Err(b)) => Err(format!("{}; {}", a, b)),
+            (Err(e), _) | (_, Err(e)) => Err(e),
+            _ => Ok(()),
+        }
+    }
 }
 
 /// Shared handle type used throughout the registry and the driver.
@@ -322,7 +347,7 @@ pub(crate) trait GpiochipControl: Send {
 }
 
 /// Serial-port PTT driver. Holds a shared reference to an already-open
-/// serial port and toggles either RTS or DTR. `invert` is honoured for
+/// serial port and toggles RTS, DTR, or both. `invert` is honoured for
 /// rigs wired with reversed polarity — direwolf's `ptt_invert` at
 /// `ptt.c:1380-1385`.
 pub(crate) struct SerialLinePtt {
@@ -332,26 +357,60 @@ pub(crate) struct SerialLinePtt {
 }
 
 impl SerialLinePtt {
-    fn set(&mut self, assert: bool) -> Result<(), String> {
+    fn levels(&self, assert: bool) -> (Option<bool>, Option<bool>) {
         let level = assert ^ self.invert;
-        let mut port = self
-            .port
-            .lock()
-            .map_err(|e| format!("ptt port mutex poisoned: {}", e))?;
         match self.line {
-            SerialLine::Rts => port.write_rts(level),
-            SerialLine::Dtr => port.write_dtr(level),
+            SerialLine::Rts => (Some(level), None),
+            SerialLine::Dtr => (None, Some(level)),
+            SerialLine::RtsDtr { dtr_invert } => (Some(level), Some(assert ^ dtr_invert)),
         }
+    }
+
+    fn set(&mut self, assert: bool) -> Result<(), String> {
+        let (rts, dtr) = self.levels(assert);
+        // A poisoned mutex must not prevent emergency unkey. Never key a
+        // poisoned port: restore RX instead and report the fault.
+        let (mut port, poisoned) = match self.port.lock() {
+            Ok(port) => (port, false),
+            Err(e) => (e.into_inner(), true),
+        };
+        let result = if poisoned {
+            Err("ptt port mutex poisoned".to_string())
+        } else {
+            port.write_lines(rts, dtr)
+        };
+        if let Err(err) = result {
+            // A key failure may have changed one line already. Restore *all*
+            // enabled lines before returning. Also retry a failed unkey once.
+            let (rts, dtr) = self.levels(false);
+            return match port.write_lines(rts, dtr) {
+                Ok(()) => Err(err),
+                Err(cleanup) => Err(format!("{}; PTT unkey recovery failed: {}", err, cleanup)),
+            };
+        }
+        Ok(())
     }
 }
 
 impl PttDriver for SerialLinePtt {
+    fn on_registered(&mut self) -> Result<(), String> {
+        self.unkey()
+    }
+
     fn key(&mut self) -> Result<(), String> {
         self.set(true)
     }
 
     fn unkey(&mut self) -> Result<(), String> {
         self.set(false)
+    }
+}
+
+impl Drop for SerialLinePtt {
+    fn drop(&mut self) {
+        if let Err(err) = self.unkey() {
+            eprintln!("serial PTT unkey on drop: {}", err);
+        }
     }
 }
 
@@ -559,6 +618,13 @@ impl PortRegistry {
                 SerialLine::Dtr,
                 cfg.invert,
             )?)),
+            PttMethod::SerialRtsDtr => Ok(Box::new(self.serial_driver(
+                &cfg.device,
+                SerialLine::RtsDtr {
+                    dtr_invert: cfg.dtr_invert,
+                },
+                cfg.invert,
+            )?)),
             PttMethod::Cm108 => {
                 let raw = cfg.gpio_pin;
                 let gpio_pin = if raw == 0 {
@@ -568,7 +634,11 @@ impl PortRegistry {
                 } else {
                     raw as u8
                 };
-                Ok(Box::new(self.cm108_driver(&cfg.device, gpio_pin, cfg.invert)?))
+                Ok(Box::new(self.cm108_driver(
+                    &cfg.device,
+                    gpio_pin,
+                    cfg.invert,
+                )?))
             }
             PttMethod::Gpio => {
                 #[cfg(target_os = "linux")]
@@ -829,6 +899,7 @@ pub(crate) mod tests {
             gpio_pin: 3,
             gpio_line: 0,
             ptt_method: 0,
+            dtr_invert: false,
         }
     }
 
@@ -844,9 +915,16 @@ pub(crate) mod tests {
         assert_eq!(PttMethod::parse("none"), Some(PttMethod::None));
         assert_eq!(PttMethod::parse(""), Some(PttMethod::None));
         assert_eq!(PttMethod::parse("vox"), Some(PttMethod::Vox));
-        assert_eq!(PttMethod::parse("digirig_tone"), Some(PttMethod::DigirigTone));
+        assert_eq!(
+            PttMethod::parse("digirig_tone"),
+            Some(PttMethod::DigirigTone)
+        );
         assert_eq!(PttMethod::parse("serial_rts"), Some(PttMethod::SerialRts));
         assert_eq!(PttMethod::parse("serial_dtr"), Some(PttMethod::SerialDtr));
+        assert_eq!(
+            PttMethod::parse("serial_rts_dtr"),
+            Some(PttMethod::SerialRtsDtr)
+        );
         assert_eq!(PttMethod::parse("cm108"), Some(PttMethod::Cm108));
         assert_eq!(PttMethod::parse("gpio"), Some(PttMethod::Gpio));
         assert_eq!(PttMethod::parse("rigctld"), Some(PttMethod::Rigctld));
@@ -995,6 +1073,315 @@ pub(crate) mod tests {
             *ops.lock().unwrap(),
             vec![(SerialLine::Rts, false), (SerialLine::Rts, true)]
         );
+    }
+
+    #[test]
+    fn serial_dual_line_polarities_startup_tx_rx_and_drop() {
+        for invert in [false, true] {
+            for dtr_invert in [false, true] {
+                let mut registry = PortRegistry::new();
+                let (port, ops) = shared_fake();
+                registry.install_for_test("/dev/fake", port);
+                let cfg = ConfigurePtt {
+                    method: "serial_rts_dtr".into(),
+                    device: "/dev/fake".into(),
+                    invert,
+                    dtr_invert,
+                    ..base_cfg()
+                };
+                let mut driver = registry.build_driver(&cfg).unwrap();
+                driver.key().unwrap();
+                driver.unkey().unwrap();
+                drop(driver);
+                assert_eq!(
+                    *ops.lock().unwrap(),
+                    vec![
+                        (SerialLine::Rts, invert),
+                        (SerialLine::Dtr, dtr_invert),
+                        (SerialLine::Rts, !invert),
+                        (SerialLine::Dtr, !dtr_invert),
+                        (SerialLine::Rts, invert),
+                        (SerialLine::Dtr, dtr_invert),
+                        (SerialLine::Rts, invert),
+                        (SerialLine::Dtr, dtr_invert),
+                    ]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn serial_single_lines_ignore_dual_dtr_flag_and_unkey_on_drop() {
+        for method in ["serial_rts", "serial_dtr"] {
+            for invert in [false, true] {
+                let mut registry = PortRegistry::new();
+                let (port, ops) = shared_fake();
+                registry.install_for_test("/dev/fake", port);
+                let cfg = ConfigurePtt {
+                    method: method.into(),
+                    device: "/dev/fake".into(),
+                    invert,
+                    dtr_invert: !invert,
+                    ..base_cfg()
+                };
+                let mut driver = registry.build_driver(&cfg).unwrap();
+                driver.key().unwrap();
+                drop(driver);
+                let line = if method == "serial_rts" {
+                    SerialLine::Rts
+                } else {
+                    SerialLine::Dtr
+                };
+                assert_eq!(
+                    *ops.lock().unwrap(),
+                    vec![(line, invert), (line, !invert), (line, invert)]
+                );
+            }
+        }
+    }
+
+    struct FailingLines {
+        ops: OpLog,
+        // One-shot failure on the nth write, or fail every write if zero.
+        fail_at: usize,
+        count: usize,
+    }
+
+    impl FailingLines {
+        fn write(&mut self, line: SerialLine, level: bool) -> Result<(), String> {
+            self.ops.lock().unwrap().push((line, level));
+            self.count += 1;
+            if self.fail_at == 0 || self.count == self.fail_at {
+                Err(format!("injected {:?} failure", line))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    impl ModemControlLines for FailingLines {
+        fn write_rts(&mut self, level: bool) -> Result<(), String> {
+            self.write(SerialLine::Rts, level)
+        }
+        fn write_dtr(&mut self, level: bool) -> Result<(), String> {
+            self.write(SerialLine::Dtr, level)
+        }
+    }
+
+    fn failing_port(fail_at: usize) -> (SharedLines, OpLog) {
+        let ops = Arc::new(Mutex::new(Vec::new()));
+        let port: SharedLines = Arc::new(Mutex::new(Box::new(FailingLines {
+            ops: ops.clone(),
+            fail_at,
+            count: 0,
+        })));
+        (port, ops)
+    }
+
+    #[test]
+    fn serial_dual_failure_always_attempts_other_line_and_restores_rx() {
+        // Fail either line in startup, key, or unkey. Startup must reject
+        // the driver; a partial key must restore both RX levels.
+        for fail_at in 1..=6 {
+            let mut registry = PortRegistry::new();
+            let (port, ops) = failing_port(fail_at);
+            registry.install_for_test("/dev/fake", port);
+            let cfg = ConfigurePtt {
+                method: "serial_rts_dtr".into(),
+                device: "/dev/fake".into(),
+                dtr_invert: true,
+                ..base_cfg()
+            };
+            let result = registry.build_driver(&cfg);
+            if fail_at <= 2 {
+                assert!(result.is_err());
+            } else {
+                let mut driver = result.unwrap();
+                if fail_at <= 4 {
+                    assert!(driver.key().is_err());
+                } else {
+                    driver.key().unwrap();
+                    assert!(driver.unkey().is_err());
+                }
+                // Recovery ran before returning (not just in Drop).
+                let log = ops.lock().unwrap();
+                assert_eq!(
+                    &log[log.len() - 2..],
+                    &[(SerialLine::Rts, false), (SerialLine::Dtr, true)]
+                );
+                drop(log);
+                drop(driver);
+            }
+            let log = ops.lock().unwrap();
+            assert_eq!(log[0].0, SerialLine::Rts);
+            assert_eq!(log[1].0, SerialLine::Dtr);
+            assert_eq!(
+                &log[log.len() - 2..],
+                &[(SerialLine::Rts, false), (SerialLine::Dtr, true)]
+            );
+        }
+    }
+
+    #[test]
+    fn serial_persistent_failure_reports_cleanup_and_attempts_both_lines() {
+        let (port, ops) = failing_port(0);
+        let mut driver = SerialLinePtt {
+            port,
+            line: SerialLine::RtsDtr { dtr_invert: true },
+            invert: false,
+        };
+        let err = driver.key().unwrap_err();
+        assert!(err.contains("PTT unkey recovery failed"));
+        assert_eq!(ops.lock().unwrap().len(), 4);
+        drop(driver);
+        assert_eq!(ops.lock().unwrap().len(), 8);
+    }
+
+    #[test]
+    fn serial_poisoned_port_refuses_key_but_still_attempts_rx() {
+        let (port, ops) = shared_fake();
+        let poison = port.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = poison.lock().unwrap();
+            panic!("poison test");
+        })
+        .join();
+        let mut driver = SerialLinePtt {
+            port,
+            line: SerialLine::RtsDtr { dtr_invert: true },
+            invert: false,
+        };
+        assert!(driver.key().unwrap_err().contains("poisoned"));
+        assert_eq!(
+            *ops.lock().unwrap(),
+            vec![(SerialLine::Rts, false), (SerialLine::Dtr, true)]
+        );
+        drop(driver);
+        assert_eq!(ops.lock().unwrap().len(), 4);
+    }
+
+    #[test]
+    fn serial_registration_restores_new_polarity_after_old_driver_drop() {
+        let (port, ops) = shared_fake();
+        let mut old = SerialLinePtt {
+            port: port.clone(),
+            line: SerialLine::RtsDtr { dtr_invert: false },
+            invert: false,
+        };
+        old.key().unwrap();
+        let mut new = SerialLinePtt {
+            port,
+            line: SerialLine::RtsDtr { dtr_invert: true },
+            invert: true,
+        };
+        new.unkey().unwrap(); // initial construction on IPC thread
+        drop(old);
+        new.on_registered().unwrap(); // worker handoff
+        let log = ops.lock().unwrap();
+        assert_eq!(
+            &log[log.len() - 2..],
+            &[(SerialLine::Rts, true), (SerialLine::Dtr, true)]
+        );
+    }
+
+    #[test]
+    fn serial_worker_replacement_and_shutdown_unkey() {
+        use crate::modem::tx_worker::TxWorker;
+        let worker = TxWorker::spawn().unwrap();
+        let mut registry = PortRegistry::new();
+        let (port, ops) = shared_fake();
+        registry.install_for_test("/dev/fake", port);
+        let mut cfg = ConfigurePtt {
+            method: "serial_rts_dtr".into(),
+            device: "/dev/fake".into(),
+            ..base_cfg()
+        };
+        worker
+            .register_driver(0, registry.build_driver(&cfg).unwrap())
+            .unwrap();
+        assert_eq!(worker.driver_count(), 1);
+        worker.manual_key(0, true).unwrap();
+        assert_eq!(worker.driver_count(), 1);
+        cfg.invert = true;
+        cfg.dtr_invert = true;
+        worker
+            .register_driver(0, registry.build_driver(&cfg).unwrap())
+            .unwrap();
+        assert_eq!(worker.driver_count(), 1);
+        {
+            let log = ops.lock().unwrap();
+            assert_eq!(
+                &log[log.len() - 2..],
+                &[(SerialLine::Rts, true), (SerialLine::Dtr, true)]
+            );
+        }
+        worker.manual_key(0, true).unwrap();
+        assert_eq!(worker.driver_count(), 1);
+        drop(worker); // joins worker, drops driver even while manually keyed
+        let log = ops.lock().unwrap();
+        assert_eq!(
+            &log[log.len() - 2..],
+            &[(SerialLine::Rts, true), (SerialLine::Dtr, true)]
+        );
+    }
+
+    /// Run via scripts/test_serial_ptt_sim.sh. Unlike FakeLines tests,
+    /// this opens a device through UnixSerialLines and calls real libc ioctl;
+    /// the preload shim simulates only the kernel's modem-control registers.
+    #[cfg(target_os = "linux")]
+    #[test]
+    #[ignore = "requires scripts/test_serial_ptt_sim.sh ioctl simulator"]
+    fn serial_unix_simulator_exercises_real_adapter() {
+        use nix::libc::{TIOCM_CAR, TIOCM_CTS, TIOCM_DTR, TIOCM_RTS};
+        let device = std::env::var("GRAYWOLF_SERIAL_SIM_DEVICE").unwrap();
+        let state = std::env::var("GRAYWOLF_SERIAL_SIM_STATE").unwrap();
+        let fail = std::env::var("GRAYWOLF_SERIAL_SIM_FAIL").unwrap();
+        let bits = || -> i32 {
+            std::fs::read_to_string(&state).unwrap().trim().parse().unwrap()
+        };
+        let unrelated = TIOCM_CAR | TIOCM_CTS;
+        for method in ["serial_rts_dtr", "serial_rts", "serial_dtr"] {
+            for invert in [false, true] {
+                for dtr_invert in [false, true] {
+                    let mut registry = PortRegistry::new();
+                    // Initial simulated register contains both unrelated bits.
+                    let previous = bits();
+                    let rts_enabled = method != "serial_dtr";
+                    let dtr_enabled = method != "serial_rts";
+                    let rx_rts = if rts_enabled { invert } else { previous & TIOCM_RTS != 0 };
+                    let rx_dtr = if !dtr_enabled { previous & TIOCM_DTR != 0 }
+                        else if method == "serial_dtr" { invert } else { dtr_invert };
+                    let rx = unrelated | if rx_rts { TIOCM_RTS } else { 0 }
+                        | if rx_dtr { TIOCM_DTR } else { 0 };
+                    let toggle = if rts_enabled { TIOCM_RTS } else { 0 }
+                        | if dtr_enabled { TIOCM_DTR } else { 0 };
+                    let cfg = ConfigurePtt {
+                        method: method.into(), device: device.clone(), invert, dtr_invert,
+                        ..base_cfg()
+                    };
+                    let mut driver = registry.build_driver(&cfg).unwrap();
+                    assert_eq!(bits(), rx, "startup {method} {invert}/{dtr_invert}");
+                    driver.key().unwrap();
+                    assert_eq!(bits(), rx ^ toggle, "TX {method} {invert}/{dtr_invert}");
+                    driver.unkey().unwrap();
+                    assert_eq!(bits(), rx, "RX {method} {invert}/{dtr_invert}");
+                    // Fail the next TIOCMSET, then allow recovery to succeed.
+                    std::fs::write(&fail, "").unwrap();
+                    assert!(driver.key().is_err());
+                    assert_eq!(bits(), rx, "key recovery");
+                    driver.key().unwrap();
+                    std::fs::write(&fail, "").unwrap();
+                    assert!(driver.unkey().is_err());
+                    assert_eq!(bits(), rx, "unkey recovery");
+                    driver.key().unwrap();
+                    drop(driver);
+                    assert_eq!(bits(), rx, "shutdown");
+                    std::fs::write(&fail, "").unwrap();
+                    assert!(registry.build_driver(&cfg).is_err());
+                    assert_eq!(bits(), rx, "failed startup recovery");
+                }
+            }
+        }
     }
 
     #[test]
