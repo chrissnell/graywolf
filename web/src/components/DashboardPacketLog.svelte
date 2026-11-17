@@ -3,7 +3,7 @@
   import PacketLogViewer from './PacketLogViewer.svelte';
   import {
     DEFAULT_LOG_HEIGHT, MIN_LOG_HEIGHT, maxLogHeight,
-    draggedLogHeight, keyedLogHeight, readLogHeight, saveLogHeight,
+    draggedLogHeight, resizeEdgeStep, keyedLogHeight, readLogHeight, saveLogHeight,
   } from '../lib/packetLogResize.js';
 
   let { packets = [], autoscroll = true, newestFirst = false, ...viewerProps } = $props();
@@ -13,6 +13,7 @@
   const height = $derived(Math.min(desiredHeight, maximum));
   let drag = $state(null);
   let measureFrame;
+  let dragFrame;
   let mounted = false;
 
   // Query afresh: Chonky replaces the body when switching grid/card layouts.
@@ -43,6 +44,7 @@
     observer.observe(root);
     scheduleMeasure();
     return () => {
+      stopDrag();
       mounted = false;
       observer.disconnect();
       cancelAnimationFrame(measureFrame);
@@ -73,24 +75,54 @@
   function startDrag(event) {
     if (!event.isPrimary || event.button !== 0) return;
     event.preventDefault();
-    event.currentTarget.focus();
+    event.currentTarget.focus({ preventScroll: true });
     const el = body();
     drag = {
-      id: event.pointerId, y: event.clientY, height,
+      id: event.pointerId, y: event.clientY, lastY: event.clientY,
+      scrollY: window.scrollY, time: performance.now(),
       scale: el?.offsetHeight ? el.getBoundingClientRect().height / el.offsetHeight : 1,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
+    dragFrame = requestAnimationFrame(continueDrag);
+  }
+
+  async function continueDrag(now) {
+    const active = drag;
+    if (!active) return;
+    const edge = resizeEdgeStep(active.y, window.innerHeight, now - active.time);
+    const delta = active.y - active.lastY + window.scrollY - active.scrollY;
+    const before = height;
+    desiredHeight = draggedLogHeight(height, delta + edge, active.scale, maximum);
+    const growth = desiredHeight - before;
+    active.lastY = active.y;
+    active.time = now;
+    await tick();
+    if (drag !== active) return;
+    // Grow first so there is page space to scroll into, even at the old end.
+    // Only scroll for actual growth/shrinkage; stop at the content/height cap.
+    if (edge && growth * edge > 0) {
+      window.scrollBy(0, Math.sign(edge) * Math.min(Math.abs(edge), Math.abs(growth * active.scale)));
+    }
+    active.scrollY = window.scrollY;
+    dragFrame = requestAnimationFrame(continueDrag);
   }
 
   function moveDrag(event) {
     if (drag?.id !== event.pointerId) return;
-    desiredHeight = draggedLogHeight(drag.height, event.clientY - drag.y, drag.scale, maximum);
+    if (event.buttons === 0) { stopDrag(); return; }
+    drag.y = event.clientY;
+  }
+
+  function stopDrag() {
+    if (!drag) return;
+    drag = null;
+    cancelAnimationFrame(dragFrame);
+    saveLogHeight(desiredHeight);
   }
 
   function finishDrag(event) {
     if (drag?.id !== event.pointerId) return;
-    drag = null;
-    saveLogHeight(desiredHeight);
+    stopDrag();
   }
 
   function resizeByKey(event) {
@@ -107,6 +139,8 @@
   }
 </script>
 
+<svelte:window onblur={stopDrag} />
+
 <div bind:this={root} class="dashboard-packet-log">
   <PacketLogViewer {packets} {autoscroll} {newestFirst} {...viewerProps} height={`${height}px`} />
   <div class="resize-controls">
@@ -121,7 +155,7 @@
       aria-valuemax={maximum}
       aria-valuenow={height}
       aria-valuetext={`${height} pixels`}
-      title="Drag to resize. Arrow keys: 40 px; Page Up/Down: 200 px; Home/End: minimum/maximum."
+      title="Drag to resize; hold near the page edge to keep resizing. Arrow keys: 40 px; Page Up/Down: 200 px; Home/End: minimum/maximum."
       onpointerdown={startDrag}
       onpointermove={moveDrag}
       onpointerup={finishDrag}

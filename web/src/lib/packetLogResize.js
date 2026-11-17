@@ -38,3 +38,13 @@ export function saveLogHeight(height, storage) {
   try { (storage ?? globalThis.localStorage).setItem(LOG_HEIGHT_KEY, String(normalizeLogHeight(height))); }
   catch { /* Storage denial never prevents resizing. */ }
 }
+
+// Edge-driven resizing continues without requiring the pointer to leave the
+// viewport. Bound frame time so a background-tab pause cannot cause a jump.
+export function resizeEdgeStep(y, viewportHeight, elapsed) {
+  const edge = 48;
+  const direction = y > viewportHeight - edge
+    ? Math.min(1, (y - viewportHeight + edge) / edge)
+    : y < edge ? -Math.min(1, (edge - y) / edge) : 0;
+  return direction * 480 * Math.max(0, Math.min(elapsed, 32)) / 1000;
+}

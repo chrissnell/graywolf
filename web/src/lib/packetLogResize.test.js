@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_LOG_HEIGHT, MIN_LOG_HEIGHT, MAX_LOG_HEIGHT, LOG_HEIGHT_KEY,
   normalizeLogHeight, maxLogHeight, draggedLogHeight, keyedLogHeight,
-  readLogHeight, saveLogHeight,
+  readLogHeight, saveLogHeight, resizeEdgeStep,
 } from './packetLogResize.js';
 
 test('missing, malformed and nonfinite stored heights restore the default', () => {
@@ -57,4 +57,13 @@ test('keyboard supports incremental resizing, limits, and normal Tab navigation'
   assert.equal(keyedLogHeight('ArrowDown', 900, 900), 900);
   assert.equal(keyedLogHeight('ArrowUp', 200, 900), 200);
   assert.equal(keyedLogHeight('Tab', 400, 900), null);
+});
+
+test('edge resizing continues with a stationary pointer and bounds long frames', () => {
+  assert.equal(resizeEdgeStep(500, 1000, 16), 0);
+  assert.equal(resizeEdgeStep(1000, 1000, 16), 7.68);
+  assert.equal(resizeEdgeStep(0, 1000, 16), -7.68);
+  assert.equal(resizeEdgeStep(1000, 1000, 10000), 15.36);
+  assert.equal(resizeEdgeStep(976, 1000, 16), 3.84);
+  assert.equal(resizeEdgeStep(1000, 1000, -5), 0);
 });
