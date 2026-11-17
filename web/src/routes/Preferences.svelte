@@ -38,9 +38,9 @@
   </p>
 </Box>
 
-<Box title="Packet colors">
-  <Toggle checked={packetColors.enabled} onCheckedChange={(v) => packetColors.setEnabled(v)} label="Colorize packets" />
-  <p class="packet-colors-hint">Optional traffic highlights and header text colors for the Dashboard, APRS Logs and live packet monitor. Off by default. Saved on this device only. Flow labels remain readable in grayscale and high-contrast themes.</p>
+<Box title="Packet display">
+  <Toggle checked={packetColors.enabled} onCheckedChange={(v) => packetColors.setEnabled(v)} label="Enhanced packet view" />
+  <p class="packet-colors-hint">Optional traffic colors, flow labels and header text highlights for the Dashboard, APRS Logs and live packet monitor, plus clearer packet separation in Dashboard and APRS Logs. Off by default. Saved on this device only. Flow labels remain readable in grayscale and high-contrast themes.</p>
 </Box>
 
 <Box title="Display size">

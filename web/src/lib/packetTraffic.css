@@ -8,7 +8,12 @@
 .packet-traffic-colors .pkt-raw .pkt-field[data-packet-role="path"] { color: var(--packet-path); }
 .packet-traffic-colors .log-grid-cell.pkt-c-time { border-left: 6px solid var(--flow-edge); }
 .packet-traffic-colors .log-grid-footer { border-left: 6px solid var(--flow-edge); }
-.packet-traffic-colors .log-card { border-left: 6px solid var(--flow-edge); }
+/* Outrank PacketLogViewer's legacy .log-card.log-ok/log-warn/log-dim
+   accents in card mode, without changing the non-enhanced view. */
+.packet-traffic-colors .log-viewer[data-mode="card"] .log-card {
+  border-left: 6px solid var(--flow-edge);
+  padding-left: calc(0.5rem - 6px);
+}
 .packet-traffic-colors .log-grid-cell,
 .packet-traffic-colors .log-grid-footer,
 .packet-traffic-colors .log-card { background: var(--flow-bg); color: var(--packet-foreground); }
@@ -90,6 +95,7 @@
 .packet-traffic-colors .log-grid-footer:has([data-packet-flow="unknown"]),
 .packet-traffic-colors .log-card:has([data-packet-flow="unknown"]) { --flow-bg: var(--packet-unknown-bg); --flow-edge: var(--packet-unknown-edge); }
 @media (forced-colors: active) {
+  .packet-traffic-colors .log-viewer[data-mode="card"] .log-card { border-left-color: CanvasText; }
   .packet-traffic-colors .log-grid-cell, .packet-traffic-colors .log-grid-footer, .packet-traffic-colors .log-card { background: Canvas; color: CanvasText; border-color: CanvasText; }
   .packet-traffic-colors .pkt-raw .pkt-field, .packet-traffic-colors .pkt-flow-marker, .packet-traffic-colors .pkt-srcdst .pkt-src, .packet-traffic-colors .pkt-srcdst .pkt-dst { color: CanvasText; }
 }
