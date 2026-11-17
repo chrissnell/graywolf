@@ -15,7 +15,8 @@
   --gw-term-bg: var(--color-surface);
   --gw-term-fg: var(--color-text);
   --gw-term-cursor: var(--color-primary);
-  --packet-time-width: 108px;
+  /* Include the complete timestamp, cell padding and flow accent at any UI scale. */
+  --packet-time-width: max-content;
   --packet-badge-width: clamp(200px, 18vw, 340px);
   --packet-address-width: minmax(13rem, 1fr);
   --packet-level-width: 88px;
@@ -43,6 +44,10 @@
 :root:root:is([data-theme='signal-light'], [data-theme='signal-dark']) .logo-img { width: 38px; height: 38px; }
 :root:root:is([data-theme='signal-light'], [data-theme='signal-dark']) .logo { font-family: var(--font-ui); letter-spacing: -.03em; }
 .packet-traffic-colors :is(.pkt-time, .pkt-srcdst, .pkt-raw, .pkt-reception, .pkt-alevel-num) { font-family: var(--font-mono); }
+/* Narrow cards may wrap between date and clock, never inside HH:MM:SS. */
+.packet-traffic-colors .pkt-time { white-space: normal; overflow-wrap: normal; word-break: normal; }
+.packet-traffic-colors .pkt-time .pkt-time-part { display: inline-block; white-space: nowrap; }
+.packet-traffic-colors .log-card-primary-cell.pkt-c-time { flex: 0 0 auto; min-width: 0; max-width: 100%; }
 .packet-traffic-colors .log-viewer .pkt-type-stack { display: flex; flex-wrap: wrap; max-width: 100%; gap: 5px; }
 .packet-traffic-colors .log-viewer .pkt-badge {
   background: color-mix(in srgb, var(--flow-edge) 16%, var(--flow-bg));

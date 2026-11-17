@@ -132,8 +132,13 @@
 </script>
 
 {#snippet timeCell(_value, entry)}
-  <span class="pkt-time">{formatTime(entry.timestamp)}</span>
-  {#if enhancedPackets}<span class="pkt-flow-marker" data-packet-flow={packetFlow(entry).id}>{packetFlow(entry).label}</span>{/if}
+  {#if enhancedPackets}
+    {@const [date, clock] = formatTime(entry.timestamp).split(' ')}
+    <span class="pkt-time"><span class="pkt-time-part">{date}</span>{' '}<span class="pkt-time-part">{clock}</span></span>
+    <span class="pkt-flow-marker" data-packet-flow={packetFlow(entry).id}>{packetFlow(entry).label}</span>
+  {:else}
+    <span class="pkt-time">{formatTime(entry.timestamp)}</span>
+  {/if}
 {/snippet}
 
 {#snippet typeCell(_value, entry)}

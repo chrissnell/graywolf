@@ -14,7 +14,10 @@ Nerd Font fallback. Licenses ship alongside the files. No font CDN is used.
 
 Dashboard/APRS Logs/System Logs use the available width. Settings pages keep
 bounded forms. Badge columns grow from 200 px up to 340 px, while addresses
-retain a minimum readable width; wrapping is allowed. Viewers narrower than
+retain a minimum readable width; wrapping is allowed. Timestamp columns size to
+the complete date/time, padding and flow accent rather than a fixed pixel width.
+On narrow cards the date and clock may occupy separate lines; hours, minutes
+and seconds stay together. This also applies to General display sizes (90–200%). Viewers narrower than
 880 px use stacked cards. Wide native channel cards place the audio meter,
 DCD/RX/TX beside the channel name. The dBFS reading sits left of a bounded
 RX audio meter with a -60/-40/-20/0 scale. The meter grows with available
