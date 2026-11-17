@@ -105,7 +105,7 @@ The operator tested native USB audio and independent RTS/DTR serial PTT on a
 disposable PacketRover installation (aarch64, Raspberry Pi OS/Debian Trixie,
 glibc 2.41). Dire Wolf was stopped on that test station. Its PacketRover UI
 remained available for sign-in; no PacketRover source change was made.
-The separate KS9N-10 station ran real Dire Wolf 1.8.1 on Debian x86_64.
+The separate receiving station ran real Dire Wolf 1.8.1 on Debian x86_64.
 Its Graywolf application and tmux-managed Dire Wolf were paused for supervised
 position-packet sends and restored afterward. Its configuration hash and ALSA
 mixer snapshots were unchanged. No mixer levels were changed for these tests.
