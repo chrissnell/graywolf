@@ -30,13 +30,13 @@ type Config struct {
 }
 
 func Defaults() Config {
-	return Config{Delivery: "auto", MetadataISSeconds: 7200, MetadataRFSeconds: 21600}
+	return Config{Delivery: "aprsis", MetadataISSeconds: 7200, MetadataRFSeconds: 21600}
 }
 func Normalize(c Config) Config {
 	c.Callsign = strings.ToUpper(strings.TrimSpace(c.Callsign))
 	c.RFPath = strings.ToUpper(strings.TrimSpace(c.RFPath))
 	if c.Delivery == "" {
-		c.Delivery = "auto"
+		c.Delivery = "aprsis"
 	}
 	if c.MetadataISSeconds == 0 {
 		c.MetadataISSeconds = 7200
@@ -65,7 +65,7 @@ func Validate(c Config) error {
 			return fmt.Errorf("definition refresh must be 3600-604800 seconds")
 		}
 	}
-	if c.Enabled && c.Delivery != "aprsis" && c.Channel == 0 {
+	if c.Delivery != "aprsis" && c.Channel == 0 {
 		return fmt.Errorf("select an RF delivery channel")
 	}
 	return nil

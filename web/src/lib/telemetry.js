@@ -17,3 +17,8 @@ export function telemetryRows(status) {
     encoded: status?.ready ? (status.encoded?.[i] ?? '—') : '—',
   }));
 }
+
+export function telemetryDeliveryError(delivery, channel) {
+  return delivery !== 'aprsis' && !(Number(channel) > 0)
+    ? 'Select an RF delivery channel for RF-only or APRS-IS preferred delivery.' : '';
+}

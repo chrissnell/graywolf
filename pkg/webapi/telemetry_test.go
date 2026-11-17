@@ -21,7 +21,7 @@ func TestTelemetryConfigDefaultsAndRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(get.Body.Bytes(), &initial); err != nil {
 		t.Fatal(err)
 	}
-	if get.Code != 200 || initial.Enabled || initial.Extended || initial.Delivery != "auto" {
+	if get.Code != 200 || initial.Enabled || initial.Extended || initial.Delivery != "aprsis" {
 		t.Fatalf("%d %+v", get.Code, initial)
 	}
 	for _, enabled := range []bool{true, false} {
@@ -69,5 +69,26 @@ func TestTelemetryRejectsInvalidAndUnavailableManualSend(t *testing.T) {
 	mux.ServeHTTP(w, httptest.NewRequest("POST", "/api/telemetry/report", nil))
 	if w.Code != 409 || sends != 0 {
 		t.Fatalf("%d sends=%d", w.Code, sends)
+	}
+}
+
+func TestTelemetryRequiresRFChannelEvenWhileDisabled(t *testing.T) {
+	s, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	s.RegisterRoutes(mux)
+	for _, delivery := range []string{"auto", "rf"} {
+		for _, enabled := range []bool{false, true} {
+			payload, _ := json.Marshal(TelemetryConfigDTO{Enabled: enabled, Callsign: "TEST1-10", Delivery: delivery})
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, httptest.NewRequest("PUT", "/api/telemetry/config", strings.NewReader(string(payload))))
+			if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "RF delivery channel") {
+				t.Fatalf("delivery=%s enabled=%t: %d %s", delivery, enabled, w.Code, w.Body.String())
+			}
+		}
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest("PUT", "/api/telemetry/config", strings.NewReader(`{"enabled":true,"callsign":"TEST1-10","delivery":"aprsis","channel":0}`)))
+	if w.Code != http.StatusOK {
+		t.Fatalf("IS-only without RF: %d %s", w.Code, w.Body.String())
 	}
 }

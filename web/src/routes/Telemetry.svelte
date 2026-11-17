@@ -5,14 +5,15 @@
   import FormField from '../components/FormField.svelte';
   import { api } from '../lib/api.js';
   import { toasts } from '../lib/stores.js';
-  import { telemetryRows, telemetryState } from '../lib/telemetry.js';
+  import { telemetryRows, telemetryState, telemetryDeliveryError } from '../lib/telemetry.js';
 
-  let config = $state({enabled:false, callsign:'', channel:0, delivery:'auto', rf_path:'', allow_above_255:false, metadata_is_seconds:7200, metadata_rf_seconds:21600});
+  let config = $state({enabled:false, callsign:'', channel:0, delivery:'aprsis', rf_path:'', allow_above_255:false, metadata_is_seconds:7200, metadata_rf_seconds:21600});
   let channels = $state([]);
   let status = $state(null);
   let saving = $state(false);
   let loaded = $state(false);
   let error = $state('');
+  let saveError = $state('');
   const rows = $derived(telemetryRows(status));
   const channelOptions = $derived([{value:'0', label:'Select RF delivery channel'}, ...channels.filter(c => c.mode !== 'packet').map(c => ({value:String(c.id), label:c.name || `Channel ${c.id}`}))]);
   let channel = $state('0');
@@ -42,7 +43,10 @@
     return () => { disposed = true; clearInterval(timer); };
   });
   async function save(event) {
-    event.preventDefault(); saving = true;
+    event.preventDefault();
+    saveError = telemetryDeliveryError(config.delivery, channel);
+    if (saveError) { toasts.error(saveError); return; }
+    saving = true;
     try {
       config = await api.put('/telemetry/config', {...config, channel:Number(channel)});
       status = await api.get('/telemetry/status');
@@ -69,15 +73,17 @@
 {#if error}<p role="alert" class="error">{error}</p>{/if}
 <Box>
   <form onsubmit={save}>
+    {#if saveError}<p role="alert" class="error">{saveError}</p>{/if}
     <Toggle bind:checked={config.enabled} label="Enable T# activity telemetry" />
     <p><strong>Reporting period:</strong> 10 minutes. Each report measures the preceding ten minutes.</p>
     <FormField label="Telemetry callsign/SSID (optional)" id="telemetry-callsign" hint="Leave blank to inherit and follow the station identity. Use only an identity you are authorized to transmit.">
       <Input id="telemetry-callsign" bind:value={config.callsign} placeholder="Inherit station identity" />
     </FormField>
     <FormField label="Delivery" id="telemetry-delivery">
-      <Select id="telemetry-delivery" bind:value={config.delivery} options={[{value:'auto',label:'APRS-IS preferred; RF when disconnected'}, {value:'aprsis',label:'APRS-IS only'}, {value:'rf',label:'RF only'}]} />
+      <Select id="telemetry-delivery" bind:value={config.delivery} options={[{value:'aprsis',label:'APRS-IS only (recommended)'}, {value:'auto',label:'APRS-IS preferred; RF when disconnected'}, {value:'rf',label:'RF only'}]} />
     </FormField>
-    <FormField label="RF delivery channel" id="telemetry-channel" hint="Required for RF or automatic delivery. Counters always cover the entire station.">
+    <p>APRS-IS only is the default and recommended for Internet-connected stations; it avoids extra RF airtime. Existing saved delivery choices are preserved.</p>
+    <FormField label="RF delivery channel" id="telemetry-channel" hint="Required to save RF or automatic delivery, even while telemetry is disabled. Counters always cover the entire station.">
       <Select id="telemetry-channel" bind:value={channel} options={channelOptions} />
     </FormField>
     <FormField label="RF digipeater path" id="telemetry-path" hint="Blank sends direct. This path is separate from position beacons.">

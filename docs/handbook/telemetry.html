@@ -74,6 +74,14 @@
       not which activity is counted. Per-channel reporting and digital status
       telemetry are possible future work.</p>
 
+    <p>The next sequence and definition refresh timestamps are stored in the
+      SQLite configuration database selected by Graywolf's <code>-config</code>
+      flag. The next sequence is saved before submitting each report. Normal
+      restart continues that sequence, wrapping after 999. Restoring an older
+      database snapshot also restores its older sequence; appliances must keep
+      runtime state durable separately from configuration rollback if needed.
+      Samples and recent submission history are held only in RAM.</p>
+
     <h2>Measurements and Scope</h2>
     <table><thead><tr><th>Slot</th><th>Label</th><th>Meaning over the preceding ten minutes</th></tr></thead><tbody>
       <tr><td>1</td><td>RF Rx</td><td>Native received frames plus decoded KISS-TNC ingress; KISS application/modem-mode input and APRS-IS reception are excluded.</td></tr>
@@ -93,6 +101,12 @@
       you are authorized to transmit. Data and self-addressed definitions use the
       same identity on both delivery routes. Avoid another telemetry publisher using
       that same identity with different measurements or definitions.</p>
+    <p><strong>APRS-IS only is the default and recommended for Internet-connected
+      stations.</strong> It avoids additional RF airtime and waits during an
+      Internet outage. Existing saved delivery choices are preserved. Selecting
+      RF-only or APRS-IS preferred with RF fallback requires an RF delivery
+      channel before settings can be saved, even while reporting is disabled.
+      Enabled RF delivery also requires a TX-capable channel.</p>
     <ul>
       <li><strong>APRS-IS preferred; RF when disconnected:</strong> use the connected
         APRS-IS session, otherwise the selected ready RF channel.</li>

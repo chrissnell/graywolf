@@ -96,6 +96,7 @@ func TestFullBaselineAndDataBeforeDefinitions(t *testing.T) {
 }
 func TestWaitsForInputNotFirstPacketOrInternet(t *testing.T) {
 	h := newHarness()
+	h.cfg.Delivery = "auto"
 	h.obs.InputReady = false
 	h.obs.ISReady = false
 	h.advance(0, 700)
@@ -195,6 +196,7 @@ func TestIdentityInheritanceOverrideAndReset(t *testing.T) {
 }
 func TestFailedOrUncertainSendDoesNotFallBackOrSendDefinitions(t *testing.T) {
 	h := newHarness()
+	h.cfg.Delivery = "auto"
 	h.sendErr = errors.New("uncertain transport failure")
 	h.advance(0, 600)
 	h.obs.ISReady = false
@@ -274,7 +276,7 @@ func TestValidateConfiguration(t *testing.T) {
 	if err := Validate(valid); err != nil {
 		t.Fatal(err)
 	}
-	for _, change := range []func(*Config){func(c *Config) { c.Delivery = "both" }, func(c *Config) { c.Callsign = "N0CALL" }, func(c *Config) { c.RFPath = "BAD PATH" }, func(c *Config) { c.MetadataISSeconds = 10 }, func(c *Config) { c.Enabled = true }} {
+	for _, change := range []func(*Config){func(c *Config) { c.Delivery = "both" }, func(c *Config) { c.Callsign = "N0CALL" }, func(c *Config) { c.RFPath = "BAD PATH" }, func(c *Config) { c.MetadataISSeconds = 10 }, func(c *Config) { c.Delivery = "rf" }} {
 		c := valid
 		change(&c)
 		if Validate(c) == nil {
@@ -301,5 +303,38 @@ func TestRecentSubmissionHistoryIsBoundedAndIsolated(t *testing.T) {
 	h.advance(12010, 12600)
 	if h.r.Snapshot().Recent[0].SubmittedAt.After(status.Recent[0].SubmittedAt) {
 		t.Fatal("failed send recorded as submitted")
+	}
+}
+
+func TestRestartContinuesDurableSequence(t *testing.T) {
+	h := newHarness()
+	h.advance(0, 690)
+	if h.state.NextSequence != 1 {
+		t.Fatal(h.state)
+	}
+	h.r = New(h.r.opts)
+	h.advance(700, 1300)
+	var data []string
+	for _, sent := range h.sends {
+		if sent.kind == "data" {
+			data = append(data, sent.info)
+		}
+	}
+	if len(data) != 2 || !strings.HasPrefix(data[0], "T#000,") || !strings.HasPrefix(data[1], "T#001,") {
+		t.Fatalf("restart reused sequence: %v", data)
+	}
+}
+
+func TestISOnlyDefaultWaitsWithoutFallingBackToRF(t *testing.T) {
+	h := newHarness()
+	h.obs.ISReady = false
+	h.advance(0, 600)
+	if len(h.sends) != 0 || h.cfg.Delivery != "aprsis" {
+		t.Fatal(h.sends, h.cfg)
+	}
+	h.obs.ISReady = true
+	h.tick(610)
+	if len(h.sends) != 1 || h.sends[0].route != "aprsis" {
+		t.Fatal(h.sends)
 	}
 }
