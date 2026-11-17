@@ -151,7 +151,7 @@
   );
 </script>
 
-{#snippet navItems()}
+{#snippet mainNavItems()}
   <ul class="nav-list main-list">
     {#each visibleMainItems as item}
       {@const unread = item.badge ? badgeCount(item.badge) : 0}
@@ -274,6 +274,9 @@
       </li>
     {/each}
   </ul>
+{/snippet}
+
+{#snippet settingsNavItems()}
   {#each navGroups as group, groupIdx}
     <div class="nav-group">
       <h2 class="nav-group-label">{group.label}</h2>
@@ -324,6 +327,11 @@
   </div>
 {/snippet}
 
+{#snippet navItems()}
+  {@render mainNavItems()}
+  {@render settingsNavItems()}
+{/snippet}
+
 <!-- Desktop sidebar (≥769px) -->
 <nav class="sidebar" aria-label="Main navigation">
   <div class="sidebar-header">
@@ -332,8 +340,9 @@
       <h1 class="logo">graywolf</h1>
     </a>
   </div>
-  <div class="nav-scroll">
-    {@render navItems()}
+  <div class="nav-main">{@render mainNavItems()}</div>
+  <div class="nav-scroll" role="region" aria-label="Settings navigation">
+    {@render settingsNavItems()}
   </div>
 </nav>
 
@@ -532,13 +541,14 @@
     left: 0;
     background: var(--bg-secondary);
     border-right: 1px solid var(--border-color);
-    overflow-y: auto;
+    overflow: hidden;
     z-index: 100;
     display: flex;
     flex-direction: column;
   }
 
   .sidebar-header {
+    flex-shrink: 0;
     padding: 16px;
     border-bottom: 1px solid var(--border-color);
   }
@@ -566,8 +576,18 @@
     margin: 0;
   }
 
+  @media (min-width: 769px) and (max-height: 650px) {
+    .sidebar-header { padding: 8px 16px; }
+    .logo-img { width: 32px; height: 32px; }
+    .logo { display: none; }
+  }
+
+  .nav-main { flex-shrink: 0; }
+
   .nav-scroll {
     flex: 1;
+    min-height: 0;
+    overscroll-behavior-y: contain;
     overflow-y: auto;
     padding: 0 0 12px;
   }
