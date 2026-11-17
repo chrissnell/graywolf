@@ -239,3 +239,27 @@ func TestKissTncObservabilityCounters(t *testing.T) {
 		}
 	}
 }
+
+func TestTxSourceOutcomesBoundLabelsAndPreserveAggregates(t *testing.T) {
+	m := New()
+	m.ObserveTxSourceOutcome(1, "digipeater", "forwarded")
+	m.ObserveTxSourceOutcome(1, "digipeater", "deduped")
+	m.ObserveTxSourceOutcome(1, "client-arbitrary-1", "deduped")
+	m.ObserveTxSourceOutcome(1, "client-arbitrary-2", "deduped")
+	m.ObserveTxSourceOutcome(1, "digipeater", "arbitrary-outcome")
+	body := scrape(t, m)
+	for _, want := range []string{
+		`graywolf_tx_source_outcomes_total{channel="1",outcome="forwarded",source="digipeater"} 1`,
+		`graywolf_tx_source_outcomes_total{channel="1",outcome="deduped",source="digipeater"} 1`,
+		`graywolf_tx_source_outcomes_total{channel="1",outcome="deduped",source="other"} 2`,
+		`graywolf_tx_deduped_total 0`,
+		`graywolf_digipeater_packets_total 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	if strings.Contains(body, "client-arbitrary") || strings.Contains(body, "arbitrary-outcome") {
+		t.Fatal("unbounded label escaped")
+	}
+}

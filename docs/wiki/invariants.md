@@ -237,6 +237,14 @@ Source: [`../../pkg/igate/filters/filters.go`](../../pkg/igate/filters/filters.g
 Source: [`../../pkg/txgovernor/governor.go`](../../pkg/txgovernor/governor.go)
 (package comment).
 
+The governor's optional `OnOutcome` observer accounts for events by source,
+without changing `Submit`'s nil-on-duplicate behavior. `forwarded` fires only
+when Sender returns nil (at least one dispatcher backend accepted the frame),
+not on deduplication, encoding failure or total backend failure. The additive
+`graywolf_tx_source_outcomes_total` metric provides these outcomes; the legacy
+`graywolf_digipeater_packets_total` remains submission accounting for compatibility.
+Observers run outside the governor mutex and must be concurrency-safe/non-blocking.
+
 ### 16b. KISS hardware-TNC types default to a TX-capable TNC link
 
 *Why:* A `tcp-client`, `serial`, or `usb-serial` KISS interface connects to a device that IS the radio (a hardware TNC, LoRa modem, or radio with a built-in KISS TNC), so its only useful default is `Mode=tnc` + `AllowTxFromGovernor=true` -- otherwise it registers no TX backend and silently transmits nothing (beacons fail with `no backend registered for channel`, issue #128) **and** misroutes its RX into the TX governor so the operator sees no received packets (the recurring "serial KISS receives nothing" report). When `Mode` is **omitted from the request**, both the API boundary (`dto.KissRequest.ToModel`) and the store backstop (`normalizeKissInterface`) apply this default via the shared predicate `configstore.KissTypeDefaultsTnc` (true for `tcp-client`/`serial`/`usbserial`). Only `tcp` (server) keeps the historical `modem` default -- its peer is an APRS app; `bluetooth` is force-`tnc`'d at the wiring layer (and by the UI). The web UI mirrors this: selecting any of these types on a new row sets `Mode=tnc` + governor-TX via the shared `$effect` in `Kiss.svelte` (the UI always sends `mode` explicitly, so this -- not the backend default -- is the operative path for interactive creation). An *explicitly supplied* `Mode` is always honored verbatim. Note `POST`/`PUT /api/kiss` is full-resource replace (`Store.UpdateKissInterface` does `db.Save`): a `PUT` that omits `mode` re-applies the default exactly as create does -- it does NOT merge against the persisted row. The one hazardous case -- silently enabling TX on a channel that also has an audio input device (a modem backend), which would double-transmit -- cannot occur: `validateKissInterface` independently rejects `tnc`+`AllowTxFromGovernor` on a modem-backed channel before the row is written (so the rare legitimate "graywolf-as-soundmodem over a serial/PTY link" setup must pick `Mode=modem` explicitly). Migration 20 (`kiss_tcp_client_tx_default`) and Migration 30 (`kiss_serial_tnc_default`) repair pre-existing rows of their respective types stuck at the old `modem`/`false` default, both skipping any row whose channel has an audio input device.

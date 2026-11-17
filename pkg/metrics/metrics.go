@@ -34,6 +34,7 @@ type Metrics struct {
 	KissDecodeErrors  prometheus.Counter
 	AgwClientsActive  prometheus.Gauge
 	AgwDecodeErrors   *prometheus.CounterVec // label: stage ("initial" | "fallback")
+	TxSourceOutcomes  *prometheus.CounterVec // channel, bounded source, outcome
 	TxFrames          *prometheus.CounterVec // per channel
 	TxRateLimited     prometheus.Counter
 	TxDeduped         prometheus.Counter
@@ -183,6 +184,10 @@ func New() *Metrics {
 			Name: "graywolf_agw_decode_errors_total",
 			Help: "Count of AGW frames that failed AX.25 decoding. 'initial' counts frames that required the skip-byte fallback; 'fallback' counts frames that failed both attempts and were dropped.",
 		}, []string{"stage"}),
+		TxSourceOutcomes: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "graywolf_tx_source_outcomes_total",
+			Help: "TX governor events by source: enqueued, deduped, queue_full, encode_error, send_error, forwarded. Forwarded means at least one backend accepted the frame, not confirmed RF transmission.",
+		}, []string{"channel", "source", "outcome"}),
 		TxFrames: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "graywolf_tx_frames_total",
 			Help: "AX.25 frames transmitted by the governor, by channel.",
@@ -205,7 +210,7 @@ func New() *Metrics {
 		}),
 		DigipeaterPackets: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_digipeater_packets_total",
-			Help: "Packets successfully digipeated (path mutated and resubmitted).",
+			Help: "Digipeater submissions handled without a governor error, including TX-stage duplicates; not successful backend sends.",
 		}),
 		DigipeaterDeduped: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "graywolf_digipeater_deduped_total",
@@ -325,6 +330,7 @@ func New() *Metrics {
 		m.KissDecodeErrors,
 		m.AgwClientsActive,
 		m.AgwDecodeErrors,
+		m.TxSourceOutcomes,
 		m.TxFrames,
 		m.TxRateLimited,
 		m.TxDeduped,
@@ -553,4 +559,19 @@ func (m *Metrics) ObserveKissSerialReconnect(ifaceID uint32) {
 	lbl := m.serialLabels[ifaceID] // zero value ≡ {"",""}
 	m.serialLabelsMu.Unlock()
 	m.KissSerialReconnects.WithLabelValues(idLbl, lbl[0], lbl[1]).Inc()
+}
+
+// ObserveTxSourceOutcome records source-attributed governor events. Keep label
+// values bounded: callers must not put callsigns, client IDs or paths in source.
+// Unknown sources share "other"; unrecognized outcomes are ignored.
+func (m *Metrics) ObserveTxSourceOutcome(channel uint32, source, outcome string) {
+	switch source {
+	case "kiss", "agw", "beacon", "digipeater", "igate", "ax25conn", "messages-autoack":
+	default:
+		source = "other"
+	}
+	switch outcome {
+	case "enqueued", "deduped", "queue_full", "encode_error", "send_error", "forwarded":
+		m.TxSourceOutcomes.WithLabelValues(strconv.FormatUint(uint64(channel), 10), source, outcome).Inc()
+	}
 }
