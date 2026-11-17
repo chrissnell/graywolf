@@ -200,30 +200,30 @@
 
     <ul>
       <li><strong>Server filter</strong> &mdash; a coarse, network-level filter
-        sent to the APRS-IS server at login. It controls what traffic the server
-        forwards to you, reducing bandwidth. Uses
+        sent to the APRS-IS server at login. It requests additional traffic beyond the server&rsquo;s normal messaging
+        delivery, reducing bandwidth compared with a broad subscription. Uses
         <a href="http://www.aprs-is.net/javAPRSFilter.aspx">APRS-IS filter syntax</a>
         (e.g., <code>r/35.0/-106.0/100</code> for a 100&nbsp;km radius,
-        <code>b/NW5W-12</code> for a single station). If left empty, no packets
-        are received from APRS-IS.</li>
+        <code>b/NW5W-12</code> for a single station). An empty field requests no additional traffic itself; normal APRS-IS
+        messaging and associated positions may still arrive, and enabled
+        tactical callsigns still add automatic subscriptions.</li>
       <li><strong>IS&rarr;RF gating rules</strong> &mdash; fine-grained, local rules
         that decide which received packets are actually transmitted on RF.
         If no rules are defined, nothing is gated.</li>
     </ul>
 
     <p>
-      Both layers are needed because APRS-IS filter syntax cannot express
-      everything the gating rules can. For example, there is no server-side
-      filter for &ldquo;messages addressed to a specific callsign&rdquo; &mdash;
-      you would need to pull all messages (<code>t/m</code>) and filter locally
-      with a Message Dest rule.
+      These layers have different purposes: a server subscription such as
+      <code>b/N0CALL-7</code> requests a source&rsquo;s traffic, while a local
+      exact Callsign Allow rule authorizes eligible packets from that source
+      for RF forwarding. Receiving a packet never grants RF permission by itself.
     </p>
 
-    <h3>Spec-Mandated IS&rarr;RF Policy</h3>
+    <h3>IS&rarr;RF Eligibility and Loop Prevention</h3>
 
     <p>
       Before your gating rules are consulted, every packet arriving from
-      APRS-IS passes through a spec-mandated policy gate. The gate has
+      APRS-IS passes through an eligibility and loop-prevention gate. The gate has
       two branches depending on packet type:
     </p>
 
@@ -236,13 +236,13 @@
         them. Bulletins (<code>BLN*</code>) and NWS broadcasts are
         never gated.</li>
       <li><strong>Non-message traffic</strong> (positions, weather,
-        telemetry, status) &mdash; forwarded only when the packet&rsquo;s
-        source shares your iGate&rsquo;s base callsign <em>but is not
-        your iGate&rsquo;s exact callsign</em>. So an iGate running as
-        <code>N0CALL-10</code> can echo <code>N0CALL-7</code> (e.g. a
-        family tracker or internet-fed weather station) onto local RF,
-        but packets from strangers and self-echoes from
-        <code>N0CALL-10</code> itself are dropped.</li>
+        telemetry, status) &mdash; eligible when the source shares your
+        iGate&rsquo;s base callsign, excluding its exact callsign. For example,
+        <code>N0CALL-10</code> can echo <code>N0CALL-7</code>. An unrelated
+        source can also be authorized when its first matching transmit rule
+        is an exact <strong>Callsign / Allow</strong> rule. A Prefix or
+        Packet Type Allow rule does not grant that exception. The iGate&rsquo;s
+        own exact source is always rejected.</li>
     </ul>
 
     <p>
@@ -264,8 +264,19 @@
 
     <p>
       The <strong>APRS-IS Server Filter</strong> field is the filter string sent
-      to the APRS-IS server at login. If left empty, no packets are received.
-      Separate clauses with spaces.
+      to the APRS-IS server at login, with enabled tactical <code>g/</code>
+      clauses appended automatically. Separate clauses with spaces.
+      For one exact source, enter <code>b/N0CALL-7</code>; append it to any
+      existing subscriptions you want to keep.
+    </p>
+
+    <p>
+      Leaving this field empty does not disable all reception. Standard APRS-IS
+      messaging traffic and associated positions may still be delivered.
+      Graywolf uses a no-match subscription only when the effective filter,
+      including automatic tactical subscriptions, is empty; this does not
+      suppress the server&rsquo;s normal messaging support. Local RF reception
+      is independent of this setting.
     </p>
 
     <div class="callout info">
@@ -364,6 +375,15 @@
       </div>
     </div>
 
+    <p>To authorize an unrelated non-message source, enable IS&rarr;RF gating,
+      choose a TX-capable channel, and add an enabled <strong>Callsign</strong>
+      rule with the full source/SSID, <strong>Allow</strong>, and priority ahead
+      of any broader matching rule. For example, <code>N0CALL-7</code> allows that
+      source only. Add separate rules for other SSIDs. The server filter must
+      deliver the source&rsquo;s packets too; it does not authorize RF by itself.
+      Heard-direct restrictions for directed messages and loop prevention remain
+      unchanged. Test narrow rules in simulation mode before enabling RF.</p>
+
     <h4>Prefix</h4>
 
     <p>
@@ -378,12 +398,12 @@
       <span class="callout-icon">&#9888;</span>
       <div class="callout-body">
         <p>
-          <strong>Broad prefixes flood your local RF channel.</strong> Short
-          prefixes like <code>K</code>, <code>W</code>, <code>K5</code>, or
-          <code>KE</code> match tens of thousands of stations worldwide, and
-          an Allow rule on such a prefix will gate every one of them that
-          reaches your APRS-IS server filter. This can saturate your local
-          APRS frequency within seconds. See the
+          <strong>Use narrow rules and server filters.</strong> Short prefixes
+          like <code>K</code>, <code>W</code>, <code>K5</code>, or <code>KE</code>
+          match many stations. They do not authorize unrelated non-message
+          sources, and an earlier matching Prefix rule can prevent a later
+          exact Callsign Allow rule from granting that exception. All traffic
+          still has to pass the eligibility gate. See the
           <a href="#rf-transmit-warning">on-air transmission warning above</a>.
         </p>
         <p>To stay safe:</p>
@@ -559,12 +579,11 @@
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
-          Packet Type rules still pass through the hardcoded policy gate:
-          non-message types only transmit when the packet is sourced from
-          one of your own station SSIDs, and directed messages only
-          transmit to a station heard directly on RF in the last 30
-          minutes. A Packet Type rule narrows <em>what</em> is gated; it
-          never widens who or what the policy gate already allows.
+          A Packet Type Allow rule does not authorize an unrelated non-message
+          source. That exception requires the first matching rule to be an exact
+          Callsign Allow. Own-SSID eligibility, self/loop rejection and the
+          directed-message heard-direct check still apply. Put source-specific
+          allow/deny rules ahead of broad Packet Type rules when needed.
         </p>
       </div>
     </div>
