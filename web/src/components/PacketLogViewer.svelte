@@ -24,6 +24,10 @@
     displaySegments,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
+  import { isSignalTheme } from '../lib/themes/registry.js';
+  import { themeState } from '../lib/settings/theme-store.svelte.js';
+  import { packetFlow, packetHeaderSegments, packetPalette, packetPaletteStyle } from '../lib/packetTraffic.js';
+  import '../lib/packetTraffic.css';
 
   let {
     packets = [],
@@ -43,7 +47,7 @@
     // a malformed packet needs diagnosing.
     showNonPrintable = false,
     showHeader = true,
-    mobileBreakpoint = '768px',
+    mobileBreakpoint: requestedMobileBreakpoint = '768px',
     // When set, each packet with a raw frame gets a subtle inspect affordance
     // in its footer that opens the deep packet inspector (hex/ASCII dump +
     // error detection). Off by default so the Dashboard stays uncluttered.
@@ -53,6 +57,9 @@
     // list here rather than re-fetching, so toggling is instant on large logs.
     newestFirst = false,
   } = $props();
+
+  const enhancedPackets = $derived(isSignalTheme(themeState.theme));
+  const mobileBreakpoint = $derived(enhancedPackets ? '880px' : requestedMobileBreakpoint);
 
   // Project raw packets into LogEntry shape (adds .level for direction color).
   // When newest-first, reverse the freshly-mapped array (safe to mutate in
@@ -115,17 +122,23 @@
   // Column definitions. ORDER IS LOAD-BEARING — first 3 are primary on mobile.
   // No `priority` field in Chonky 0.2.1; ordering is the only knob.
   const columns = [
-    { key: 'timestamp', label: 'Time',    width: '130px', class: 'pkt-c-time',           render: timeCell    },
-    { key: 'type',      label: 'Type',    width: '180px', class: 'pkt-c-type',           render: typeCell    },
-    { key: 'srcdst',    label: 'Src→Dst', width: '1fr',   class: 'pkt-c-srcdst',         render: srcDstCell  },
-    { key: 'level',     label: 'Level',   width: '110px', class: 'pkt-c-level',          render: levelCell   },
-    { key: 'channel',   label: 'Channel', width: '120px', class: 'pkt-c-channel', render: channelCell },
-    { key: 'distance',  label: 'Distance',width: '120px', class: 'pkt-c-distance', align: 'right', render: distanceCell },
+    { key: 'timestamp', label: 'Time',    width: 'var(--packet-time-width, 130px)', class: 'pkt-c-time',           render: timeCell    },
+    { key: 'type',      label: 'Type',    width: 'var(--packet-badge-width, 180px)', class: 'pkt-c-type',           render: typeCell    },
+    { key: 'srcdst',    label: 'Src→Dst', width: 'var(--packet-address-width, 1fr)',   class: 'pkt-c-srcdst',         render: srcDstCell  },
+    { key: 'level',     label: 'Level',   width: 'var(--packet-level-width, 110px)', class: 'pkt-c-level',          render: levelCell   },
+    { key: 'channel',   label: 'Channel', width: 'var(--packet-channel-width, 120px)', class: 'pkt-c-channel', render: channelCell },
+    { key: 'distance',  label: 'Distance',width: 'var(--packet-distance-width, 120px)', class: 'pkt-c-distance', align: 'right', render: distanceCell },
   ];
 </script>
 
 {#snippet timeCell(_value, entry)}
-  <span class="pkt-time">{formatTime(entry.timestamp)}</span>
+  {#if enhancedPackets}
+    {@const [date, clock] = formatTime(entry.timestamp).split(' ')}
+    <span class="pkt-time"><span class="pkt-time-part">{date}</span>{' '}<span class="pkt-time-part">{clock}</span></span>
+    <span class="pkt-flow-marker" data-packet-flow={packetFlow(entry).id}>{packetFlow(entry).label}</span>
+  {:else}
+    <span class="pkt-time">{formatTime(entry.timestamp)}</span>
+  {/if}
 {/snippet}
 
 {#snippet typeCell(_value, entry)}
@@ -203,8 +216,8 @@
 {/snippet}
 
 {#snippet rawPacketFooter(entry)}
-  <div class="pkt-foot">
-    <code class="pkt-raw">{#if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
+  <div class="pkt-foot" data-packet-flow={enhancedPackets ? packetFlow(entry).id : undefined}>
+    <code class="pkt-raw">{#if enhancedPackets}{#each packetHeaderSegments(entry.display) as part}<span class="pkt-field" data-packet-role={part.role}>{#if showNonPrintable}{#each displaySegments(part.text) as seg}{#if seg.ctrl}<span class="pkt-ctrl" title={seg.title}>{seg.label}</span>{:else}{seg.text}{/if}{/each}{:else}{part.text}{/if}</span>{/each}{:else if showNonPrintable}{#each displaySegments(entry.display) as seg}{#if seg.ctrl}<span
           class="pkt-ctrl"
           title={seg.title}
         >{seg.label}</span>{:else}{seg.text}{/if}{/each}{:else}{entry.display}{/if}</code>
@@ -227,7 +240,7 @@
 
 <!-- display:contents so the wrapper is purely a DOM handle for the newest-first
      scroll/anchor tweaks and adds no layout of its own. -->
-<div bind:this={viewerWrap} style="display: contents;">
+<div bind:this={viewerWrap} class:packet-traffic-colors={enhancedPackets} style={enhancedPackets ? `display: contents;${packetPaletteStyle(packetPalette(themeState.theme))}` : 'display: contents;'}>
   <LogViewer
     entries={entries}
     {columns}

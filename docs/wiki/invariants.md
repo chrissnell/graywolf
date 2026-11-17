@@ -1852,33 +1852,20 @@ Source: [`../../pkg/messages/store.go`](../../pkg/messages/store.go)
 [`../../web/src/lib/messagesTransport.js`](../../web/src/lib/messagesTransport.js)
 (`fetchDelta`).
 
-### 64. Web UI renders in Inconsolata everywhere; no system/Helvetica stack
+### 64. Theme-owned typography: UI text and fixed-width technical data
 
-Every visible glyph in the web UI is Inconsolata. The font is applied
-through the `--font-mono` custom property (`'Inconsolata', 'Courier New',
-monospace`), set on `body` by both `chonky-ui` and `web/src/app.css` and
-inherited by headings and controls. Component CSS must not override
-`font-family` with a system stack (`-apple-system`, `BlinkMacSystemFont`,
-`system-ui`, `'Helvetica Neue'`, `Arial`, `sans-serif`); use
-`var(--font-mono)`. The Messages surface (bubbles, invite text, compose
-box) once carried an iOS-style stack "to feel like messaging" -- that was
-removed so the product reads as one typeface (graywolf #576).
+Existing Graywolf, grayscale and high-contrast themes retain Inconsolata.
+`--font-ui` defaults to `var(--font-mono)` so their interface appearance is
+preserved. Signal Light/Dark explicitly select bundled Inter for interface text
+and JetBrains Mono for fixed-width packet/code/terminal data. Do not substitute
+proportional glyphs in raw packets, hex dumps or terminal cells. Page headings
+use the interface role. Components with explicit font declarations should choose
+the appropriate role rather than introduce a platform-dependent font stack.
 
-*Why:* a lone component reintroducing the platform font is exactly the
-regression this issue fixed; it looks like a native iOS control dropped
-into an otherwise-monospace app.
-
-Two intentional exceptions, neither a UI text font:
-
-- Emoji-only spans (e.g. the `.bolt` zap glyph) use an `'Apple Color
-  Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', system-ui, sans-serif`
-  stack to render color emoji, not Latin text.
-- MapLibre label layers name glyph sets (`'Open Sans ...'`, `'Arial
-  Unicode MS ...'` in `web/src/lib/map/layers/fronts.js`) that must match
-  the tile server's font stack; these are map-render font names, not CSS.
-
-The per-tab page header (`web/src/components/PageHeader.svelte`,
-`.page-title`) is pinned to `var(--font-mono)` at 22px.
+Terminal viewports keep their Nerd Font fallback for remote private-use glyphs;
+map label fonts remain controlled by the basemap style. Signal fonts are bundled
+with licenses and require no external font fetch at runtime. Enhanced packet
+rendering follows the selected theme capability, with no separate browser toggle.
 
 ### 65. The chat window reads a thread as a "tail window" (newest by id), not the forward cursor page
 

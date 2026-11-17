@@ -85,6 +85,43 @@
       how to drop one in via pull request.
     </p>
 
+    <h2>Signal Light and Signal Dark</h2>
+    <p>Choose <strong>Signal Light</strong> or <strong>Signal Dark</strong> in
+      the existing Theme selector for a modern interface with Inter text,
+      JetBrains Mono packet/terminal data, and enhanced packet-flow colors.
+      Both fonts are bundled and work offline. Graywolf remains the default;
+      existing Graywolf, grayscale and high-contrast themes remain available.</p>
+    <p>These themes replace the separate <strong>Enhanced packet view</strong>
+      switch. There is no second packet-color preference. A previously stored
+      browser toggle is ignored; it does not silently change your selected
+      theme. Theme selection uses the existing server-saved preference and
+      browser startup mirror.</p>
+    <p>Packet colors distinguish RF receive (green), Internet receive (pale green),
+      RF transmit (rose), Internet transmit (pale rose), RF-to-IS (yellow),
+      IS-to-RF (amber), and digipeating (blue). Unknown events remain neutral.
+      Explicit labels accompany the colors; complete packet records have gaps
+      and subtle borders, including mobile cards. Source, destination and path
+      text have separate accents while payload data is preserved.</p>
+    <p>Dashboard, APRS Logs and System Logs can use the available screen width;
+      settings forms retain their bounded layout. The packet badge column grows
+      on wide screens and wraps when needed. Narrow viewers use stacked cards.
+      Native channel cards retain DCD/RX/TX, audio measurements, per-channel
+      counts and all configured RF-capable Beacon Now buttons. DCD/RX/TX sit
+      beside the channel name; the dBFS reading precedes an outlined audio
+      meter with a -60 to 0 dBFS scale. The meter adapts to available width up
+      to 480 pixels and stacks on narrow screens. Multiple buttons
+      wrap into their own row and use the existing beacon-label helper.</p>
+    <p>KISS-only channels show their actual TNC connection state and activity
+      counters, with no fabricated audio meter. DCD and bad-FCS values are
+      marked unavailable because KISS does not report them. APRS-IS-only beacons
+      remain on the Beacons page. No simulated-TX indicator is added.</p>
+    <p>The read-only live monitor follows the theme and repaints at most its
+      last 500 entries without recounting them. Theme changes may clear older
+      monitor scrollback. Other themes retain plain monitor text. Packet data,
+      exports, radio configuration and scheduling are unchanged; TX highlights
+      indicate local events, not confirmed remote reception. Forced-color modes
+      retain system text/border colors.</p>
+
     <h2>Display size</h2>
 
     <p>

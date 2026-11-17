@@ -11,6 +11,7 @@
   import { releaseNotes } from './lib/releaseNotesStore.svelte.js';
   import { unitsState } from './lib/settings/units-store.svelte.js';
   import { themeState } from './lib/settings/theme-store.svelte.js';
+  import { isSignalTheme } from './lib/themes/registry.js';
 
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -165,7 +166,7 @@
   <ServerUpdatedBanner />
   <div class="app-layout">
     <Sidebar />
-    <main class="main-content" class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>
+    <main class="main-content" class:signal-wide={isSignalTheme(themeState.theme) && ['/', '/logs', '/system-logs'].includes(currentPath)} class:full-bleed={currentPath === '/map' || currentPath === '/messages' || currentPath.startsWith('/messages/')}>
       <Router {routes} />
       <footer class="app-footer">
         <a href="https://github.com/chrissnell/graywolf" target="_blank" rel="noopener">
@@ -192,6 +193,9 @@
     display: flex;
     flex-direction: column;
   }
+  .main-content.signal-wide { max-width: none; min-width: 0; width: calc(100% - var(--sidebar-width)); }
+  @media (max-width: 768px) { .main-content.signal-wide { width: 100%; } }
+
   .app-footer {
     margin-top: auto;
     padding: 24px 0 8px;

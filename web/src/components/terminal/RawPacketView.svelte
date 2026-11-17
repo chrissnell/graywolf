@@ -11,6 +11,7 @@
   import { onMount, onDestroy } from 'svelte';
   import TerminalViewport from './TerminalViewport.svelte';
 
+
   import { createMonitorSession } from '../../lib/terminal/monitor.svelte.js';
 
   let { channel } = $props();
@@ -19,6 +20,12 @@
 
   onMount(() => {
     session = createMonitorSession({ channel });
+  });
+
+  $effect(() => {
+    // The monitor derives its appearance from the root theme. Replay once
+    // when the viewport attaches, including after asynchronous font loading.
+    if (session?.state.onDataRX) session.repaint();
   });
 
   onDestroy(() => {

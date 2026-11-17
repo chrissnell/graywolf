@@ -64,6 +64,7 @@ type RawTailSubscribeArgs struct {
 // RawTailEntry is the wire-form of a packetlog Entry, slimmed down to
 // what RawPacketView renders. Server-only payload.
 type RawTailEntry struct {
+	Notes     string    `json:"notes,omitempty"` // existing packet event context, e.g. rf2is / is-rx
 	TS        time.Time `json:"ts"`
 	Source    string    `json:"source"`
 	Type      string    `json:"type,omitempty"`

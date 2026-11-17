@@ -30,6 +30,18 @@
       "id": "high-contrast-night",
       "name": "High Contrast Night",
       "description": "Dark, maximum-legibility. Pure-white text on black; no faded dark-mode copy."
+    },
+    {
+      "id": "signal-light",
+      "name": "Signal Light",
+      "description": "Modern light interface, Inter and JetBrains Mono, enhanced packet-flow colors.",
+      "enhancedPackets": true
+    },
+    {
+      "id": "signal-dark",
+      "name": "Signal Dark",
+      "description": "Modern dark interface, Inter and JetBrains Mono, enhanced packet-flow colors.",
+      "enhancedPackets": true
     }
   ]
 }

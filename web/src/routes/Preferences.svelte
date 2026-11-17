@@ -77,6 +77,7 @@
 </Box>
 
 <style>
+  .packet-colors-hint,
   .theme-hint,
   .scale-hint,
   .unit-hint,

@@ -80,7 +80,8 @@ Each of `danger`, `success`, `warning`, `info` has a trio:
 - `--color-btn-border` — button border.
 
 ### Typography / shape (optional)
-- `--font-mono` — monospaced stack. Leave alone unless you have reason.
+- `--font-mono` — fixed-width packet, code and technical-data stack.
+- `--font-ui` — interface text; defaults to `var(--font-mono)` for existing themes.
 - `--radius` — corner radius in px. Most shipped themes use 2px;
   Graywolf Night bumps it to 6px for a softer feel at low contrast.
 
@@ -123,3 +124,19 @@ doesn't churn when the theme list changes.
 If a stale DB row references a theme that was later removed, the
 frontend falls back to the default automatically (see
 `src/lib/themes/registry.js` and `theme-store.svelte.js`).
+
+## Signal theme family
+
+`signal-light` and `signal-dark` opt into the registry's `enhancedPackets`
+capability. `signal-shared.css` holds their common fonts/layout rules; it is a
+stylesheet fragment, not a separately selectable theme. Inter 4.1 and JetBrains
+Mono 2.304 are bundled under `src/assets/fonts/signal/` with their OFL licenses.
+Existing theme IDs, default and palettes are unchanged. Root font tokens select
+proportional UI text and monospaced technical data. Terminal viewports load the
+selected font before applying its metrics and keep the existing Nerd Font
+fallback and named terminal presets.
+
+Enhanced packet rendering follows the selected theme, not localStorage's old
+`graywolf-packet-colors` flag. The packet palette is shared by the DOM log and
+ANSI read-only monitor in `src/lib/packetTraffic.js`; update both by editing that
+single palette. See `docs/signal-themes.md` for exact colors and scope.
