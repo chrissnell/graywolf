@@ -6,7 +6,7 @@
   import { formatAltitude, formatSpeed } from '../lib/settings/units.js';
   import { beaconLabel } from '../lib/beaconLabel.js';
   import PageHeader from '../components/PageHeader.svelte';
-  import PacketLogViewer from '../components/PacketLogViewer.svelte';
+  import DashboardPacketLog from '../components/DashboardPacketLog.svelte';
   import { logPrefsState } from '../lib/settings/log-prefs-store.svelte.js';
 
   let packets = $state([]);
@@ -342,9 +342,8 @@
   {#if packets.length === 0}
     <Box><div class="empty">Waiting for packets...</div></Box>
   {:else}
-    <PacketLogViewer
+    <DashboardPacketLog
       {packets}
-      height="400px"
       live={logPrefsState.autoRefresh}
       autoscroll={logPrefsState.autoScroll}
       {toolbarToggles}
