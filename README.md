@@ -45,7 +45,7 @@ The table above is the existing AFSK benchmark, not an FX.25 RF sensitivity stud
 
 - **Modern Web UI** - GW is managed via the browser, with a responsive interface that works well on desktops and smartphones. 
 
-- **Software Modem** - High performance DSP written in Rust that's slightly more effective than Direwolf and much better than most hardware TNCs.  Efficeint: uses about 19% of a single CPU core on a Raspberry Pi 5.
+- **Software Modem** - Rust DSP with native AX.25 audio processing. The AFSK benchmark above and the FX.25 validation record describe separate tests; neither establishes performance for every modulation, platform or RF condition.
 
   Native FX.25 TX/RX is supported for **1200-baud Bell 202 AFSK only**, with ordinary AX.25 size fallback and per-packet encoding metadata. Ordinary 300-baud AFSK code paths also exist, but 300-baud FX.25 is future work. PSK and G3RUH have receiver implementations but no matching native transmitters; IL2P is a codec library without live integration. See the [modem capability matrix](docs/handbook/channels.html) and [FX.25 validation record](docs/fx25-validation.md).
 

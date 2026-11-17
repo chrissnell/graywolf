@@ -359,7 +359,18 @@
     sensing: a configured modem does not need to decode a received packet
     before transmitting.</p>
 
-    <h2>Forward Error Correction</h2>
+    <h2 id="forward-error-correction">Forward Error Correction</h2>
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p><strong>FX.25 is currently implemented only for native 1200-baud
+          Bell 202 AFSK transmit and receive (1200/2200 Hz tones).</strong>
+          It is not supported at 300 baud, 9600 baud, or on PSK/G3RUH modes.
+          300-baud FX.25 is possible future work. An external KISS TNC controls
+          its own on-air encoding; these settings do not enable FEC in that TNC.</p>
+      </div>
+    </div>
 
     <p>
       Native FX.25 reception is automatic alongside ordinary AX.25 on
