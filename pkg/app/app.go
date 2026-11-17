@@ -27,6 +27,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/remoteactions"
 	"github.com/chrissnell/graywolf/pkg/stationcache"
+	"github.com/chrissnell/graywolf/pkg/telemetry"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi"
@@ -63,6 +64,12 @@ type namedComponent struct {
 //  2. Run(ctx) (or, in tests, directly populating startOrder and
 //     calling Start/Stop) wires services and drives the lifecycle.
 type App struct {
+	// telemetry stops before the transports and owns bounded in-memory samples.
+	telemetry       *telemetry.Reporter
+	telemetryWG     sync.WaitGroup
+	telemetryCancel context.CancelFunc
+
+
 	cfg    Config
 	logger *slog.Logger
 

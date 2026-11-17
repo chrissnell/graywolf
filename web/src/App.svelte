@@ -26,6 +26,7 @@
   import Gps from './routes/Gps.svelte';
   import Simulation from './routes/Simulation.svelte';
   import PositionLog from './routes/PositionLog.svelte';
+  import Telemetry from './routes/Telemetry.svelte';
   import Logs from './routes/Logs.svelte';
   import SystemLogs from './routes/SystemLogs.svelte';
   import LiveMapV2 from './routes/LiveMapV2.svelte';
@@ -60,6 +61,7 @@
     '/gps': Gps,
     '/simulation': Simulation,
     '/position-log': PositionLog,
+    '/telemetry': Telemetry,
     '/logs': Logs,
     '/system-logs': SystemLogs,
     '/preferences': Preferences,

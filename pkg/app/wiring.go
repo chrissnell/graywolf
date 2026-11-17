@@ -704,6 +704,8 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 	}
 	a.authStore = authStore
 
+	a.wireTelemetry()
+
 	// --- HTTP server ---------------------------------------------------
 	if err := a.wireHTTP(ctx); err != nil {
 		return err
@@ -746,6 +748,7 @@ func (a *App) wireServicesInner(ctx context.Context) error {
 		// already hooked into the rxfanout + IS paths at construction
 		// time; this component owns only the start/stop semantics.
 		a.actionsComponent(),
+		a.telemetryComponent(),
 		a.httpComponent(),
 		a.pprofComponent(),
 	}
@@ -1389,6 +1392,7 @@ func (a *App) wireHTTP(ctx context.Context) error {
 		return fmt.Errorf("webapi new: %w", err)
 	}
 	a.apiSrv = apiSrv
+	apiSrv.SetTelemetry(a.telemetry)
 
 	// Status fn loads a.ig on each call so an iGate constructed at
 	// runtime (via the enable toggle) becomes visible to /api/status

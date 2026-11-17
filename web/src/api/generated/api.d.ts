@@ -1944,6 +1944,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/telemetry/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get station activity telemetry configuration */
+        get: operations["getTelemetryConfig"];
+        /** Save station activity telemetry configuration */
+        put: operations["updateTelemetryConfig"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telemetry/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Submit current ten-minute telemetry report */
+        post: operations["sendTelemetryReport"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/telemetry/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get station activity telemetry status */
+        get: operations["getTelemetryStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tx-timing": {
         parameters: {
             query?: never;
@@ -3665,6 +3717,15 @@ export interface components {
              */
             used?: boolean;
         };
+        "telemetry.Report": {
+            clipped?: boolean;
+            counts?: number[];
+            encoded?: number[];
+            identity?: string;
+            payload?: string;
+            route?: string;
+            submitted_at?: string;
+        };
         "webapi.AvailableUsbSerialDevice": {
             has_permission?: boolean;
             manufacturer?: string;
@@ -3870,6 +3931,35 @@ export interface components {
             cursor?: string;
             /** @description Logs are the matching records in ascending chronological order. */
             logs?: components["schemas"]["webapi.SystemLogEntry"][];
+        };
+        "webapi.TelemetryConfigDTO": {
+            allow_above_255?: boolean;
+            callsign?: string;
+            channel?: number;
+            delivery?: string;
+            enabled?: boolean;
+            metadata_is_seconds?: number;
+            metadata_rf_seconds?: number;
+            rf_path?: string;
+        };
+        "webapi.TelemetryStatusDTO": {
+            clipped?: boolean;
+            counts?: number[];
+            digi_counter_source?: string;
+            effective_callsign?: string;
+            encoded?: number[];
+            input_ready?: boolean;
+            last_error?: string;
+            last_payload?: string;
+            last_submission?: string;
+            next_report?: string;
+            preview?: string;
+            ready?: boolean;
+            recent?: components["schemas"]["telemetry.Report"][];
+            route?: string;
+            scope?: string;
+            state?: string;
+            warmup_seconds?: number;
         };
         "webapi.VersionResponse": {
             /**
@@ -10899,6 +10989,145 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTelemetryConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.TelemetryConfigDTO"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateTelemetryConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Station-wide reporter configuration */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["webapi.TelemetryConfigDTO"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.TelemetryConfigDTO"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    sendTelemetryReport: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.TelemetryStatusDTO"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webtypes.ErrorResponse"];
+                };
+            };
+        };
+    };
+    getTelemetryStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["webapi.TelemetryStatusDTO"];
                 };
             };
             /** @description Service Unavailable */

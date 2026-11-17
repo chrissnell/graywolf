@@ -313,3 +313,19 @@ The wire contract (`flareschema.Flare` -> `flareschema.SubmitResponse`) is the o
 | OCI image | `ghcr.io/chrissnell/graywolf:<tag>` (linux amd64/arm64 manifest list) |
 
 Build details and triggers live in [`build-pipelines.md`](build-pipelines.md).
+
+## Native station activity telemetry
+
+The `telemetry` app component starts after RF/KISS/iGate services and stops
+before them. It waits for counters and a ready RF input, samples every ten
+seconds, and reports one station-wide ten-minute window. `pkg/app/telemetry.go`
+reads the in-process registry and uses the existing governor and APRS-IS
+connection. RF submissions carry an optional two-minute governor deadline
+and cancellation signal; these fields leave ordinary submissions unchanged.
+No Rust, audio, PTT, external script or Python telemetry service is added.
+
+Configuration/state use additive configstore singleton tables; only sequence
+and completed definition cadence persist. The API lives at authenticated
+`/api/telemetry/{config,status,report}`; GET has no transmission side effect.
+The browser page is `#/telemetry`. Field order, scope, error behavior and
+operator checks are documented in the [Telemetry handbook](../handbook/telemetry.html).

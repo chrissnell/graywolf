@@ -17,6 +17,9 @@ type queueItem struct {
 	// stats.RateLimited, so subsequent ticks that re-observe the same
 	// held frame do not inflate the counter.
 	rateLimitCounted bool
+
+	validUntil time.Time
+	canceled   <-chan struct{}
 }
 
 // pqueue is a max-heap on priority, with lower seq breaking ties (FIFO).

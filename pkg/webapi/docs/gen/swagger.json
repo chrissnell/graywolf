@@ -19,6 +19,10 @@
             "description": "Beacon configuration and send-now."
         },
         {
+            "name": "telemetry",
+            "description": "Station-wide ten-minute T# activity reporting and definitions."
+        },
+        {
             "name": "fixed-points",
             "description": "Operator-placed map landmarks, shared across devices."
         },
@@ -7793,6 +7797,154 @@
                 }
             }
         },
+        "/telemetry/config": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telemetry"
+                ],
+                "summary": "Get station activity telemetry configuration",
+                "operationId": "getTelemetryConfig",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.TelemetryConfigDTO"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telemetry"
+                ],
+                "summary": "Save station activity telemetry configuration",
+                "operationId": "updateTelemetryConfig",
+                "parameters": [
+                    {
+                        "description": "Station-wide reporter configuration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/webapi.TelemetryConfigDTO"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.TelemetryConfigDTO"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telemetry/report": {
+            "post": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telemetry"
+                ],
+                "summary": "Submit current ten-minute telemetry report",
+                "operationId": "sendTelemetryReport",
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.TelemetryStatusDTO"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/telemetry/status": {
+            "get": {
+                "security": [
+                    {
+                        "CookieAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "telemetry"
+                ],
+                "summary": "Get station activity telemetry status",
+                "operationId": "getTelemetryStatus",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/webapi.TelemetryStatusDTO"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/webtypes.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/tx-timing": {
             "get": {
                 "security": [
@@ -11848,6 +12000,38 @@
                 }
             }
         },
+        "telemetry.Report": {
+            "type": "object",
+            "properties": {
+                "clipped": {
+                    "type": "boolean"
+                },
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "encoded": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "identity": {
+                    "type": "string"
+                },
+                "payload": {
+                    "type": "string"
+                },
+                "route": {
+                    "type": "string"
+                },
+                "submitted_at": {
+                    "type": "string"
+                }
+            }
+        },
         "webapi.AvailableUsbSerialDevice": {
             "type": "object",
             "properties": {
@@ -12365,6 +12549,100 @@
                     "items": {
                         "$ref": "#/definitions/webapi.SystemLogEntry"
                     }
+                }
+            }
+        },
+        "webapi.TelemetryConfigDTO": {
+            "type": "object",
+            "properties": {
+                "allow_above_255": {
+                    "type": "boolean"
+                },
+                "callsign": {
+                    "type": "string"
+                },
+                "channel": {
+                    "type": "integer"
+                },
+                "delivery": {
+                    "type": "string"
+                },
+                "enabled": {
+                    "type": "boolean"
+                },
+                "metadata_is_seconds": {
+                    "type": "integer"
+                },
+                "metadata_rf_seconds": {
+                    "type": "integer"
+                },
+                "rf_path": {
+                    "type": "string"
+                }
+            }
+        },
+        "webapi.TelemetryStatusDTO": {
+            "type": "object",
+            "properties": {
+                "clipped": {
+                    "type": "boolean"
+                },
+                "counts": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "digi_counter_source": {
+                    "type": "string"
+                },
+                "effective_callsign": {
+                    "type": "string"
+                },
+                "encoded": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "input_ready": {
+                    "type": "boolean"
+                },
+                "last_error": {
+                    "type": "string"
+                },
+                "last_payload": {
+                    "type": "string"
+                },
+                "last_submission": {
+                    "type": "string"
+                },
+                "next_report": {
+                    "type": "string"
+                },
+                "preview": {
+                    "type": "string"
+                },
+                "ready": {
+                    "type": "boolean"
+                },
+                "recent": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/telemetry.Report"
+                    }
+                },
+                "route": {
+                    "type": "string"
+                },
+                "scope": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
+                },
+                "warmup_seconds": {
+                    "type": "integer"
                 }
             }
         },

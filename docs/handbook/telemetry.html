@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Telemetry &mdash; Graywolf Handbook</title>
+  <link rel="stylesheet" href="handbook.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="site-header-inner">
+    <a href="index.html" class="site-logo">
+      <img src="img/graywolf-logo.svg" alt="" />
+      <span>graywolf <span class="handbook-label">handbook</span></span>
+    </a>
+    <div class="header-actions">
+      <button class="theme-toggle" aria-label="Toggle theme">[ dark ]</button>
+    </div>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <nav>
+      <div class="sidebar-section">Getting Started</div>
+      <a href="index.html">Introduction</a>
+      <a href="installation.html">Installation</a>
+      <a href="callsign.html">Station Callsign</a>
+      <div class="sidebar-section">Radio</div>
+      <a href="audio.html">Audio Devices</a>
+      <a href="channels.html">Radio Channels</a>
+      <a href="ptt.html">Push-to-Talk</a>
+      <div class="sidebar-section">APRS</div>
+      <a href="beacons.html">Beacons</a>
+      <a href="telemetry.html" class="active">Telemetry</a>
+      <a href="digipeater.html">Digipeater</a>
+      <a href="igate.html">iGate</a>
+      <a href="messaging.html">Messaging</a>
+      <a href="actions.html">Actions</a>
+      <a href="remote-actions.html">Remote Actions</a>
+      <a href="actions-handler-safety.html">Actions: Handler Safety</a>
+      <a href="actions-handler-safety-shell.html">&nbsp;&nbsp;&#8627; Shell handlers</a>
+      <a href="actions-handler-safety-powershell.html">&nbsp;&nbsp;&#8627; PowerShell handlers</a>
+      <a href="actions-handler-safety-webhooks.html">&nbsp;&nbsp;&#8627; Webhook handlers</a>
+      <a href="livemap.html">Live Map</a>
+      <div class="sidebar-section">Packet</div>
+      <a href="ax25-terminal.html">AX.25 Terminal</a>
+      <div class="sidebar-section">Interfaces</div>
+      <a href="kiss.html">KISS TNC</a>
+      <a href="remote-kiss-tnc.html">Remote KISS TNC</a>
+      <a href="agwpe.html">AGWPE</a>
+      <a href="gps.html">GPS</a>
+      <div class="sidebar-section">Operations</div>
+      <a href="history-database.html">Position Log</a>
+      <a href="logs.html">Logs</a>
+      <a href="monitoring.html">Monitoring</a>
+      <a href="simulation.html">Simulation</a>
+      <a href="maps.html">Maps</a>
+      <a href="preferences.html">Preferences</a>
+      <a href="architecture.html">Architecture</a>
+      <div class="sidebar-section">Reference</div>
+      <a href="configurations.html">Known-Working Configs</a>
+      <a href="api.html">REST API Reference</a>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Station Activity Telemetry</h1>
+    <p class="subtitle">Native station-wide ten-minute T# reporting</p>
+    <p>Open <strong>Settings &rarr; Telemetry</strong>. Reporting is off by
+      default. One reporter measures the entire Graywolf instance across all
+      channels. The RF delivery channel controls where a report is transmitted,
+      not which activity is counted. Per-channel reporting and digital status
+      telemetry are possible future work.</p>
+
+    <h2>Measurements and Scope</h2>
+    <table><thead><tr><th>Slot</th><th>Label</th><th>Meaning over the preceding ten minutes</th></tr></thead><tbody>
+      <tr><td>1</td><td>RF Rx</td><td>Native received frames plus decoded KISS-TNC ingress; KISS application/modem-mode input and APRS-IS reception are excluded.</td></tr>
+      <tr><td>2</td><td>Digi</td><td>Backend-forwarded digipeater frames when that accounting is available; otherwise legacy processed submissions, including TX-stage duplicates.</td></tr>
+      <tr><td>3</td><td>RF Tx</td><td>RF backend dispatches across all channels, including telemetry. This is not an airtime or confirmed-radiation counter.</td></tr>
+      <tr><td>4</td><td>RF &rarr; IS</td><td>The existing iGate upload counter, including simulated uploads in simulation mode.</td></tr>
+      <tr><td>5</td><td>IS &rarr; RF</td><td>Requests accepted without a governor error, including suppressed duplicates; not confirmed RF transmissions.</td></tr>
+    </tbody></table>
+    <p>A packet received on two channels counts as two reception events.
+      Disconnected inputs contribute no receptions; reports do not prove continuous
+      receiver availability. Forwarded means at least one backend accepted a frame,
+      counted once regardless of backend fanout. No counter confirms remote reception.</p>
+
+    <h2>Identity and Delivery</h2>
+    <p>Leave <strong>Telemetry callsign/SSID</strong> blank to inherit and follow
+      the station identity. An explicit override remains fixed; use only an identity
+      you are authorized to transmit. Data and self-addressed definitions use the
+      same identity on both delivery routes. Avoid another telemetry publisher using
+      that same identity with different measurements or definitions.</p>
+    <ul>
+      <li><strong>APRS-IS preferred; RF when disconnected:</strong> use the connected
+        APRS-IS session, otherwise the selected ready RF channel.</li>
+      <li><strong>APRS-IS only:</strong> wait when disconnected; never fall back to RF.</li>
+      <li><strong>RF only:</strong> use the selected APRS/TX-capable channel. The optional
+        RF digipeater path is separate from position beacons; blank means direct.</li>
+    </ul>
+    <p>Readiness uses enabled native channels with running modem status, or connected
+      KISS-TNC interfaces (a listening TCP server alone is insufficient). A first
+      report does not require a received packet, PTT, or Internet access: a quiet
+      receive-only input can establish the baseline. Actual RF delivery additionally
+      requires a usable output and configured PTT, or a connected TX-enabled KISS TNC.
+      Simulation mode is not treated as an active APRS-IS reporting route.</p>
+
+    <h2>Startup, Timing and Failures</h2>
+    <p>Reporting period and measurement window are both ten minutes, observed at
+      ten-second sampling resolution (scheduler jitter can slightly lengthen the
+      measured window). Collection
+      starts only when counters and at least one enabled RF input are ready. The
+      first report requires a full baseline. Later interface disconnects do not
+      reset valid cumulative observations; unavailable/decreasing counters, a
+      sampling gap longer than 90 seconds, changed settings or reporting identity,
+      and a change between forwarded/legacy Digi accounting restart collection.</p>
+    <p>After the first data submission, due definitions follow in this order:
+      <code>PARM</code>, <code>UNIT</code>, <code>EQNS</code>, with 30 seconds between
+      packets and before the first definition. There is no separate startup-delay
+      setting. The same rule applies when first reporting on a different route.
+      Receivers may initially show generic labels until they receive definitions.</p>
+    <p>Definitions refresh every two hours on APRS-IS and six hours on RF by default;
+      advanced settings accept one hour through seven days. Sequence numbers wrap
+      after 999 and are reserved before sending. Sequence and completed-definition
+      times persist; samples remain in bounded RAM and always warm up after restart.
+      Missed reports are skipped instead of replayed as a burst. An uncertain send
+      is not retried immediately on another route.</p>
+    <p>RF packets use the ordinary governor, channel rate limits, carrier sensing,
+      backend and modem encoding. Telemetry queued in the governor expires after
+      two minutes and is canceled when its reporter is reset. Backend buffering
+      after acceptance is separate; local submission is not TX completion. The
+      manual <strong>Send report now</strong> action requires a full valid baseline
+      and allows at most one manual report per 30 seconds. Merely viewing or saving
+      the page does not send a packet immediately.</p>
+
+    <h2>Counts Above 255</h2>
+    <p>By default, transmitted counts saturate at 255 and the page warns when a value
+      is clipped. Local UI/API counts remain exact. Advanced <strong>Allow counts
+      above 255</strong> transmits exact larger integers without scaling. This
+      extended T# form is supported by aprs.fi, but strict older decoders may reject
+      it. There is no multiplier or five-minute mode. Units remain <code>pkt/10m</code>
+      and identity equations <code>0,1,0</code> apply to all five values.</p>
+    <p>No active digital flags are implemented. The unused digital field is
+      <code>00000000</code> for compatibility; no BITS definition is generated.</p>
+
+    <h2>API and Testing</h2>
+    <p>Authenticated <code>GET/PUT /api/telemetry/config</code> reads/replaces saved
+      configuration. <code>GET /api/telemetry/status</code> exposes warmup/readiness,
+      effective identity, Digi provenance, exact/encoded counts, clipping, preview,
+      route, last submission and error. A recent-submissions table retains at most ten
+      data reports in RAM, including identity, route, exact/encoded values and payload;
+      it clears on restart and is not proof of reception. <code>POST /api/telemetry/report</code> requests
+      a real manual report; 202 means local submission, not RF reception. See the
+      <a href="api.html">API reference</a>.</p>
+    <p>Before operator testing, review delivery, identity, RF path and schedules.
+      Inspect the first ten-minute report followed by its definitions at a separate
+      receiver, confirm no startup transmission, test disable/restart and disconnected
+      transport behavior, and check the report on aprs.fi if using extended values.
+      Automated tests use virtual clocks and fake transports; no unattended RF test
+      is included.</p>
+  </main>
+</div>
+<footer class="site-footer">graywolf &middot; modern APRS station</footer>
+<script src="handbook.js"></script>
+</body>
+</html>
