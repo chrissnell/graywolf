@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { channelAudioPeak, dashboardBeacons, kissChannelStatus } from './dashboardPresentation.js';
+import { channelAudioPeak, dashboardBeacons, kissChannelStatus, audioMeterPercent, AUDIO_METER_TICKS } from './dashboardPresentation.js';
 
 test('KISS zero-filled audio fields never appear as an audio measurement', () => {
  assert.equal(channelAudioPeak({input_device_id:0,device_peak_dbfs:0,audio_peak:0}),null);
@@ -32,4 +32,16 @@ test('KISS readiness uses actual TNC state and governor permission', () => {
  assert.equal(kissChannelStatus(ch,[{...tnc,channel:3}]).connected,false);
  assert.equal(kissChannelStatus(ch,[{...tnc,enabled:false}]).connected,false);
  assert.equal(kissChannelStatus(ch,[tnc],false).label,'KISS status unavailable');
+});
+
+test('audio fill and tick scale share the same -60 to 0 dBFS range', () => {
+ assert.deepEqual(AUDIO_METER_TICKS,[-60,-40,-20,0]);
+ assert.equal(audioMeterPercent(-60),0);
+ assert.equal(audioMeterPercent(0),100);
+ assert.equal(audioMeterPercent(-30),50);
+ assert.equal(audioMeterPercent(-90),0);
+ assert.equal(audioMeterPercent(6),100);
+ assert.equal(audioMeterPercent(null),0);
+ assert.equal(audioMeterPercent(NaN),0);
+ assert.ok(Math.abs(audioMeterPercent(-37)-38.333333)<0.00001);
 });

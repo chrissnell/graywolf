@@ -26,3 +26,9 @@ export function kissChannelStatus(channel, interfaces, available = true) {
     txReady: linked.some(item => item.state === 'connected' && item.allow_tx_from_governor),
   };
 }
+
+export const AUDIO_METER_TICKS = [-60, -40, -20, 0];
+export function audioMeterPercent(dbfs) {
+  if (typeof dbfs !== 'number' || !Number.isFinite(dbfs)) return 0;
+  return (Math.max(-60, Math.min(0, dbfs)) + 60) / 60 * 100;
+}

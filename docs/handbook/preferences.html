@@ -106,7 +106,10 @@
       settings forms retain their bounded layout. The packet badge column grows
       on wide screens and wraps when needed. Narrow viewers use stacked cards.
       Native channel cards retain DCD/RX/TX, audio measurements, per-channel
-      counts and all configured RF-capable Beacon Now buttons. Multiple buttons
+      counts and all configured RF-capable Beacon Now buttons. DCD/RX/TX sit
+      beside the channel name; the dBFS reading precedes an outlined audio
+      meter with a -60 to 0 dBFS scale. The meter adapts to available width up
+      to 480 pixels and stacks on narrow screens. Multiple buttons
       wrap into their own row and use the existing beacon-label helper.</p>
     <p>KISS-only channels show their actual TNC connection state and activity
       counters, with no fabricated audio meter. DCD and bad-FCS values are

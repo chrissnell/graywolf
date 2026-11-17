@@ -16,7 +16,10 @@ Dashboard/APRS Logs/System Logs use the available width. Settings pages keep
 bounded forms. Badge columns grow from 200 px up to 340 px, while addresses
 retain a minimum readable width; wrapping is allowed. Viewers narrower than
 880 px use stacked cards. Wide native channel cards place the audio meter,
-DCD/RX/TX group and a single beacon button together; multiple beacon buttons
+DCD/RX/TX beside the channel name. The dBFS reading sits left of a bounded
+RX audio meter with a -60/-40/-20/0 scale. The meter grows with available
+width, normally 180–480 px with a 480 px cap, and stacks below its label/readout
+on narrow screens. Multiple beacon buttons
 wrap beneath the status row. All per-channel counts and station summary cards
 remain available. APRS-IS-only beacon buttons stay on the Beacons page.
 
@@ -74,6 +77,8 @@ there is no separate radio-routing or beacon-scheduling color configuration.
 | Selected navigation text | #FFFFFF | #FFFFFF |
 | Active DCD / RX LED | #237A48 | #58D68B |
 | Active TX LED | #B4233B | #FF8197 |
+| Audio meter track | #D7E2EA | #34475A |
+| Audio meter outline/ticks | #6C8193 | #71869B |
 
 All packet body/metadata/header text pairs are checked for at least 4.5:1
 contrast against every flow background. Labels accompany colors. Forced-color

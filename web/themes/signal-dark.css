@@ -31,6 +31,8 @@
   --color-btn-bg: #202D3B;
   --color-btn-bg-hover: #2B3C4D;
   --color-btn-border: #53687D;
+  --signal-meter-track: #34475A;
+  --signal-meter-border: #71869B;
   --signal-selected-bg: #126D66;
   --signal-selected-fg: #FFFFFF;
 }

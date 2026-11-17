@@ -1,7 +1,7 @@
 <script>
   import { isSignalTheme } from '../lib/themes/registry.js';
   import { themeState } from '../lib/settings/theme-store.svelte.js';
-  import { hasNativeInput, channelAudioPeak, dashboardBeacons, kissChannelStatus } from '../lib/dashboardPresentation.js';
+  import { hasNativeInput, channelAudioPeak, dashboardBeacons, kissChannelStatus, audioMeterPercent, AUDIO_METER_TICKS } from '../lib/dashboardPresentation.js';
   import { onMount } from 'svelte';
   import { Button, Box } from '@chrissnell/chonky-ui';
   import { api } from '../lib/api.js';
@@ -203,8 +203,7 @@
 
   function peakToPercent(peak) {
     if (peak == null) return 0;
-    const clamped = Math.max(-60, Math.min(0, peak));
-    return ((clamped + 60) / 60) * 100;
+    return audioMeterPercent(peak);
   }
 
   function levelColor(dbfs) {
@@ -229,6 +228,20 @@
   // Packet-feed helpers and auto-scroll live inside PacketLogViewer / Chonky
   // LogViewer now — nothing to wire up here beyond passing `packets` through.
 </script>
+
+{#snippet channelIndicators(ch, native)}
+  <div class="ch-indicators">
+          <span class="indicator" class:active={(!signalTheme || native) && ch.dcd_state} title={signalTheme && !native ? 'DCD is not reported by KISS' : 'Data carrier detect'}>
+            <span class="ind-dot dcd"></span> DCD{signalTheme && !native ? ' —' : ''}
+          </span>
+          <span class="indicator" class:active={rxActive[ch.id]} title="Recent received-frame activity">
+            <span class="ind-dot rx"></span> RX
+          </span>
+          <span class="indicator" class:active={txActive[ch.id]} title="Recent local transmit activity; not proof of remote reception">
+            <span class="ind-dot tx"></span> TX
+          </span>
+        </div>
+{/snippet}
 
 <PageHeader title="Dashboard" subtitle="Live station overview" />
 
@@ -269,21 +282,18 @@
       {@const kissStatus = kissChannelStatus(ch, kissInterfaces, kissAvailable)}
       <div class="ch-card" class:many-beacons={channelBeacons.length > 1} class:kiss-only={!native}>
         <div class="ch-header">
-          <span class="ch-title">CH{ch.id}: {ch.name}</span>
+          {#if signalTheme}
+            <div class="ch-heading-row">
+              <span class="ch-title">CH{ch.id}: {ch.name}</span>
+              {@render channelIndicators(ch, native)}
+            </div>
+          {:else}
+            <span class="ch-title">CH{ch.id}: {ch.name}</span>
+          {/if}
           <span class="ch-modem">{#if signalTheme && !native}{kissStatus.label}{:else}{ch.modem_type.toUpperCase()} {ch.bit_rate} bd{/if}</span>
         </div>
 
-        <div class="ch-indicators">
-          <span class="indicator" class:active={(!signalTheme || native) && ch.dcd_state} title={signalTheme && !native ? 'DCD is not reported by KISS' : 'Data carrier detect'}>
-            <span class="ind-dot dcd"></span> DCD{signalTheme && !native ? ' —' : ''}
-          </span>
-          <span class="indicator" class:active={rxActive[ch.id]} title="Recent received-frame activity">
-            <span class="ind-dot rx"></span> RX
-          </span>
-          <span class="indicator" class:active={txActive[ch.id]} title="Recent local transmit activity; not proof of remote reception">
-            <span class="ind-dot tx"></span> TX
-          </span>
-        </div>
+        {#if !signalTheme}{@render channelIndicators(ch, native)}{/if}
 
         <div class="ch-audio">
           {#if signalTheme && !native}
@@ -291,11 +301,25 @@
           {:else if signalTheme && audioPeak === null}
             <span class="kiss-audio-note">Audio level unavailable</span>
           {:else}
-            {#if signalTheme}<span class="audio-caption">RX Audio</span>{/if}
-            <div class="level-bar">
-              <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
-            </div>
-            <span class="level-value">{formatPeak(audioPeak)}</span>
+            {#if signalTheme}
+              <span class="audio-caption">RX Audio</span>
+              <span class="level-value">{formatPeak(audioPeak)}</span>
+              <div class="audio-meter-stage">
+                <div class="level-bar" role="meter" aria-label="Receive audio level" aria-valuemin={-60} aria-valuemax={0} aria-valuenow={Math.max(-60, Math.min(0, audioPeak))} aria-valuetext={formatPeak(audioPeak)}>
+                  <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+                </div>
+                <div class="audio-scale" aria-hidden="true">
+                  {#each AUDIO_METER_TICKS as value}
+                    <span style:left={`${audioMeterPercent(value)}%`}>{value}</span>
+                  {/each}
+                </div>
+              </div>
+            {:else}
+              <div class="level-bar">
+                <div class="level-fill" style="width: {peakToPercent(audioPeak)}%; background: {levelColor(audioPeak)}"></div>
+              </div>
+              <span class="level-value">{formatPeak(audioPeak)}</span>
+            {/if}
           {/if}
         </div>
 
@@ -392,7 +416,23 @@
   .signal-dashboard .ind-dot { background: var(--color-border); border: 1px solid var(--color-text-dim); flex-shrink: 0; }
   .signal-dashboard .indicator.active .ind-dot { box-shadow: none; border-color: transparent; }
   .signal-dashboard .indicator.active .ind-dot.tx { background: var(--color-danger); }
-  .signal-dashboard .ch-audio { min-width: 0; flex-wrap: wrap; }
+  .signal-dashboard .ch-heading-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; }
+  .signal-dashboard .ch-heading-row .ch-indicators { flex-shrink: 0; }
+  .signal-dashboard .ch-audio { display: grid; grid-template-columns: max-content max-content minmax(0, 480px); align-items: start; min-width: 0; max-width: 660px; gap: 8px; }
+  .signal-dashboard .audio-caption, .signal-dashboard .level-value { line-height: 12px; }
+  .signal-dashboard .level-value { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .signal-dashboard .audio-meter-stage { width: clamp(180px, 32cqw, 480px); max-width: 100%; min-width: 0; }
+  .signal-dashboard .level-bar { width: 100%; height: 10px; box-sizing: border-box; border: 1px solid var(--signal-meter-border); background: var(--signal-meter-track); }
+  .signal-dashboard .audio-scale { position: relative; height: 14px; margin-top: 3px; font: 10px var(--font-mono); color: var(--color-text-muted); }
+  .signal-dashboard .audio-scale span { position: absolute; transform: translateX(-50%); }
+  .signal-dashboard .audio-scale span::before { content: ''; display: block; height: 3px; border-left: 1px solid var(--signal-meter-border); margin-bottom: 1px; }
+  .signal-dashboard .audio-scale span:first-child { transform: none; }
+  .signal-dashboard .audio-scale span:last-child { transform: translateX(-100%); }
+  .signal-dashboard .kiss-audio-note { grid-column: 1 / -1; }
+  @container (max-width: 600px) {
+    .signal-dashboard .ch-audio { grid-template-columns: 1fr auto; max-width: none; }
+    .signal-dashboard .audio-meter-stage { grid-column: 1 / -1; width: min(100%, 480px); }
+  }
   .audio-caption, .kiss-audio-note { font-size: .8rem; color: var(--color-text-muted); }
   .signal-dashboard .ch-stats { flex-wrap: wrap; gap: 6px 20px; }
   .signal-dashboard .ch-beacons { min-width: 0; align-items: stretch; }
@@ -401,12 +441,11 @@
   .signal-dashboard .stat-value { font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
   .signal-dashboard .stat-label { font-size: .8rem; letter-spacing: 0; }
   @container (min-width: 920px) {
-    .signal-dashboard .ch-card { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(140px, 1fr) auto fit-content(16rem); align-items: center; }
+    .signal-dashboard .ch-card { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(260px, 1.4fr) fit-content(16rem); align-items: center; }
     .signal-dashboard .ch-header { grid-column: 1; grid-row: 1; flex-direction: column; align-items: flex-start; }
     .signal-dashboard .ch-audio { grid-column: 2; grid-row: 1; }
-    .signal-dashboard .ch-indicators { grid-column: 3; grid-row: 1; }
     .signal-dashboard .ch-stats { grid-column: 1 / -1; grid-row: 2; }
-    .signal-dashboard .ch-beacons { grid-column: 4; grid-row: 1; justify-content: flex-end; }
+    .signal-dashboard .ch-beacons { grid-column: 3; grid-row: 1; justify-content: flex-end; }
     .signal-dashboard .ch-card.many-beacons .ch-beacons { grid-column: 1 / -1; grid-row: 3; justify-content: flex-start; }
   }
 
