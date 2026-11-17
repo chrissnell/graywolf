@@ -214,7 +214,7 @@
 
     <p>
       These layers have different purposes: a server subscription such as
-      <code>b/N6110L</code> requests a source&rsquo;s traffic, while a local
+      <code>b/N0CALL-7</code> requests a source&rsquo;s traffic, while a local
       exact Callsign Allow rule authorizes eligible packets from that source
       for RF forwarding. Receiving a packet never grants RF permission by itself.
     </p>
@@ -266,7 +266,7 @@
       The <strong>APRS-IS Server Filter</strong> field is the filter string sent
       to the APRS-IS server at login, with enabled tactical <code>g/</code>
       clauses appended automatically. Separate clauses with spaces.
-      For one exact source, enter <code>b/N6110L</code>; append it to any
+      For one exact source, enter <code>b/N0CALL-7</code>; append it to any
       existing subscriptions you want to keep.
     </p>
 
@@ -378,7 +378,7 @@
     <p>To authorize an unrelated non-message source, enable IS&rarr;RF gating,
       choose a TX-capable channel, and add an enabled <strong>Callsign</strong>
       rule with the full source/SSID, <strong>Allow</strong>, and priority ahead
-      of any broader matching rule. For example, <code>N6110L</code> allows that
+      of any broader matching rule. For example, <code>N0CALL-7</code> allows that
       source only. Add separate rules for other SSIDs. The server filter must
       deliver the source&rsquo;s packets too; it does not authorize RF by itself.
       Heard-direct restrictions for directed messages and loop prevention remain

@@ -814,7 +814,7 @@
   </p>
   <Box>
     <form onsubmit={handleSave}>
-      <FormField label="APRS-IS Server Filter" id="ig-filter" error={serverFilterError} hint="Requests additional traffic from APRS-IS (e.g. b/N6110L for one exact source, or r/35.0/-106.0/100 for a 100 km radius). This filter controls reception; the rules below separately authorize RF forwarding.">
+      <FormField label="APRS-IS Server Filter" id="ig-filter" error={serverFilterError} hint="Requests additional traffic from APRS-IS (e.g. b/N0CALL-7 for one exact source, or r/35.0/-106.0/100 for a 100 km radius). This filter controls reception; the rules below separately authorize RF forwarding.">
         {#snippet children(describedBy)}
           <Input id="ig-filter" bind:value={form.server_filter} placeholder="r/35.0/-106.0/100" aria-describedby={describedBy} />
         {/snippet}

@@ -8,20 +8,20 @@ To opt in an additional source, open **iGate → APRS-IS Feed & TX Rules**
 and add a rule:
 
 - **Type:** Callsign
-- **Pattern:** the exact APRS packet source (for example, `N6110L`)
+- **Pattern:** the exact APRS packet source (for example, `N0CALL-7`)
 - **Action:** Allow
 - **Enabled:** on
 - **Priority:** ahead of any broader matching rule
 
 An exact callsign match is case-insensitive. It is **not** a wildcard:
-`KS9N` does not match `KS9N-7`; add separate exact rules for
+`N0CALL` does not match `N0CALL-7`; add separate exact rules for
 individual SSIDs as needed. A Prefix or Packet Type allow rule alone
 does **not** authorize an unrelated non-message source.
 
 Also ensure the APRS-IS **server filter** actually delivers that
 source's packets, **Enable IS→RF gating** is on, and a TX-capable channel
 is selected. The server filter only controls reception; it does not
-authorize RF transmission. For this example, enter `b/N6110L` or append it
+authorize RF transmission. For this example, enter `b/N0CALL-7` or append it
 to existing subscriptions separated by a space. An empty field is not a
 receive-disable switch: normal APRS-IS messaging and associated positions
 may still arrive, and Graywolf adds subscriptions for enabled tactical
