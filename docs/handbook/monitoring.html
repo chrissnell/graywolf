@@ -198,9 +198,14 @@
           </thead>
           <tbody>
             <tr>
+              <td><code>graywolf_tx_source_outcomes_total</code></td>
+              <td>counter</td>
+              <td>Governor outcomes by <code>channel</code>, <code>source</code> and <code>outcome</code>. For forwarded digi frames, select <code>source="digipeater", outcome="forwarded"</code>; backend acceptance is not proof of RF transmission.</td>
+            </tr>
+            <tr>
               <td><code>graywolf_digipeater_packets_total</code></td>
               <td>counter</td>
-              <td>Digipeater submissions handled without a governor error, including TX-stage duplicates. Preserved for compatibility; use the source outcome metric below for forwarded frames.</td>
+              <td>Digipeater submissions handled without a governor error, including TX-stage duplicates. Preserved for compatibility; use the source outcome metric for forwarded frames.</td>
             </tr>
             <tr>
               <td><code>graywolf_beacon_packets_total</code></td>
@@ -208,14 +213,14 @@
               <td>Beacon transmissions (label: <code>type</code>)</td>
             </tr>
             <tr>
-              <td><code>graywolf_igate_rf_to_is_gated_total</code></td>
+              <td><code>igate_packets_gated_total{direction="rf_to_is"}</code></td>
               <td>counter</td>
-              <td>Packets gated from RF to APRS-IS</td>
+              <td>RF-to-IS uploads recorded by the iGate, including simulated sends in simulation mode.</td>
             </tr>
             <tr>
-              <td><code>graywolf_igate_is_to_rf_gated_total</code></td>
+              <td><code>igate_packets_gated_total{direction="is_to_rf"}</code></td>
               <td>counter</td>
-              <td>Packets gated from APRS-IS to RF</td>
+              <td>IS-to-RF submissions accepted without governor error, including suppressed duplicates; not confirmed RF transmissions.</td>
             </tr>
           </tbody>
         </table>
