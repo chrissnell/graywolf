@@ -99,3 +99,16 @@ until independent 300-baud on-air acceptance is reviewed.
   `make docs-check docs-lint api-client-check`.
 - No combined release, installed-station update or upstream submission is
   authorized as part of this task. Use generic example callsigns.
+
+## Informational airtime documentation follow-up
+
+- The 1200-baud base PR #687 now includes its own Auto-mode airtime table in
+  `docs/fx25.md`; that base documentation has been merged into this branch
+  to retain the PR dependency cleanly (base commit `f66fe3a86f2ab85650d08ee020da06f4dc698892`).
+- This guide includes the corresponding 300-baud table and explicitly separates
+  total keyed time from packet-only percentage overhead. Identical frame/mode
+  comparisons have equal packet-only percentages; added seconds are four times
+  longer at 300 baud. Fixed delay/tail explains different total-time percentages.
+- Eight fresh sample-count comparisons and these identities were verified with
+  the offline production builder. Exact values/assumptions were appended to
+  `docs/fx25-300-results.json`. This follow-up changes documentation only.
