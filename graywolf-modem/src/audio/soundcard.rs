@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, SampleFormat, StreamConfig};
 
+use super::playback::PlaybackClock;
 use super::AudioSource;
 
 /// Backoff schedule for stream rebuild attempts after a cpal error.
@@ -1167,6 +1168,7 @@ pub struct AudioSink {
     /// Running total of samples the stream callback has copied into the
     /// DAC output buffer. Monotonically non-decreasing.
     drained: Arc<AtomicU64>,
+    playback: Arc<PlaybackClock>,
     stop: Arc<AtomicBool>,
     join: Option<JoinHandle<()>>,
 }
@@ -1187,12 +1189,14 @@ impl AudioSink {
     /// Cumulative sample count the output callback has drained from the
     /// submission queue. The caller compares this to the watermark returned
     /// by [`AudioSink::submit`] to know when playback of that submission has
-    /// left the callback. Note that the hardware may still hold a few
-    /// milliseconds in its DAC pipeline after the callback releases samples;
-    /// callers that need sample-accurate tail behavior should also wait the
-    /// expected audio duration.
+    /// left the callback. Hardware may still hold hundreds of milliseconds
+    /// of queued audio; use `playback_complete` before releasing PTT.
     pub fn drained_samples(&self) -> u64 {
         self.drained.load(Ordering::Relaxed)
+    }
+
+    pub fn playback_complete(&self, watermark: u64) -> bool {
+        self.playback.complete(watermark, Instant::now())
     }
 }
 
@@ -1245,6 +1249,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let shared_rx = Arc::new(Mutex::new(submit_rx));
     let submitted = Arc::new(AtomicU64::new(0));
     let drained = Arc::new(AtomicU64::new(0));
+    let playback = Arc::new(PlaybackClock::default());
     let stop = Arc::new(AtomicBool::new(false));
     let stream_failed = Arc::new(AtomicBool::new(false));
 
@@ -1297,6 +1302,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
     let tone_sample_rate = cfg.sample_rate;
 
     let drained_for_thread = drained.clone();
+    let playback_for_thread = playback.clone();
     let submitted_for_thread = submitted.clone();
     let shared_rx_for_thread = shared_rx.clone();
     let stop_for_thread = stop.clone();
@@ -1328,6 +1334,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                     drained_for_thread.clone(),
                     submitted_for_thread.clone(),
                 );
+                let callback_playback = playback_for_thread.clone();
                 // Fresh tone generator per stream build so the phase
                 // accumulator starts at zero on every rebuild.
                 let mut ptt_tone =
@@ -1336,27 +1343,30 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                 let build_result: Result<cpal::Stream, cpal::Error> = match sample_format {
                     SampleFormat::F32 => device.build_output_stream(
                         stream_config,
-                        move |data: &mut [f32], _| {
-                            let mut next = || state.next_sample();
-                            fill_output_f32(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
+                        move |data: &mut [f32], info| {
+                            state.render(info, tone_sample_rate, &callback_playback, |next| {
+                                fill_output_f32(data, ch_usize, want_ch, next, ptt_tone.as_mut());
+                            });
                         },
                         err_fn,
                         None,
                     ),
                     SampleFormat::I16 => device.build_output_stream(
                         stream_config,
-                        move |data: &mut [i16], _| {
-                            let mut next = || state.next_sample();
-                            fill_output_i16(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
+                        move |data: &mut [i16], info| {
+                            state.render(info, tone_sample_rate, &callback_playback, |next| {
+                                fill_output_i16(data, ch_usize, want_ch, next, ptt_tone.as_mut());
+                            });
                         },
                         err_fn,
                         None,
                     ),
                     SampleFormat::U16 => device.build_output_stream(
                         stream_config,
-                        move |data: &mut [u16], _| {
-                            let mut next = || state.next_sample();
-                            fill_output_u16(data, ch_usize, want_ch, &mut next, ptt_tone.as_mut());
+                        move |data: &mut [u16], info| {
+                            state.render(info, tone_sample_rate, &callback_playback, |next| {
+                                fill_output_u16(data, ch_usize, want_ch, next, ptt_tone.as_mut());
+                            });
                         },
                         err_fn,
                         None,
@@ -1423,6 +1433,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
                 }
                 let submitted_now = submitted_for_thread.load(Ordering::Relaxed);
                 drained_for_thread.store(submitted_now, Ordering::Relaxed);
+                playback_for_thread.discard_through(submitted_now);
 
                 if last_failure.is_none_or(|t| t.elapsed() >= BACKOFF_RESET_AFTER)
                     && started.elapsed() >= BACKOFF_RESET_AFTER
@@ -1444,6 +1455,7 @@ pub fn spawn_output(cfg: SoundcardOutputConfig, device: Option<Device>) -> Resul
         submit_tx,
         submitted,
         drained,
+        playback,
         stop,
         join: Some(join),
     })
@@ -1467,6 +1479,58 @@ struct OutputState {
 }
 
 impl OutputState {
+    fn render(
+        &mut self,
+        info: &cpal::OutputCallbackInfo,
+        sample_rate: u32,
+        playback: &PlaybackClock,
+        fill: impl FnOnce(&mut dyn FnMut() -> Option<i16>),
+    ) {
+        self.render_at(
+            info.timestamp(),
+            Instant::now(),
+            sample_rate,
+            playback,
+            fill,
+        );
+    }
+
+    fn render_at(
+        &mut self,
+        timestamp: cpal::OutputStreamTimestamp,
+        callback_now: Instant,
+        sample_rate: u32,
+        playback: &PlaybackClock,
+        fill: impl FnOnce(&mut dyn FnMut() -> Option<i16>),
+    ) {
+        let mut frame = 0u64;
+        let mut last_frame_end = None;
+        let mut next = || {
+            let sample = self.next_sample();
+            frame += 1;
+            if sample.is_some() {
+                last_frame_end = Some(frame);
+            }
+            sample
+        };
+        fill(&mut next);
+        if let Some(frames) = last_frame_end {
+            // One call to `next` per output FRAME, regardless of stereo
+            // routing or sample format. Round up to include the last sample.
+            let nanos = frames
+                .saturating_mul(1_000_000_000)
+                .div_ceil(sample_rate.max(1) as u64);
+            playback.rendered(
+                self.drained.load(Ordering::Relaxed),
+                callback_now,
+                timestamp
+                    .playback
+                    .checked_duration_since(timestamp.callback),
+                Duration::from_nanos(nanos),
+            );
+        }
+    }
+
     fn new(
         rx: Arc<Mutex<Receiver<Vec<i16>>>>,
         drained: Arc<AtomicU64>,
@@ -1870,6 +1934,45 @@ mod tests {
         assert_eq!(state.next_sample(), Some(3));
         assert_eq!(state.next_sample(), None);
         assert_eq!(drained.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn output_presentation_uses_last_mono_sample_position_in_stereo_all_formats() {
+        for format in [SampleFormat::I16, SampleFormat::F32, SampleFormat::U16] {
+            let (tx, rx) = channel();
+            let drained = Arc::new(AtomicU64::new(0));
+            let submitted = Arc::new(AtomicU64::new(3));
+            let mut state = OutputState::new(Arc::new(Mutex::new(rx)), drained.clone(), submitted);
+            let clock = PlaybackClock::default();
+            tx.send(vec![1, 2, 3]).unwrap();
+            let now = Instant::now();
+            let timestamp = cpal::OutputStreamTimestamp {
+                callback: cpal::StreamInstant::from_millis(1000),
+                playback: cpal::StreamInstant::from_millis(1354),
+            };
+            // PCH-sized stereo callback, only three mono samples submitted.
+            state.render_at(timestamp, now, 48_000, &clock, |next| match format {
+                SampleFormat::I16 => fill_output_i16(&mut vec![0; 32768], 2, 0, next, None),
+                SampleFormat::F32 => fill_output_f32(&mut vec![0.0; 32768], 2, 0, next, None),
+                SampleFormat::U16 => fill_output_u16(&mut vec![0; 32768], 2, 0, next, None),
+                _ => unreachable!(),
+            });
+            assert_eq!(drained.load(Ordering::Relaxed), 3);
+            assert!(!clock.complete(3, now + Duration::from_millis(354)));
+            let end = now + Duration::from_millis(354) + Duration::from_nanos(62_500);
+            assert!(clock.complete(3, end));
+            // Subsequent silence must not make a completed submission pending.
+            state.render_at(
+                timestamp,
+                now + Duration::from_secs(1),
+                48_000,
+                &clock,
+                |next| {
+                    fill_output_i16(&mut [0; 10], 2, 0, next, None);
+                },
+            );
+            assert!(clock.complete(3, end));
+        }
     }
 
     #[test]

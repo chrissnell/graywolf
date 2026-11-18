@@ -95,6 +95,14 @@ enum TxMessage {
 pub(crate) trait TxSink {
     fn submit(&self, samples: Vec<i16>) -> Result<u64, String>;
     fn drained_samples(&self) -> u64;
+    /// Blocking/non-CPAL sinks retain their existing completion semantics.
+    /// CPAL overrides this: callback consumption is not DAC completion.
+    fn playback_complete(&self, watermark: u64) -> bool {
+        self.drained_samples() >= watermark
+    }
+    fn drain_grace(&self) -> Duration {
+        Duration::from_millis(500)
+    }
 }
 
 impl TxSink for AudioSink {
@@ -105,6 +113,16 @@ impl TxSink for AudioSink {
     fn drained_samples(&self) -> u64 {
         AudioSink::drained_samples(self)
     }
+
+    fn playback_complete(&self, watermark: u64) -> bool {
+        AudioSink::playback_complete(self, watermark)
+    }
+
+    fn drain_grace(&self) -> Duration {
+        // Includes scheduling phase and device playback latency, not just
+        // callback rendering. Still bounded if the stream/timestamps fail.
+        Duration::from_secs(5)
+    }
 }
 
 /// Outcome of [`drive_tx_cycle`]. The caller handles logging and sink
@@ -113,8 +131,11 @@ impl TxSink for AudioSink {
 /// always runs after key" invariants without touching real hardware.
 #[derive(Debug)]
 pub(crate) enum TxCycleOutcome {
-    /// Full cycle completed (either naturally or after drain timeout).
+    /// Full cycle completed.
     Done,
+    /// PTT was released, but playback could not be confirmed. Drop the sink
+    /// so buffered audio cannot leak into the following transmission.
+    DrainTimedOut,
     /// PTT key failed — radio was never asserted; sink untouched.
     KeyFailed(String),
     /// Sink submit failed — PTT was released before returning; the
@@ -322,6 +343,9 @@ fn process_job(
         let outcome = drive_tx_cycle(driver.as_mut(), &sink, samples, sample_rate);
         match outcome {
             TxCycleOutcome::Done => {}
+            TxCycleOutcome::DrainTimedOut => {
+                eprintln!("graywolf-modem: TransmitFrame: android playback completion timed out");
+            }
             TxCycleOutcome::KeyFailed(e) => {
                 eprintln!("graywolf-modem: TransmitFrame: ptt_key: {}", e);
             }
@@ -377,6 +401,9 @@ fn process_job(
         let outcome = drive_tx_cycle(driver.as_mut(), &*sink, samples, sample_rate);
         match outcome {
             TxCycleOutcome::Done => {}
+            TxCycleOutcome::DrainTimedOut => {
+                sinks.remove(&output_device_id);
+            }
             TxCycleOutcome::KeyFailed(e) => {
                 eprintln!("graywolf-modem: TransmitFrame: ptt_key: {}", e);
             }
@@ -402,9 +429,8 @@ fn process_job(
 /// against a mock driver and a fake sink without touching real
 /// hardware.
 ///
-/// The caller is responsible for sink lifecycle: [`TxCycleOutcome::SubmitFailed`]
-/// is a signal that the sink's backing thread is dead and should be
-/// dropped by [`process_job`] so the next TX gets a fresh sink.
+/// The caller drops failed or timed-out sinks so the next TX gets a fresh
+/// stream and previously buffered audio cannot play under its PTT cycle.
 fn drive_tx_cycle(
     driver: &mut dyn PttDriver,
     sink: &dyn TxSink,
@@ -443,16 +469,13 @@ fn drive_tx_cycle(
         }
     };
 
-    // Hybrid drain wait: direwolf's `audio_wait()` alone is documented
-    // as "not satisfactory in all cases" (xmit.c:885-925). On macOS
-    // CoreAudio the cpal callback returns before the DAC pipeline has
-    // fully played the last samples, so we also block until the
-    // expected audio duration has elapsed. Whichever finishes second
-    // wins, bounded by drain_timeout so a dead sink can't wedge us
-    // forever.
-    let drain_timeout = expected + Duration::from_millis(500);
+    // Like Dire Wolf's real audio drain + duration safeguard, require both
+    // presentation completion and nominal airtime. A callback watermark
+    // alone can be hundreds of ms ahead of the DAC on large ALSA buffers.
+    let drain_timeout = expected + sink.drain_grace();
+    let mut timed_out = false;
     loop {
-        let drained_enough = sink.drained_samples() >= watermark;
+        let drained_enough = sink.playback_complete(watermark);
         let time_elapsed = submit_start.elapsed() >= expected;
         if drained_enough && time_elapsed {
             break;
@@ -464,12 +487,13 @@ fn drive_tx_cycle(
                 sink.drained_samples(),
                 n_samples,
             );
+            timed_out = true;
             break;
         }
         thread::sleep(Duration::from_millis(5));
     }
 
-    // No explicit sleep before unkey — `txtail_ms` is already baked
+    // No second TXTAIL sleep before unkey — `txtail_ms` is already baked
     // into the audio buffer as flag-byte postamble by
     // `tx::build_samples`, and adding a sleep here would double-count
     // the delay. See direwolf `xmit.c:761-936` for the reference
@@ -477,7 +501,11 @@ fn drive_tx_cycle(
     if let Err(e) = driver.unkey() {
         return TxCycleOutcome::UnkeyFailed(e);
     }
-    TxCycleOutcome::Done
+    if timed_out {
+        TxCycleOutcome::DrainTimedOut
+    } else {
+        TxCycleOutcome::Done
+    }
 }
 
 #[cfg(test)]
@@ -577,6 +605,90 @@ mod tests {
 
         assert_eq!(*ptt_log.lock().unwrap(), vec![PttCall::Key, PttCall::Unkey]);
         assert_eq!(*sink_log.lock().unwrap(), vec![100]);
+    }
+
+    /// The callback consumes immediately, but hardware presents later.
+    /// The old counter+duration wait released PTT at 20 ms in this model.
+    struct BufferedSink {
+        drained: AtomicU64,
+        presented_at: Mutex<Option<Instant>>,
+        latency: Duration,
+        never_plays: bool,
+    }
+
+    impl TxSink for BufferedSink {
+        fn submit(&self, samples: Vec<i16>) -> Result<u64, String> {
+            let total = self
+                .drained
+                .fetch_add(samples.len() as u64, Ordering::Relaxed)
+                + samples.len() as u64;
+            // Test rate is 1000 Hz: one sample is one millisecond.
+            *self.presented_at.lock().unwrap() =
+                Some(Instant::now() + self.latency + Duration::from_millis(samples.len() as u64));
+            Ok(total)
+        }
+
+        fn drained_samples(&self) -> u64 {
+            self.drained.load(Ordering::Relaxed)
+        }
+
+        fn playback_complete(&self, watermark: u64) -> bool {
+            !self.never_plays
+                && self.drained_samples() >= watermark
+                && self
+                    .presented_at
+                    .lock()
+                    .unwrap()
+                    .is_some_and(|t| Instant::now() >= t)
+        }
+
+        fn drain_grace(&self) -> Duration {
+            if self.never_plays {
+                Duration::from_millis(20)
+            } else {
+                Duration::from_secs(1)
+            }
+        }
+    }
+
+    #[test]
+    fn ptt_waits_for_presentation_after_callback_and_nominal_airtime() {
+        let sink = BufferedSink {
+            drained: AtomicU64::new(0),
+            presented_at: Mutex::new(None),
+            latency: Duration::from_millis(354),
+            never_plays: false,
+        };
+        let mut ptt = MockPtt::default();
+        // Reuse the sink: each watermark must wait for its own playback.
+        for _ in 0..2 {
+            let start = Instant::now();
+            assert!(matches!(
+                drive_tx_cycle(&mut ptt, &sink, vec![0; 20], 1000),
+                TxCycleOutcome::Done
+            ));
+            assert!(start.elapsed() >= Duration::from_millis(374));
+        }
+        assert_eq!(
+            *ptt.log.lock().unwrap(),
+            vec![PttCall::Key, PttCall::Unkey, PttCall::Key, PttCall::Unkey]
+        );
+    }
+
+    #[test]
+    fn playback_timeout_releases_ptt_and_reports_failed_drain() {
+        let sink = BufferedSink {
+            drained: AtomicU64::new(0),
+            presented_at: Mutex::new(None),
+            latency: Duration::ZERO,
+            never_plays: true,
+        };
+        let mut ptt = MockPtt::default();
+        assert!(matches!(
+            drive_tx_cycle(&mut ptt, &sink, vec![0; 1], 1000),
+            TxCycleOutcome::DrainTimedOut
+        ));
+        assert_eq!(*ptt.log.lock().unwrap(), vec![PttCall::Key, PttCall::Unkey]);
     }
 
     #[test]
