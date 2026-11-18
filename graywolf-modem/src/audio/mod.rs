@@ -13,6 +13,7 @@
 //! thread.
 
 pub mod flac;
+mod playback;
 pub mod soundcard;
 pub mod stdin_raw;
 
