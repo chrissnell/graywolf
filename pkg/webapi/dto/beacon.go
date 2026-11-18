@@ -29,6 +29,8 @@ type BeaconRequest struct {
 	Destination   string  `json:"destination"`
 	Path          string  `json:"path"`
 	UseGps        bool    `json:"use_gps"`
+	RequireFreshGPS  *bool   `json:"require_fresh_gps"`
+	GPSMaxAgeSeconds *uint32 `json:"gps_max_age_seconds"`
 	Latitude      float64 `json:"latitude"`
 	Longitude     float64 `json:"longitude"`
 	AltFt         float64 `json:"alt_ft"`
@@ -75,6 +77,10 @@ type BeaconRequest struct {
 // constraints: ambiguity must be 0..4; only uncompressed and mic_e
 // carry ambiguity bytes, so compressed must keep ambiguity at zero.
 func (r BeaconRequest) Validate() error {
+	if r.GPSMaxAgeSeconds != nil && *r.GPSMaxAgeSeconds > 3600 {
+		return fmt.Errorf("gps_max_age_seconds must be 0 (default) or 1..3600")
+	}
+
 	switch r.SendPath {
 	case "", "rf", "both", "is_only":
 		// "" normalizes to rf in normalizedSendPath
@@ -175,6 +181,8 @@ func (r BeaconRequest) ToModel() configstore.Beacon {
 		Destination:   r.Destination,
 		Path:          r.Path,
 		UseGps:        r.UseGps,
+		RequireFreshGPS:  freshGPSValue(r.RequireFreshGPS, false),
+		GPSMaxAgeSeconds: gpsAgeValue(r.GPSMaxAgeSeconds, 0),
 		Latitude:      r.Latitude,
 		Longitude:     r.Longitude,
 		AltFt:         r.AltFt,
@@ -234,6 +242,8 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 		Destination:   r.Destination,
 		Path:          r.Path,
 		UseGps:        r.UseGps,
+		RequireFreshGPS:  freshGPSValue(r.RequireFreshGPS, existing.RequireFreshGPS),
+		GPSMaxAgeSeconds: gpsAgeValue(r.GPSMaxAgeSeconds, existing.GPSMaxAgeSeconds),
 		Latitude:      r.Latitude,
 		Longitude:     r.Longitude,
 		AltFt:         r.AltFt,
@@ -274,6 +284,8 @@ func (r BeaconRequest) ApplyToUpdate(id uint32, existing configstore.Beacon) con
 // Callsign is the stored value — empty means "inherit from station
 // callsign" at transmit time.
 type BeaconResponse struct {
+	RequireFreshGPS  bool    `json:"require_fresh_gps"`
+	GPSMaxAgeSeconds uint32  `json:"gps_max_age_seconds"`
 	ID            uint32  `json:"id"`
 	Type          string  `json:"type"`
 	Channel       uint32  `json:"channel"`
@@ -325,6 +337,8 @@ func BeaconFromModel(m configstore.Beacon) BeaconResponse {
 		Destination:   m.Destination,
 		Path:          m.Path,
 		UseGps:        m.UseGps,
+		RequireFreshGPS:  m.RequireFreshGPS,
+		GPSMaxAgeSeconds: m.GPSMaxAgeSeconds,
 		Latitude:      m.Latitude,
 		Longitude:     m.Longitude,
 		AltFt:         m.AltFt,
@@ -373,4 +387,17 @@ func BeaconsFromModels(ms []configstore.Beacon) []BeaconResponse {
 // when a one-shot transmission has been handed to the beacon scheduler.
 type BeaconSendResponse struct {
 	Status string `json:"status"` // "sent"
+}
+
+func freshGPSValue(v *bool, fallback bool) bool {
+	if v == nil {
+		return fallback
+	}
+	return *v
+}
+func gpsAgeValue(v *uint32, fallback uint32) uint32 {
+	if v == nil {
+		return fallback
+	}
+	return *v
 }

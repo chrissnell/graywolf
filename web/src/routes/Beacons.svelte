@@ -96,6 +96,7 @@
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
+    require_fresh_gps: false, gps_max_age_seconds: 30,
     position_format: 'compressed', ambiguity: 0,
     pos_source: 'gps', latitude: '', longitude: '', alt_ft: '',
     comment: '', interval: '600', slot: '', send_path: 'rf', enabled: true,
@@ -320,6 +321,7 @@
     form.send_path = channels.length === 0 ? 'is_only' : 'rf';
     form.enabled = true;
     form.smart_beacon = false;
+    form.require_fresh_gps=false;form.gps_max_age_seconds=30;
     modalOpen = true;
   }
 
@@ -346,6 +348,8 @@
       send_path: row.send_path || 'rf',
       ambiguity: row.ambiguity ?? 0,
       pos_source: row.use_gps ? 'gps' : 'fixed',
+      require_fresh_gps:row.require_fresh_gps??false,
+      gps_max_age_seconds:row.gps_max_age_seconds||30,
       latitude: row.latitude != null ? String(row.latitude) : '',
       longitude: row.longitude != null ? String(row.longitude) : '',
       alt_ft: row.alt_ft != null ? String(row.alt_ft) : '',
@@ -449,6 +453,8 @@
       channel: channelId,
       use_gps: useGps,
       smart_beacon: smartBeaconFlag,
+      require_fresh_gps: form.require_fresh_gps,
+      gps_max_age_seconds: Number(form.gps_max_age_seconds),
       interval: parseInt(form.interval),
       slot_seconds: slotSeconds,
       latitude: lat,
@@ -978,6 +984,23 @@
           </div>
         </FormField>
       {/if}
+      {#if isTracker}
+        <FormField label="GPS freshness" id="bcn-fresh-gps"
+          hint="Off by default: keep transmitting the last known fix. When enabled, scheduled and manual sends require advancing GPS position updates within the age limit. Fresh updates resume scheduled beaconing automatically.">
+          {#snippet children(describedBy)}
+            <label class="callsign-override-label gps-freshness-label" for="bcn-fresh-gps">
+              <Checkbox id="bcn-fresh-gps" bind:checked={form.require_fresh_gps} aria-describedby={describedBy} />
+              <span>Suppress tracker beacons when GPS position is stale</span>
+            </label>
+          {/snippet}
+        </FormField>
+        {#if form.require_fresh_gps}
+          <FormField label="Maximum GPS age (seconds)" id="bcn-gps-max-age" hint="Default 30 seconds. Applies to RF and APRS-IS tracker sends only.">
+            <Input id="bcn-gps-max-age" type="number" min="1" max="3600" required bind:value={form.gps_max_age_seconds} />
+          </FormField>
+        {/if}
+      {/if}
+
       <FormField label="Interval (seconds)" id="bcn-interval">
         <Input id="bcn-interval" bind:value={form.interval} type="number" placeholder="600" />
       </FormField>
@@ -1416,6 +1439,13 @@
     white-space: nowrap;
     cursor: pointer;
     user-select: none;
+  }
+  .gps-freshness-label {
+    white-space: normal;
+    align-items: flex-start;
+  }
+  .gps-freshness-label :global(.radio) {
+    flex-shrink: 0;
   }
 
   .beacon-callsign-inherited {

@@ -29,6 +29,8 @@ type Config struct {
 	Delay       time.Duration // initial delay
 	Every       time.Duration // periodic interval
 	Slot        int           // seconds past the hour; -1 means unset
+	RequireFreshGPS bool          // opt-in, tracker only
+	GPSMaxAge       time.Duration // zero uses DefaultGPSMaxAge
 	UseGps      bool          // if true, source lat/lon/alt from the GPS cache instead of Lat/Lon/AltFt
 	Lat, Lon    float64       // fixed position
 	AltFt       float64

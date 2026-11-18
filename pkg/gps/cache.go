@@ -11,6 +11,7 @@ import (
 
 // Fix is a single GPS observation. Zero Timestamp indicates "no fix yet".
 type Fix struct {
+	epochSource string  // independent position epoch stream (e.g. NMEA RMC vs GGA)
 	Latitude   float64   // degrees, north positive
 	Longitude  float64   // degrees, east positive
 	Altitude   float64   // metres above MSL
@@ -21,6 +22,7 @@ type Fix struct {
 	HasCourse  bool      // true if Heading is valid for this fix
 	AccuracyM  float64   // horizontal accuracy radius in metres (0 = unknown / not provided)
 	Timestamp  time.Time // UTC
+	ReceivedAt time.Time // local receipt of the last advancing fix; monotonic when available
 	FixMode    int       // 0=unknown, 1=no fix, 2=2D, 3=3D (from GSA)
 	PDOP       float64   // position dilution of precision
 	HDOP       float64   // horizontal dilution of precision
@@ -75,6 +77,7 @@ type MemCache struct {
 	mu    sync.RWMutex
 	fix   Fix
 	valid bool
+	epochs map[string]time.Time
 
 	satMu    sync.RWMutex
 	satView  SatelliteView
@@ -98,6 +101,16 @@ func (c *MemCache) Update(f Fix) {
 		f.Timestamp = time.Now().UTC()
 	}
 	c.mu.Lock()
+	// A first report can be a cached TPV replay. Require advancement within
+	// one position stream; RMC and GGA dates can differ before clock sync.
+	if c.epochs == nil {
+		c.epochs = make(map[string]time.Time)
+	}
+		f.ReceivedAt = c.fix.ReceivedAt
+	if epoch, seen := c.epochs[f.epochSource]; seen && f.Timestamp.After(epoch) {
+			f.ReceivedAt = time.Now()
+		}
+	c.epochs[f.epochSource] = f.Timestamp
 	c.fix = f
 	c.valid = true
 	c.mu.Unlock()

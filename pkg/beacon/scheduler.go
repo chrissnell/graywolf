@@ -284,6 +284,28 @@ func (s *Scheduler) isSmart(c Config) bool {
 // heading-delta exceeding the corner-peg threshold after TurnTime has
 // elapsed since the last transmit.
 func (s *Scheduler) shouldFire(p *beaconPlan, now time.Time) bool {
+	if p.cfg.Type == TypeTracker && p.cfg.RequireFreshGPS {
+		var err error
+		if s.cache == nil {
+			err = fmt.Errorf("no GPS cache")
+		} else if fix, ok := s.cache.Get(); !ok {
+			err = fmt.Errorf("no GPS fix available")
+		} else {
+			err = trackerFreshness(p.cfg, fix, now)
+		}
+		if err != nil {
+			if !p.gpsBlocked {
+				s.logger.Warn("tracker beacon suppressed", "id", p.cfg.ID, "reason", err.Error())
+			}
+			p.gpsBlocked = true
+			return false
+		}
+		if p.gpsBlocked {
+			s.logger.Info("tracker GPS updates resumed", "id", p.cfg.ID)
+		}
+		p.gpsBlocked = false
+	}
+
 	if !s.isSmart(p.cfg) {
 		return true
 	}
@@ -311,6 +333,10 @@ func (s *Scheduler) shouldFire(p *beaconPlan, now time.Time) bool {
 // can re-evaluate turn detection frequently without paying for a
 // per-beacon goroutine.
 func (s *Scheduler) nextWake(p *beaconPlan, now time.Time) time.Time {
+	if p.gpsBlocked {
+		return now.Add(smartPollInterval)
+	}
+
 	if !s.isSmart(p.cfg) {
 		every := p.cfg.Every
 		if every <= 0 {

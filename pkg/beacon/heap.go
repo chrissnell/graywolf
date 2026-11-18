@@ -13,6 +13,7 @@ import (
 // All fields are owned by the scheduler goroutine; they are only read or
 // written from the run loop or from helper methods called on it.
 type beaconPlan struct {
+	gpsBlocked bool // suppression is logged only on transition
 	cfg      Config
 	nextFire time.Time
 

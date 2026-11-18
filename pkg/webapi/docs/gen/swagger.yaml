@@ -791,6 +791,8 @@ definitions:
         type: string
       gain:
         type: integer
+      gps_max_age_seconds:
+        type: integer
       height:
         type: integer
       interval:
@@ -811,6 +813,8 @@ definitions:
         type: string
       power:
         type: integer
+      require_fresh_gps:
+        type: boolean
       sb_fast_rate:
         type: integer
       sb_fast_speed:
@@ -877,6 +881,8 @@ definitions:
         type: string
       gain:
         type: integer
+      gps_max_age_seconds:
+        type: integer
       height:
         type: integer
       id:
@@ -899,6 +905,8 @@ definitions:
         type: string
       power:
         type: integer
+      require_fresh_gps:
+        type: boolean
       sb_fast_rate:
         type: integer
       sb_fast_speed:

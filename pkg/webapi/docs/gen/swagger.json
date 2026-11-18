@@ -9250,6 +9250,9 @@
                 "gain": {
                     "type": "integer"
                 },
+                "gps_max_age_seconds": {
+                    "type": "integer"
+                },
                 "height": {
                     "type": "integer"
                 },
@@ -9279,6 +9282,9 @@
                 },
                 "power": {
                     "type": "integer"
+                },
+                "require_fresh_gps": {
+                    "type": "boolean"
                 },
                 "sb_fast_rate": {
                     "type": "integer"
@@ -9378,6 +9384,9 @@
                 "gain": {
                     "type": "integer"
                 },
+                "gps_max_age_seconds": {
+                    "type": "integer"
+                },
                 "height": {
                     "type": "integer"
                 },
@@ -9410,6 +9419,9 @@
                 },
                 "power": {
                     "type": "integer"
+                },
+                "require_fresh_gps": {
+                    "type": "boolean"
                 },
                 "sb_fast_rate": {
                     "type": "integer"

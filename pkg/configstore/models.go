@@ -637,6 +637,8 @@ type Beacon struct {
 	Callsign     string  `gorm:"not null" json:"callsign"`
 	Destination  string  `gorm:"not null;default:'APGRWO'" json:"destination"`
 	Path         string  `gorm:"not null;default:'WIDE1-1'" json:"path"`
+	RequireFreshGPS bool `gorm:"not null;default:false" json:"require_fresh_gps"`
+	GPSMaxAgeSeconds uint32 `gorm:"not null;default:0" json:"gps_max_age_seconds"` // 0 uses the scheduler default
 	UseGps       bool    `gorm:"column:use_gps;default:false" json:"use_gps"` // source lat/lon/alt from GPS cache instead of fixed fields
 	Latitude     float64 `json:"latitude"`
 	Longitude    float64 `json:"longitude"`

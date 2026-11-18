@@ -67,9 +67,13 @@ func ParseNMEA(line string) (Fix, bool, error) {
 	}
 	switch tag[2:] {
 	case "RMC":
-		return parseRMC(fields)
+		fix, active, err := parseRMC(fields)
+		fix.epochSource = "RMC"
+		return fix, active, err
 	case "GGA":
-		return parseGGA(fields)
+		fix, active, err := parseGGA(fields)
+		fix.epochSource = "GGA"
+		return fix, active, err
 	case "VTG":
 		return parseVTG(fields)
 	case "GSA":
@@ -82,6 +86,7 @@ func ParseNMEA(line string) (Fix, bool, error) {
 }
 
 // $xxRMC,hhmmss.ss,A,llll.ll,a,yyyyy.yy,a,x.x,x.x,ddmmyy,x.x,a*hh
+//
 //   1=time 2=status 3,4=lat 5,6=lon 7=speed kt 8=track 9=date
 func parseRMC(f []string) (Fix, bool, error) {
 	if len(f) < 10 {
@@ -121,6 +126,7 @@ func parseRMC(f []string) (Fix, bool, error) {
 }
 
 // $xxGGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,q,nn,hh,altM,M,...
+//
 //   1=time 2,3=lat 4,5=lon 6=qual 7=sats 8=hdop 9=alt 10=alt units
 func parseGGA(f []string) (Fix, bool, error) {
 	if len(f) < 11 {
@@ -154,6 +160,7 @@ func parseGGA(f []string) (Fix, bool, error) {
 }
 
 // $xxVTG,cogt,T,cogm,M,sog_kn,N,sog_kmh,K,mode*hh
+//
 //   1=course true 3=course mag 5=speed knots 7=speed km/h 9=mode
 func parseVTG(f []string) (Fix, bool, error) {
 	if len(f) < 9 {
@@ -181,6 +188,7 @@ func parseVTG(f []string) (Fix, bool, error) {
 }
 
 // $xxGSA,mode,fix,prn1,...,prn12,pdop,hdop,vdop*hh
+//
 //   1=selection mode (A=auto,M=manual) 2=fix type (1=none,2=2D,3=3D)
 //   3-14=satellite PRNs 15=PDOP 16=HDOP 17=VDOP
 func parseGSA(f []string) (Fix, bool, error) {

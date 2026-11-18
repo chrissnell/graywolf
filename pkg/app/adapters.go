@@ -177,6 +177,8 @@ func beaconConfigFromStore(b configstore.Beacon, smart *configstore.SmartBeaconC
 		Every:          time.Duration(b.EverySeconds) * time.Second,
 		Slot:           int(b.SlotSeconds),
 		UseGps:         b.UseGps,
+		RequireFreshGPS: b.RequireFreshGPS,
+		GPSMaxAge:       time.Duration(b.GPSMaxAgeSeconds) * time.Second,
 		Lat:            b.Latitude,
 		Lon:            b.Longitude,
 		AltFt:          b.AltFt,

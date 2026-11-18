@@ -90,6 +90,9 @@ func (s *Scheduler) buildInfo(ctx context.Context, b Config) (string, error) {
 		if !ok {
 			return "", fmt.Errorf("tracker beacon: no GPS fix available")
 		}
+		if err := trackerFreshness(b, fix, s.clock.Now()); err != nil {
+			return "", err
+		}
 		course := 0
 		if fix.HasCourse {
 			course = int(fix.Heading)

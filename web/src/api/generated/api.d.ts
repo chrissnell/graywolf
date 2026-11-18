@@ -2465,6 +2465,7 @@ export interface components {
             freq?: string;
             freq_offset?: string;
             gain?: number;
+            gps_max_age_seconds?: number;
             height?: number;
             interval?: number;
             latitude?: number;
@@ -2475,6 +2476,7 @@ export interface components {
             path?: string;
             position_format?: string;
             power?: number;
+            require_fresh_gps?: boolean;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
             sb_min_turn_time?: number;
@@ -2510,6 +2512,7 @@ export interface components {
             freq?: string;
             freq_offset?: string;
             gain?: number;
+            gps_max_age_seconds?: number;
             height?: number;
             id?: number;
             interval?: number;
@@ -2521,6 +2524,7 @@ export interface components {
             path?: string;
             position_format?: string;
             power?: number;
+            require_fresh_gps?: boolean;
             sb_fast_rate?: number;
             sb_fast_speed?: number;
             sb_min_turn_time?: number;
