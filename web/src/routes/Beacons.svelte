@@ -985,8 +985,15 @@
         </FormField>
       {/if}
       {#if isTracker}
-        <Toggle bind:checked={form.require_fresh_gps} label="Suppress tracker beacons when GPS position is stale" />
-        <p class="hint">Off by default: keep transmitting the last known fix. When enabled, scheduled and manual sends require advancing GPS position updates within the age limit. Fresh updates resume scheduled beaconing automatically.</p>
+        <FormField label="GPS freshness" id="bcn-fresh-gps"
+          hint="Off by default: keep transmitting the last known fix. When enabled, scheduled and manual sends require advancing GPS position updates within the age limit. Fresh updates resume scheduled beaconing automatically.">
+          {#snippet children(describedBy)}
+            <label class="callsign-override-label gps-freshness-label" for="bcn-fresh-gps">
+              <Checkbox id="bcn-fresh-gps" bind:checked={form.require_fresh_gps} aria-describedby={describedBy} />
+              <span>Suppress tracker beacons when GPS position is stale</span>
+            </label>
+          {/snippet}
+        </FormField>
         {#if form.require_fresh_gps}
           <FormField label="Maximum GPS age (seconds)" id="bcn-gps-max-age" hint="Default 30 seconds. Applies to RF and APRS-IS tracker sends only.">
             <Input id="bcn-gps-max-age" type="number" min="1" max="3600" required bind:value={form.gps_max_age_seconds} />
@@ -1432,6 +1439,13 @@
     white-space: nowrap;
     cursor: pointer;
     user-select: none;
+  }
+  .gps-freshness-label {
+    white-space: normal;
+    align-items: flex-start;
+  }
+  .gps-freshness-label :global(.radio) {
+    flex-shrink: 0;
   }
 
   .beacon-callsign-inherited {
