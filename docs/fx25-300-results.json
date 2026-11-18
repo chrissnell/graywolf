@@ -1,0 +1,348 @@
+{
+  "kind": "offline synthetic observations, not hardware acceptance",
+  "direwolf_commit": "eda1383f5fa9d8ba3cb27f99db1d2c79494404c9",
+  "stress_and_airtime": [
+    {
+      "case": "clean",
+      "sha256": "2ac107cd3a8aba07bdae0f0c17c57738fee556edfa92a185420c7a664471a05d",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "AWGN 30 dB whole-record RMS",
+      "sha256": "1ba553e35af458905955e54d6d9b29922fded337b4f9bfec6e79f66a52cccc49",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "AWGN 20 dB whole-record RMS",
+      "sha256": "dd290f4343562c1ed5ddf943206889dee70ab167f91873708cdfe06064bb4ef4",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "AWGN 10 dB whole-record RMS",
+      "sha256": "d98a56caf600139fcfc0b0bec9c1a18fc51c581f5c887370102de807873bb6b8",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "AWGN 0 dB whole-record RMS",
+      "sha256": "1913013afc63bbca7c633201f675a45ba297524e28a1f63f04a2f86b06a300ec",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "clock and tone 0.99x",
+      "sha256": "6a78cb5e12195b4914abec9273328307680bad47f9831c642b82eaf8de91ef07",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "clock and tone 1.01x",
+      "sha256": "f4cd5ed9cd3bba0bd1868b70ce547498dadcf105569791d82dab80110c25126f",
+      "frames": 1,
+      "corrected": [
+        0
+      ]
+    },
+    {
+      "case": "noise-only control",
+      "sha256": "fd666fedc5c83feb5ed24add7f344b8580541462aed98de8acb2ffe9513b92e0",
+      "frames": 0,
+      "corrected": []
+    },
+    {
+      "frame_bytes": 20,
+      "mode": "auto",
+      "plain_seconds": 1.0266666666666666,
+      "fx25_seconds": 1.92,
+      "encoding": "fx25",
+      "tag": 4,
+      "parity": 16
+    },
+    {
+      "frame_bytes": 20,
+      "mode": "16",
+      "plain_seconds": 1.0266666666666666,
+      "fx25_seconds": 1.92,
+      "encoding": "fx25",
+      "tag": 4,
+      "parity": 16
+    },
+    {
+      "frame_bytes": 20,
+      "mode": "32",
+      "plain_seconds": 1.0266666666666666,
+      "fx25_seconds": 2.3466666666666667,
+      "encoding": "fx25",
+      "tag": 8,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 20,
+      "mode": "64",
+      "plain_seconds": 1.0266666666666666,
+      "fx25_seconds": 4.053333333333334,
+      "encoding": "fx25",
+      "tag": 11,
+      "parity": 64
+    },
+    {
+      "frame_bytes": 60,
+      "mode": "auto",
+      "plain_seconds": 2.0866666666666664,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 60,
+      "mode": "16",
+      "plain_seconds": 2.0866666666666664,
+      "fx25_seconds": 4.48,
+      "encoding": "fx25",
+      "tag": 2,
+      "parity": 16
+    },
+    {
+      "frame_bytes": 60,
+      "mode": "32",
+      "plain_seconds": 2.0866666666666664,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 60,
+      "mode": "64",
+      "plain_seconds": 2.0866666666666664,
+      "fx25_seconds": 5.76,
+      "encoding": "fx25",
+      "tag": 10,
+      "parity": 64
+    },
+    {
+      "frame_bytes": 100,
+      "mode": "auto",
+      "plain_seconds": 3.1533333333333333,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 100,
+      "mode": "16",
+      "plain_seconds": 3.1533333333333333,
+      "fx25_seconds": 4.48,
+      "encoding": "fx25",
+      "tag": 2,
+      "parity": 16
+    },
+    {
+      "frame_bytes": 100,
+      "mode": "32",
+      "plain_seconds": 3.1533333333333333,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 100,
+      "mode": "64",
+      "plain_seconds": 3.1533333333333333,
+      "fx25_seconds": 5.76,
+      "encoding": "fx25",
+      "tag": 10,
+      "parity": 64
+    },
+    {
+      "frame_bytes": 180,
+      "mode": "auto",
+      "plain_seconds": 5.286666666666667,
+      "fx25_seconds": 7.44,
+      "encoding": "fx25",
+      "tag": 9,
+      "parity": 64
+    },
+    {
+      "frame_bytes": 180,
+      "mode": "16",
+      "plain_seconds": 5.286666666666667,
+      "fx25_seconds": 7.44,
+      "encoding": "fx25",
+      "tag": 1,
+      "parity": 16
+    },
+    {
+      "frame_bytes": 180,
+      "mode": "32",
+      "plain_seconds": 5.286666666666667,
+      "fx25_seconds": 7.44,
+      "encoding": "fx25",
+      "tag": 5,
+      "parity": 32
+    },
+    {
+      "frame_bytes": 180,
+      "mode": "64",
+      "plain_seconds": 5.286666666666667,
+      "fx25_seconds": 7.44,
+      "encoding": "fx25",
+      "tag": 9,
+      "parity": 64
+    },
+    {
+      "frame_bytes": 236,
+      "mode": "auto",
+      "plain_seconds": 6.78,
+      "fx25_seconds": 6.78,
+      "encoding": "ax25",
+      "tag": 0,
+      "parity": 0
+    },
+    {
+      "frame_bytes": 236,
+      "mode": "16",
+      "plain_seconds": 6.78,
+      "fx25_seconds": 6.78,
+      "encoding": "ax25",
+      "tag": 0,
+      "parity": 0
+    },
+    {
+      "frame_bytes": 236,
+      "mode": "32",
+      "plain_seconds": 6.78,
+      "fx25_seconds": 6.78,
+      "encoding": "ax25",
+      "tag": 0,
+      "parity": 0
+    },
+    {
+      "frame_bytes": 236,
+      "mode": "64",
+      "plain_seconds": 6.78,
+      "fx25_seconds": 6.78,
+      "encoding": "ax25",
+      "tag": 0,
+      "parity": 0
+    }
+  ],
+  "auto_airtime_comparison": [
+    {
+      "plain_seconds": 1.0266666666666666,
+      "fx25_seconds": 1.92,
+      "encoding": "fx25",
+      "tag": 4,
+      "parity": 16,
+      "frame_bytes": 20,
+      "baud": 300,
+      "extra_percent": 87.01298701298701,
+      "packet_only_extra_percent": 148.88888888888894
+    },
+    {
+      "plain_seconds": 0.55,
+      "fx25_seconds": 0.7733333333333333,
+      "encoding": "fx25",
+      "tag": 4,
+      "parity": 16,
+      "frame_bytes": 20,
+      "baud": 1200,
+      "extra_percent": 40.6060606060606,
+      "packet_only_extra_percent": 148.88888888888886
+    },
+    {
+      "plain_seconds": 2.0866666666666664,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32,
+      "frame_bytes": 60,
+      "baud": 300,
+      "extra_percent": 135.14376996805112,
+      "packet_only_extra_percent": 169.8795180722892
+    },
+    {
+      "plain_seconds": 0.815,
+      "fx25_seconds": 1.52,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32,
+      "frame_bytes": 60,
+      "baud": 1200,
+      "extra_percent": 86.5030674846626,
+      "packet_only_extra_percent": 169.87951807228922
+    },
+    {
+      "plain_seconds": 3.1533333333333333,
+      "fx25_seconds": 4.906666666666666,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32,
+      "frame_bytes": 100,
+      "baud": 300,
+      "extra_percent": 55.60253699788582,
+      "packet_only_extra_percent": 64.30317848410756
+    },
+    {
+      "plain_seconds": 1.0816666666666668,
+      "fx25_seconds": 1.52,
+      "encoding": "fx25",
+      "tag": 6,
+      "parity": 32,
+      "frame_bytes": 100,
+      "baud": 1200,
+      "extra_percent": 40.52388289676423,
+      "packet_only_extra_percent": 64.30317848410758
+    },
+    {
+      "plain_seconds": 5.286666666666667,
+      "fx25_seconds": 7.44,
+      "encoding": "fx25",
+      "tag": 9,
+      "parity": 64,
+      "frame_bytes": 180,
+      "baud": 300,
+      "extra_percent": 40.73139974779318,
+      "packet_only_extra_percent": 44.307270233196164
+    },
+    {
+      "plain_seconds": 1.615,
+      "fx25_seconds": 2.1533333333333333,
+      "encoding": "fx25",
+      "tag": 9,
+      "parity": 64,
+      "frame_bytes": 180,
+      "baud": 1200,
+      "extra_percent": 33.33333333333333,
+      "packet_only_extra_percent": 44.307270233196185
+    }
+  ],
+  "auto_airtime_assumptions": {
+    "sample_rate_hz": 48000,
+    "txdelay_ms": 300,
+    "txtail_ms": 100,
+    "raw_header_hex": "82a0a4a64040e09c6086829898ef03f0",
+    "payload_fill": "ASCII x",
+    "frame_size_excludes_fcs": true,
+    "percentages_computed_before_rounding": true,
+    "measurement": "generated PCM sample counts, not on-air"
+  }
+}

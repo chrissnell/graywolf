@@ -283,3 +283,27 @@ func TestChannelResponse_Enabled_RoundTrip(t *testing.T) {
 		}
 	}
 }
+
+func TestFX25PublicConfigurationRoundTrip(t *testing.T) {
+	for _, mode := range []string{"auto", "16", "32", "64"} {
+		req := ChannelRequest{Name: "VHF", InputDeviceID: configstore.U32Ptr(1), ModemType: "afsk", BitRate: 1200, MarkFreq: 1200, SpaceFreq: 2200, FX25Encode: true, FX25Mode: mode}
+		if err := req.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		out := ChannelFromModel(req.ToModel())
+		if !out.FX25Encode || out.FX25Mode != mode {
+			t.Fatalf("lost FX.25 setting: %+v", out)
+		}
+		data, _ := json.Marshal(out)
+		if !strings.Contains(string(data), `"fx25_encode":true`) || !strings.Contains(string(data), `"fx25_mode":"`+mode+`"`) {
+			t.Fatal(string(data))
+		}
+	}
+	if (ChannelRequest{}).ToModel().FX25Mode != "auto" {
+		t.Fatal("missing mode must default auto")
+	}
+	bad := ChannelRequest{Name: "VHF", ModemType: "afsk", FX25Mode: "0"}
+	if bad.Validate() == nil {
+		t.Fatal("ambiguous numeric mode must be rejected")
+	}
+}

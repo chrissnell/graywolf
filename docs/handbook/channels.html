@@ -171,17 +171,22 @@
     <h2>Modem Types</h2>
 
     <p>
-      Graywolf&rsquo;s software modem offers four modulation types. Pick the
-      one that matches the radio you&rsquo;re plugging into.
+      Native transmit and receive support are different. The matrix below
+      describes this source branch; a receiver implementation or a modem-type
+      setting does not imply that a matching transmitter exists.
     </p>
 
     <div class="box">
       <div class="box-body">
         <table>
-          <tr><td><strong>AFSK</strong></td><td>Audio FSK (Bell 202). Standard 1200&nbsp;baud APRS on VHF &mdash; what you want for 144.39 MHz / 144.80 MHz.</td></tr>
-          <tr><td><strong>GFSK</strong></td><td>Gaussian FSK at 9600&nbsp;baud (G3RUH-style). Needs a radio with a discriminator output (flat audio, no de-emphasis).</td></tr>
-          <tr><td><strong>PSK</strong></td><td>Phase-shift keying for experimental packet modes.</td></tr>
-          <tr><td><strong>FSK</strong></td><td>Plain frequency-shift keying. Pick this if you know the radio and slot you&rsquo;re using already.</td></tr>
+          <thead><tr><th>Mode</th><th>Native RX</th><th>Native TX</th><th>FX.25</th></tr></thead>
+          <tbody>
+            <tr><td><strong>AFSK 1200</strong>, Bell 202 (1200/2200 Hz)</td><td>Implemented; operator RF checks passed</td><td>Implemented; operator RF/PTT checks passed</td><td>TX and automatic RX; 16/32/64 parity</td></tr>
+            <tr><td><strong>AFSK 300</strong>, HF tones</td><td>Existing implementation</td><td>Existing implementation</td><td><strong>Experimental, testers only</strong>; automatic RX, opt-in TX off by default; 1600/1800 Hz; no on-air acceptance</td></tr>
+            <tr><td><strong>QPSK 2400 / 8PSK 4800</strong></td><td>Receiver implementation present; not validated by the FX.25 tests</td><td><strong>Not implemented</strong></td><td>Not supported</td></tr>
+            <tr><td><strong>G3RUH 9600</strong></td><td>Receiver implementation present; not validated by the FX.25 tests</td><td><strong>Not implemented</strong></td><td>Not supported</td></tr>
+            <tr><td><strong>Plain FSK</strong></td><td>Not implemented</td><td>Not implemented</td><td>Not supported</td></tr>
+          </tbody>
         </table>
       </div>
     </div>
@@ -189,8 +194,8 @@
     <div data-tabs>
       <div class="tabs">
         <button class="tab active" data-target="tab-afsk">AFSK 1200</button>
-        <button class="tab" data-target="tab-9600">GFSK 9600</button>
-        <button class="tab" data-target="tab-psk">PSK</button>
+        <button class="tab" data-target="tab-9600">G3RUH receiver only</button>
+        <button class="tab" data-target="tab-psk">PSK receiver only</button>
       </div>
 
       <div class="tab-panel active" id="tab-afsk">
@@ -298,14 +303,16 @@
 
       <div class="tab-panel" id="tab-9600">
         <p>
-          GFSK at 9600&nbsp;baud (G3RUH-style direct FSK) for high-speed
-          packet. Requires a radio with a discriminator output.
+          A G3RUH baseband receiver exists for 9600&nbsp;bit/s, using flat
+          discriminator audio. A native G3RUH transmitter is <strong>not
+          implemented</strong>, and this option is not exposed in the channel
+          editor. Do not configure it expecting native RF TX or FX.25.
         </p>
 
         <div class="box">
           <div class="box-body">
             <table>
-              <tr><td><code>modem_type</code></td><td><code>gfsk</code></td></tr>
+              <tr><td>Receiver backend names</td><td><code>9600</code>, <code>scramble</code>, <code>baseband</code></td></tr>
               <tr><td><code>bit_rate</code></td><td><code>9600</code></td></tr>
             </table>
           </div>
@@ -314,8 +321,11 @@
 
       <div class="tab-panel" id="tab-psk">
         <p>
-          PSK (Phase Shift Keying) support is available for experimental
-          packet radio modes.
+          Receiver code exists for 2400&nbsp;bit/s QPSK (V.26 A/B) and
+          4800&nbsp;bit/s 8PSK. A native PSK transmitter is <strong>not
+          implemented</strong>. The PSK selector must not be interpreted as
+          TX support. These receivers were not part of the 1200-baud FX.25
+          interoperability or physical acceptance tests.
         </p>
 
         <div class="box">
@@ -333,12 +343,52 @@
       <div class="caption">The channel editor configures modem type, audio routing, AFSK frequencies, and transmit timing</div>
     </div>
 
-    <h2>Forward Error Correction</h2>
+    <div class="callout warning">
+      <span class="callout-icon">!</span>
+      <div class="callout-body"><p>Do not use PSK or G3RUH channels for native
+      transmission: the existing non-FX.25 TX path still builds AFSK audio,
+      rather than a matching PSK/baseband waveform. The former
+      <code>gfsk</code> and <code>fsk</code> UI choices are not supported
+      transmitter implementations. Ordinary 300-baud AFSK code paths exist,
+      but no HF RF acceptance is claimed by these FX.25 tests.</p></div>
+    </div>
+
+    <p>Native backend selection currently requires an input audio-device
+    binding, even when only transmission is wanted. A literal output-only
+    configuration is not fully wired up. This is separate from carrier
+    sensing: a configured modem does not need to decode a received packet
+    before transmitting.</p>
+
+    <h2 id="forward-error-correction">Forward Error Correction</h2>
+    <div class="callout warning"><div class="callout-body"><p>
+      <strong>Experimental 300-baud FX.25: testers only.</strong>
+      Tag and 16/32/64 parity bytes alone occupy about 0.64/1.07/1.92 seconds,
+      before block padding and extra framing. Total overhead depends on frame
+      length and mode; there is no universal multiplier. Longer packets consume
+      shared-channel capacity. Prefer coordinated quiet-channel tests; on busy
+      channels leave FX.25 TX off unless a measured delivery benefit justifies
+      its airtime cost. No 300-baud RF sensitivity or performance gain is claimed.
+      See <a href="https://github.com/samwathegreat/graywolf/blob/feature/fx25-afsk300/docs/fx25-300.md">scope, calculations and automated results</a>.
+    </p></div></div>
+
+
+    <div class="callout info">
+      <span class="callout-icon">&#9432;</span>
+      <div class="callout-body">
+        <p><strong>FX.25 supports native 1200-baud Bell 202 AFSK (1200/2200 Hz).
+          Experimental 300-baud AFSK (1600/1800 Hz) is for testers only,
+          without hardware or on-air acceptance.</strong>
+          FX.25 remains unsupported at 9600 baud and on PSK/G3RUH modes. An external KISS TNC controls
+          its own on-air encoding; these settings do not enable FEC in that TNC.</p>
+      </div>
+    </div>
 
     <p>
-      Graywolf can encode transmitted packets with forward error correction.
-      FEC-encoded packets are always decoded on receive regardless of these
-      settings &mdash; these flags only affect transmission.
+      Native FX.25 reception is automatic alongside ordinary AX.25 on
+      1200-baud AFSK channels with 1200/2200 Hz Bell 202 tones, and experimental
+      300-baud AFSK channels with 1600/1800 Hz tones. RX itself adds no transmit
+      airtime, but configured forwarding may transmit newly decoded packets. The FX.25
+      transmit toggle affects transmission only.
     </p>
 
     <div class="box">
@@ -346,11 +396,12 @@
         <table>
           <tr>
             <td><code>fx25_encode</code></td>
-            <td>Enable FX.25 (interleaved convolutional code, MIL-STD-188-165) on transmit</td>
+            <td>Explicitly enable FX.25 TX on native 1200-baud Bell 202 or experimental 300-baud AFSK; defaults off</td>
           </tr>
+          <tr><td><code>fx25_mode</code></td><td><code>auto</code> (recommended), <code>16</code>, <code>32</code>, or <code>64</code>; TX only</td></tr>
           <tr>
             <td><code>il2p_encode</code></td>
-            <td>Enable IL2P (Improved Layer 2 Protocol) on transmit</td>
+            <td>Reserved IL2P setting; native live TX/RX is not connected</td>
           </tr>
         </table>
       </div>
@@ -360,15 +411,69 @@
       <span class="callout-icon">&#9432;</span>
       <div class="callout-body">
         <p>
-          FX.25 and IL2P add redundancy that can recover packets with bit
-          errors, improving reliability on noisy channels. The receiver
-          automatically detects and decodes FEC-encoded frames regardless
-          of these transmit settings.
+          FX.25 supports standard tags 1&ndash;11 and 16/32/64 parity bytes.
+          TX automatically chooses tags 4, 3, 6, 9, 5, then 1 as the protected
+          frame grows. The maximum AX.25 frame before FCS is 235 bytes;
+          bit stuffing can lower that limit. Frames too large for the selected
+          FX.25 mode use ordinary AX.25, without truncation, and the packet log
+          explicitly identifies <strong>AX.25 fallback</strong>. This applies
+          to Auto and fixed parity choices. Unsupported rates, tones, KISS-only
+          channels, and simultaneous FX.25/IL2P transmit settings are rejected.
+          In Channels, edit the native channel, select AFSK and 1200 baud,
+          set mark/space to 1200/2200 Hz, then enable FX.25 transmit and save.
+          For experimental 300-baud testing, select 300 baud and 1600/1800 Hz instead.
+          A confirmation is required before saving a new 300-baud FX.25 TX opt-in
+          or changing its parity/output configuration. Cancel leaves it unsaved.
+          Legacy inert 300-baud FX.25 TX flags are cleared once on upgrade;
+          explicit new opt-ins survive restart. TX defaults off. Automatic is the normal 1200-baud recommendation; fixed
+          16/32/64-parity modes are available for specific use cases or controlled
+          testing. The selector affects TX only; RX recognizes all supported modes.
+          The packet log shows a verified FX.25 badge, tag/parity and repaired-symbol
+          count, including zero for clean codewords. Native TX rows show the
+          actual encoding and selected tag/parity after local encoding and
+          queue acceptance; a channel setting alone is not used to label them.
+          These local TX labels do not prove RF reception. Saving a channel
+          does not transmit a packet.
         </p>
       </div>
     </div>
 
+    <p>Automatic uses the pinned Dire Wolf <code>FX25TX 1</code> size-selection
+    policy, not a signal-quality measurement. Required bytes include the
+    complete stuffed frame, FCS and HDLC flags:</p>
+    <div class="box"><div class="box-body"><table>
+      <thead><tr><th>Required protected bytes</th><th>Tag</th><th>Data capacity</th><th>Parity bytes</th></tr></thead>
+      <tbody>
+        <tr><td>Up to 32</td><td>0x04</td><td>32</td><td>16</td></tr>
+        <tr><td>33&ndash;64</td><td>0x03</td><td>64</td><td>16</td></tr>
+        <tr><td>65&ndash;128</td><td>0x06</td><td>128</td><td>32</td></tr>
+        <tr><td>129&ndash;191</td><td>0x09</td><td>191</td><td>64</td></tr>
+        <tr><td>192&ndash;223</td><td>0x05</td><td>223</td><td>32</td></tr>
+        <tr><td>224&ndash;239</td><td>0x01</td><td>239</td><td>16</td></tr>
+      </tbody>
+    </table></div></div>
+    <p>These are not APRS comment lengths. Fixed parity picks the shortest
+    fitting standard block in that family; it does not switch parity families.
+    If no block fits, transmission falls back to ordinary AX.25. Added tags,
+    parity and padding increase airtime by an amount that depends on the
+    payload and chosen block; there is no universal airtime multiplier.</p>
+    <p>The channel API exposes <code>fx25_encode</code> and
+    <code>fx25_mode</code>. Packet API field <code>fx25</code> describes
+    verified native RX; <code>tx_encoding</code> describes actual native TX
+    encoding, including <code>fallback_reason: frame_too_large</code>.
+    A later API/dashboard refresh may be needed for TX metadata.
+    See the repository&rsquo;s <code>docs/fx25.md</code> and
+    <code>docs/fx25-validation.md</code> for wire provenance, detailed limits
+    and version-specific acceptance evidence.</p>
+
     <h2>TX Timing</h2>
+    <p><strong>Beacon Now queues a request.</strong> Carrier sensing,
+    persistence and rate limits can defer dispatch; an accepted request is
+    not proof of physical transmission. Do not repeatedly click merely
+    because PTT has not keyed yet. Native carrier state is reconciled from
+    valid modem status after audio reconfiguration, so an old busy state
+    does not require another received packet to clear. Genuine busy carrier
+    still inhibits half-duplex TX. No forced-transmit timeout is used.</p>
 
     <div class="box">
       <div class="box-body">

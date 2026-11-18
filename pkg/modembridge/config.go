@@ -6,11 +6,14 @@ import (
 	"time"
 
 	"github.com/chrissnell/graywolf/pkg/configstore"
+	pb "github.com/chrissnell/graywolf/pkg/ipcproto"
 	"github.com/chrissnell/graywolf/pkg/metrics"
 )
 
 // Config drives a Bridge.
 type Config struct {
+	// OnTransmitEncoding must be non-blocking; local encoding is not RF success.
+	OnTransmitEncoding func(*pb.TransmitEncoding)
 	// BinaryPath is the path to graywolf-modem. Defaults to
 	// "./target/release/graywolf-modem" (the workspace-shared cargo
 	// output directory at the repo root). Ignored when ExistingSocket

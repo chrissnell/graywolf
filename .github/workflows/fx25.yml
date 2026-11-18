@@ -1,0 +1,102 @@
+name: FX.25 native offline validation
+
+on:
+  push:
+    paths:
+      - 'graywolf-modem/**'
+      - 'proto/**'
+      - 'scripts/fx25/**'
+      - 'pkg/configstore/**'
+      - 'pkg/webapi/**'
+      - 'web/**'
+      - 'Cargo.*'
+      - '.github/workflows/fx25.yml'
+  pull_request:
+    paths:
+      - 'graywolf-modem/**'
+      - 'proto/**'
+      - 'scripts/fx25/**'
+      - 'pkg/configstore/**'
+      - 'pkg/webapi/**'
+      - 'web/**'
+      - 'Cargo.*'
+      - '.github/workflows/fx25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: '28.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+      # Only pure offline tests: no audio device, local socket or radio access.
+      - run: cargo test --release --lib fx25
+      - run: cargo test --release --lib il2p
+      - if: runner.os == 'Linux'
+        run: cargo test --release --lib --features android-test-stub fx25
+      - if: runner.os == 'Linux'
+        run: |
+          rustup target add aarch64-linux-android
+          cargo check --lib --target aarch64-linux-android
+
+      - name: Independent 1200/experimental-300-baud Dire Wolf interoperability (offline)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cmake libasound2-dev
+          git init /tmp/direwolf-fx25
+          git -C /tmp/direwolf-fx25 remote add origin https://github.com/wb2osz/direwolf.git
+          git -C /tmp/direwolf-fx25 fetch --depth=1 origin eda1383f5fa9d8ba3cb27f99db1d2c79494404c9
+          git -C /tmp/direwolf-fx25 checkout --detach FETCH_HEAD
+          cmake -S /tmp/direwolf-fx25 -B /tmp/direwolf-fx25/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/direwolf-fx25/build --target atest gen_packets -j 2
+          cargo build --release --example fx25_audio
+          export GRAYWOLF_FX25_TOOL="$PWD/target/release/examples/fx25_audio"
+          python3 scripts/fx25/interop.py /tmp/direwolf-fx25
+          python3 scripts/fx25/interop.py /tmp/direwolf-fx25 --baud 300
+          python3 scripts/fx25/stress300.py /tmp/direwolf-fx25
+
+  go-web:
+    name: Experimental FX.25 config, API, web and documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y libasound2-dev jq
+      - name: Install documentation generator
+        shell: bash
+        run: |
+          mkdir -p scratch/bin
+          GOBIN="$PWD/scratch/bin" go install github.com/swaggo/swag/cmd/swag@v1.16.4
+      - run: make docs-check docs-lint api-client-check
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: npm --prefix web test
+      - run: npm --prefix web run api:check
+      - run: npm --prefix web run build

@@ -521,3 +521,100 @@ func TestChannelsCreate_DefaultsEnabled(t *testing.T) {
 		t.Fatalf("response Enabled=%v, want true", resp.Enabled)
 	}
 }
+
+func TestChannelsFX25ConfigurationAPI(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	rows, err := srv.store.ListChannels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch := rows[0]
+	ch.FX25Encode = true
+	ch.FX25Mode = "64"
+	if err := srv.store.UpdateChannel(context.Background(), &ch); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/channels", "/api/channels/" + strconv.Itoa(int(ch.ID))} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
+		}
+		var out dto.ChannelResponse
+		if path == "/api/channels" {
+			var list []dto.ChannelResponse
+			if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+				t.Fatal(err)
+			}
+			out = list[0]
+		} else if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		if !out.FX25Encode || out.FX25Mode != "64" {
+			t.Fatalf("missing FX.25 configuration: %s", rec.Body.String())
+		}
+	}
+	ch.FX25Encode = false
+	if err := srv.store.UpdateChannel(context.Background(), &ch); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := srv.store.GetChannel(context.Background(), ch.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.FX25Encode || saved.FX25Mode != "64" {
+		t.Fatal("disable must retain selected mode")
+	}
+}
+
+func TestChannelsExperimental300FX25OptInAPI(t *testing.T) {
+	srv, _ := newTestServer(t)
+	mux := http.NewServeMux()
+	srv.RegisterRoutes(mux)
+	body := `{"name":"experimental HF test","input_device_id":1,"modem_type":"afsk","bit_rate":300,"mark_freq":1600,"space_freq":1800,"profile":"A","num_slicers":1,"fix_bits":"none","enabled":false}`
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/channels", strings.NewReader(body)))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+	var row dto.ChannelResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &row); err != nil {
+		t.Fatal(err)
+	}
+	if row.FX25Encode {
+		t.Fatal("300-baud TX must default off")
+	}
+	path := "/api/channels/" + strconv.Itoa(int(row.ID))
+	for _, enabled := range []bool{true, false} {
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatal(err)
+		}
+		payload["fx25_encode"] = enabled
+		payload["fx25_mode"] = "32"
+		raw, err := json.Marshal(payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest("PUT", path, strings.NewReader(string(raw))))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%d %s", rec.Code, rec.Body.String())
+		}
+		saved, err := srv.store.GetChannel(context.Background(), row.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if saved.FX25Encode != enabled || saved.FX25Mode != "32" || saved.BitRate != 300 {
+			t.Fatal("opt-in did not persist")
+		}
+	}
+	bad := strings.Replace(body, `"bit_rate":300`, `"bit_rate":600,"fx25_encode":true`, 1)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/channels", strings.NewReader(bad)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("unsupported rate accepted: %d %s", rec.Code, rec.Body.String())
+	}
+}

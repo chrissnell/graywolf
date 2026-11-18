@@ -26,6 +26,10 @@ const (
 type Entry struct {
 	// Timestamp is the UTC RFC3339 time the packet was recorded.
 	Timestamp time.Time `json:"timestamp"`
+	FrameID   uint64    `json:"frame_id,omitempty"`
+	// TXEncoding is the native modem's actual encoding, not inferred configuration.
+	// It reports local encoding/queueing, not physical transmission or reception.
+	TXEncoding *TXEncoding `json:"tx_encoding,omitempty"`
 	// Channel is the graywolf channel ID that observed or transmitted the packet.
 	Channel uint32 `json:"channel"`
 	// Direction labels the flow: "RX" (heard on air), "TX" (transmitted by us), or "IS" (APRS-IS upload/download).
@@ -47,6 +51,27 @@ type Entry struct {
 	// the modem; nil for TX, APRS-IS, and hardware KISS-TNC entries, which carry
 	// no soundcard-domain level.
 	AudioLevel *AudioLevel `json:"audio_level,omitempty"`
+	// FX25 is present only for native RX after RS and embedded HDLC/FCS validation.
+	FX25 *FX25Reception `json:"fx25,omitempty"`
+}
+
+// TXEncoding describes the actual format accepted by the native TX worker.
+type TXEncoding struct {
+	Encoding       string `json:"encoding"`
+	Tag            uint32 `json:"tag,omitempty"`
+	DataBytes      uint32 `json:"data_bytes,omitempty"`
+	ParityBytes    uint32 `json:"parity_bytes,omitempty"`
+	FX25Requested  bool   `json:"fx25_requested"`
+	FallbackReason string `json:"fallback_reason,omitempty"`
+}
+
+// FX25Reception identifies a validated standard FX.25 decode, including clean
+// codewords. CorrectedSymbols counts repaired codeword bytes, not tag bits.
+type FX25Reception struct {
+	Tag              uint32 `json:"tag"`
+	DataBytes        uint32 `json:"data_bytes"`
+	ParityBytes      uint32 `json:"parity_bytes"`
+	CorrectedSymbols uint32 `json:"corrected_symbols"`
 }
 
 // AudioLevel is the received audio level a demodulator measured while
@@ -93,11 +118,12 @@ type Log struct {
 	cap    int
 	maxAge time.Duration
 
-	mu      sync.RWMutex
-	entries []Entry // circular buffer
-	head    int     // next write index
-	size    int     // number of valid entries (<= cap)
-	nextID  uint64  // monotonic id (unused externally; kept for future pagination)
+	mu              sync.RWMutex
+	entries         []Entry // circular buffer
+	head            int     // next write index
+	size            int     // number of valid entries (<= cap)
+	pendingEncoding map[txKey]pendingEncoding
+	nextID          uint64 // monotonic id (unused externally; kept for future pagination)
 
 	// Subscribe fanout state. subMu guards the map and the per-subscriber
 	// channels. Held inside Record after the ring write, so Record stays
@@ -129,6 +155,15 @@ func (l *Log) Record(e Entry) {
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	if e.Direction == DirTX && e.FrameID != 0 {
+		key := txKey{e.FrameID, e.Channel}
+		if pending, ok := l.pendingEncoding[key]; ok {
+			if time.Since(pending.at) < time.Minute {
+				e.TXEncoding = pending.encoding
+			}
+			delete(l.pendingEncoding, key)
+		}
+	}
 	l.entries[l.head] = e
 	l.head = (l.head + 1) % l.cap
 	if l.size < l.cap {

@@ -2118,3 +2118,27 @@ Source: [`../../web/src/components/messages/MessageThread.svelte`](../../web/src
 [`../../web/src/lib/messagesStore.svelte.js`](../../web/src/lib/messagesStore.svelte.js)
 (`adjustUnread`),
 [`../../web/src/lib/unread-batch-core.js`](../../web/src/lib/unread-batch-core.js).
+
+## Native FX.25 scope and transmission evidence
+
+FX.25 TX/RX supports Bell 202 AFSK 1200 baud (1200/2200 Hz), plus
+experimental 300 baud (1600/1800 Hz). The 300-baud draft is tester-only, with
+automatic RX and explicit opt-in TX off by default. No 300-baud physical
+acceptance is claimed; UI opt-in requires an airtime/experimental confirmation.
+Unsupported FX.25 configuration is rejected. An oversized frame in an
+otherwise supported configuration uses explicitly reported ordinary AX.25
+fallback; it is never truncated. TX selection and metadata come from the
+same Rust builder. RX `fx25` metadata requires successful RS and embedded
+HDLC/FCS validation. A channel toggle or tag detection alone is insufficient.
+See [implementation](../fx25.md) and [acceptance record](../fx25-validation.md).
+
+`TransmitEncoding` enriches an existing packet row by process-local frame ID
+and channel; it must not broadcast a second packet event. Encoding/queue
+acceptance and the legacy beacon API `sent` response are not RF proof.
+
+Only modem status marked `dcd_state_valid` may reconcile cached carrier state.
+Initial/placeholder quiet status must not clear a genuine busy indication.
+After audio reconfiguration, valid quiet status can clear stale busy state
+without another RX packet or edge. Do not add a timeout that forces TX through
+a genuine busy channel. Input-device binding remains a separate native
+backend requirement; this does not imply decoded RX is required for TX.

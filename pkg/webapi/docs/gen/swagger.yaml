@@ -1152,6 +1152,15 @@ definitions:
         type: string
       fx25_encode:
         type: boolean
+      fx25_mode:
+        default: auto
+        description: 'FX25Mode selects TX mode: auto (recommended), 16, 32, or 64 parity bytes. RX remains automatic.'
+        enum:
+          - auto
+          - "16"
+          - "32"
+          - "64"
+        type: string
       il2p_encode:
         type: boolean
       input_channel:
@@ -1201,6 +1210,15 @@ definitions:
         type: string
       fx25_encode:
         type: boolean
+      fx25_mode:
+        default: auto
+        description: 'FX25Mode selects TX mode: auto (recommended), 16, 32, or 64 parity bytes. RX remains automatic.'
+        enum:
+          - auto
+          - "16"
+          - "32"
+          - "64"
+        type: string
       id:
         type: integer
       il2p_encode:
@@ -2676,6 +2694,32 @@ definitions:
       - DirRX
       - DirTX
       - DirIS
+  packetlog.FX25Reception:
+    properties:
+      corrected_symbols:
+        type: integer
+      data_bytes:
+        type: integer
+      parity_bytes:
+        type: integer
+      tag:
+        type: integer
+    type: object
+  packetlog.TXEncoding:
+    properties:
+      data_bytes:
+        type: integer
+      encoding:
+        type: string
+      fallback_reason:
+        type: string
+      fx25_requested:
+        type: boolean
+      parity_bytes:
+        type: integer
+      tag:
+        type: integer
+    type: object
   pttdevice.AvailableDevice:
     properties:
       description:
@@ -3169,6 +3213,12 @@ definitions:
       distance_mi:
         description: DistanceMi is the great-circle distance from this station's GPS fix to the packet's reported position, in statute miles; omitted when either position is unavailable.
         type: number
+      frame_id:
+        type: integer
+      fx25:
+        allOf:
+          - $ref: '#/definitions/packetlog.FX25Reception'
+        description: FX25 is present only for native RX after RS and embedded HDLC/FCS validation.
       lat:
         description: |-
           Lat/Lon are the packet's reported coordinates in decimal degrees (WGS84),
@@ -3194,6 +3244,12 @@ definitions:
       timestamp:
         description: Timestamp is the UTC RFC3339 time the packet was recorded.
         type: string
+      tx_encoding:
+        allOf:
+          - $ref: '#/definitions/packetlog.TXEncoding'
+        description: |-
+          TXEncoding is the native modem's actual encoding, not inferred configuration.
+          It reports local encoding/queueing, not physical transmission or reception.
       type:
         description: Type is the APRS packet type (position, message, status, ...) when the payload decoded successfully.
         type: string

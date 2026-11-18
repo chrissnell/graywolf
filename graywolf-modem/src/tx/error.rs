@@ -16,11 +16,19 @@ pub enum TxError {
     /// `sample_rate` was zero. The NCO phase-increment computation would
     /// divide by zero, so callers must supply a non-zero rate.
     InvalidSampleRate,
+    UnsupportedFx25,
+    UnsupportedFx25Parity,
+    Fx25FrameTooLong,
+    InvalidFx25Frame,
 }
 
 impl fmt::Display for TxError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::InvalidFx25Frame => f.write_str("FX.25 requires at least 15 AX.25 frame bytes"),
+            Self::UnsupportedFx25Parity => f.write_str("FX.25 parity must be 0 (automatic), 16, 32, or 64"),
+            Self::UnsupportedFx25 => f.write_str("FX.25 requires AFSK at 1200 baud (1200/2200 Hz) or experimental 300 baud (1600/1800 Hz)"),
+            Self::Fx25FrameTooLong => f.write_str("FX.25 frame exceeds the selected standard mode capacity including flags, stuffing and FCS"),
             Self::InvalidSampleRate => f.write_str("sample rate must be non-zero"),
         }
     }

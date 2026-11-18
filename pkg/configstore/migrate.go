@@ -218,6 +218,8 @@ type migration struct {
 //	    of how the column was created. Post-AutoMigrate; the ALTER is
 //	    skipped when AutoMigrate already added the column (columnExists
 //	    guard). See graywolf#517.
+//
+// 31 — fx25_300_explicit_opt_in: clear legacy inert 300-baud TX flags once.
 var schemaMigrations = []migration{
 	{version: 1, name: "beacon_compress_default", phase: postAutoMigrate, run: migrateBeaconCompressDefault},
 	{version: 2, name: "channel_device_fields", phase: preAutoMigrate, run: migrateChannelDeviceFields},
@@ -249,6 +251,7 @@ var schemaMigrations = []migration{
 	{version: 28, name: "igate_gate_is_to_rf_backfill", phase: postAutoMigrate, run: migrateIGateGateIsToRfBackfill},
 	{version: 29, name: "channels_enabled", phase: postAutoMigrate, run: migrateChannelsEnabled},
 	{version: 30, name: "kiss_serial_tnc_default", phase: postAutoMigrate, run: migrateKissSerialTncDefault},
+	{version: 31, name: "fx25_300_explicit_opt_in", phase: postAutoMigrate, run: migrateFX25300OptIn},
 }
 
 // runMigrations applies every pending migration in the given phase,

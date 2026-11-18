@@ -93,7 +93,7 @@
             <tr>
               <td><code>graywolf-modem</code></td>
               <td>Rust</td>
-              <td>Audio I/O, AFSK/9600/PSK demodulation, HDLC framing, FEC encoding/decoding, PTT control, TX modulation</td>
+              <td>Audio I/O; AFSK TX/RX; PSK/G3RUH receiver implementations; HDLC; native FX.25 for 1200-baud Bell 202 and experimental 300-baud AFSK; PTT. PSK/G3RUH TX and live IL2P are not implemented.</td>
             </tr>
             <tr>
               <td><code>graywolf</code></td>
@@ -268,8 +268,8 @@
             <tr><td>AGWPE</td><td>AGW Packet Engine protocol (TCP)</td></tr>
             <tr><td>APRS-IS</td><td>APRS Internet System gateway protocol (TCP, passcode auth)</td></tr>
             <tr><td>HDLC</td><td>High-Level Data Link Control with NRZI encoding</td></tr>
-            <tr><td>FX.25</td><td>Forward error correction (interleaved convolutional code)</td></tr>
-            <tr><td>IL2P</td><td>Improved Layer 2 Protocol (second generation FEC)</td></tr>
+            <tr><td>FX.25</td><td>Reed-Solomon FEC around stuffed AX.25 HDLC; native 1200-baud Bell 202 TX/RX; experimental 300-baud AFSK has no on-air acceptance</td></tr>
+            <tr><td>IL2P</td><td>Improved Layer 2 Protocol codec library; not connected to live native TX/RX</td></tr>
           </tbody>
         </table>
       </div>

@@ -44,6 +44,100 @@ pub fn build_samples(
     afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)
 }
 
+/// Build native AFSK FX.25 audio (1200 baud; experimental 300 baud). Oversized frames use ordinary AX.25,
+/// matching Dire Wolf. Unsupported rates/parity still return errors.
+pub fn build_fx25_samples(
+    frame: &[u8],
+    txdelay_ms: u32,
+    txtail_ms: u32,
+    sample_rate: u32,
+    baud: u32,
+    mark_freq: u32,
+    space_freq: u32,
+) -> Result<Vec<i16>, TxError> {
+    build_fx25_samples_with_parity(
+        frame,
+        txdelay_ms,
+        txtail_ms,
+        sample_rate,
+        baud,
+        mark_freq,
+        space_freq,
+        0,
+    )
+}
+
+/// Same production path with an explicit standard parity count (0 = automatic).
+#[allow(clippy::too_many_arguments)]
+pub fn build_fx25_samples_with_parity(
+    frame: &[u8],
+    txdelay_ms: u32,
+    txtail_ms: u32,
+    sample_rate: u32,
+    baud: u32,
+    mark_freq: u32,
+    space_freq: u32,
+    parity: u32,
+) -> Result<Vec<i16>, TxError> {
+    Ok(build_fx25_transmission(frame, txdelay_ms, txtail_ms, sample_rate,
+        baud, mark_freq, space_freq, parity)?.samples)
+}
+
+/// PCM and its actual encoding, frozen together before queueing.
+pub struct BuiltTransmission {
+    pub samples: Vec<i16>,
+    pub encoding: crate::ipc::proto::TransmitEncoding,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn build_fx25_transmission(
+    frame: &[u8], txdelay_ms: u32, txtail_ms: u32, sample_rate: u32,
+    baud: u32, mark_freq: u32, space_freq: u32, parity: u32,
+) -> Result<BuiltTransmission, TxError> {
+    if !crate::fx25::supports_afsk(baud, mark_freq, space_freq) {
+        return Err(TxError::UnsupportedFx25);
+    }
+    if !matches!(parity, 0 | 16 | 32 | 64) {
+        return Err(TxError::UnsupportedFx25Parity);
+    }
+    if frame.len() < 15 { return Err(TxError::InvalidFx25Frame); }
+    let Some(wire) = crate::fx25::encode_with_parity(frame, parity) else {
+        return Ok(BuiltTransmission {
+            samples: build_samples(frame, txdelay_ms, txtail_ms, sample_rate, baud, mark_freq, space_freq)?,
+            encoding: crate::ipc::proto::TransmitEncoding {
+                encoding: "ax25".into(), fx25_requested: true,
+                fallback_reason: "frame_too_large".into(), ..Default::default()
+            },
+        });
+    };
+    let tag_value = u64::from_le_bytes(wire[..8].try_into().unwrap());
+    let tag = crate::fx25::FX25_TAGS.iter().position(|t| t.0 == tag_value).unwrap();
+    let (_, _, data, check) = crate::fx25::FX25_TAGS[tag];
+    let encoding = crate::ipc::proto::TransmitEncoding {
+        encoding: "fx25".into(), tag: tag as u32, data_bytes: data as u32,
+        parity_bytes: check as u32, fx25_requested: true, ..Default::default()
+    };
+    let bytes = std::iter::repeat_n(0x7e, flags_for_ms(txdelay_ms, baud).max(1))
+        .chain(wire)
+        .chain(std::iter::repeat_n(
+            0x7e,
+            flags_for_ms(txtail_ms, baud).max(1),
+        ));
+    let mut line = 0;
+    let bits: Vec<u8> = bytes
+        .flat_map(|b| (0..8).map(move |n| (b >> n) & 1))
+        .map(|bit| {
+            if bit == 0 {
+                line ^= 1;
+            }
+            line
+        })
+        .collect();
+    Ok(BuiltTransmission {
+        samples: afsk_mod::modulate(&bits, sample_rate, baud, mark_freq, space_freq)?, encoding,
+    })
+}
+
 /// Prepend `ms` milliseconds of silence (at `sample_rate`) to `samples`.
 ///
 /// Used by the Android Digirig Lite tone PTT path: the AFSK (left channel)
@@ -205,5 +299,40 @@ mod tests {
     fn zero_sample_rate_returns_invalid_sample_rate_error() {
         let err = build_samples(&sample_beacon(), 300, 100, 0, 1200, 1200, 2200).unwrap_err();
         assert_eq!(err, TxError::InvalidSampleRate);
+    }
+}
+
+#[cfg(test)]
+mod fx25_transmit_metadata_tests {
+    use super::*;
+    #[test]
+    fn fx25_actual_format_and_explicit_size_fallback() {
+        for parity in [0, 16, 32, 64] {
+            let frame = vec![0; 150];
+            let built = build_fx25_transmission(&frame,300,100,48000,1200,1200,2200,parity).unwrap();
+            assert_eq!(built.encoding.encoding,"fx25");
+            let (_,_,data,check)=crate::fx25::FX25_TAGS[built.encoding.tag as usize];
+            assert_eq!(built.encoding.data_bytes,data as u32);
+            assert_eq!(built.encoding.parity_bytes,check as u32);
+            assert_eq!(built.samples,build_fx25_samples_with_parity(&frame,300,100,48000,1200,1200,2200,parity).unwrap());
+            // Fallback includes frames beyond the absolute maximum and
+            // fixed-mode overflows which still fit a different parity family.
+            for frame in [vec![0;300],vec![255;235]] {
+                let b=build_fx25_transmission(&frame,300,100,48000,1200,1200,2200,parity).unwrap();
+                assert_eq!(b.samples,build_samples(&frame,300,100,48000,1200,1200,2200).unwrap());
+                assert_eq!(b.encoding.encoding,"ax25");
+                assert_eq!(b.encoding.fallback_reason,"frame_too_large");
+                assert_eq!(b.encoding.tag,0);
+                assert!(b.encoding.fx25_requested);
+            }
+        }
+        let frame=vec![0;220];
+        for parity in [32,64] {
+            let b=build_fx25_transmission(&frame,300,100,48000,1200,1200,2200,parity).unwrap();
+            assert_eq!(b.encoding.fallback_reason,"frame_too_large");
+        }
+        assert!(matches!(build_fx25_transmission(&[0;100],300,100,48000,600,1600,1800,0),Err(TxError::UnsupportedFx25)));
+        assert!(matches!(build_fx25_transmission(&[0;100],300,100,48000,1200,1200,2200,15),Err(TxError::UnsupportedFx25Parity)));
+        assert!(matches!(build_fx25_transmission(&[0;14],300,100,48000,1200,1200,2200,0),Err(TxError::InvalidFx25Frame)));
     }
 }

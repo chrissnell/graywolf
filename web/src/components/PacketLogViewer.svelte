@@ -22,6 +22,7 @@
     packetToEntry,
     audioLevel,
     displaySegments,
+    packetEncoding,
   } from '../lib/packetColumns.js';
   import PacketInspector from './PacketInspector.svelte';
 
@@ -130,10 +131,14 @@
 
 {#snippet typeCell(_value, entry)}
   {@const origin = originTag(entry)}
-  {#if entry.type || origin}
+  {@const reception = packetEncoding(entry)}
+  {#if entry.type || origin || reception}
     <div class="pkt-type-stack">
       {#if entry.type}
         <span class="pkt-badge pkt-b-type" data-type={entry.type}>{entry.type}</span>
+      {/if}
+      {#if reception}
+        <span class="pkt-badge pkt-b-reception" class:pkt-b-fx25={reception.fx25}>{reception.label}</span>
       {/if}
       {#if origin}
         <span class="pkt-badge pkt-b-origin" data-origin={origin.cls}>{origin.label}</span>
@@ -142,6 +147,17 @@
   {:else}
     <span class="pkt-dim">—</span>
   {/if}
+{/snippet}
+
+{#snippet packetFooter(entry)}
+  {@const reception = packetEncoding(entry)}
+  {#if reception}
+    <div class="pkt-reception" data-testid="packet-reception">
+      <span>{reception.detail}</span>
+      {#if reception.fx25}<span>Tag {reception.tag} · {reception.parity} parity bytes</span>{/if}
+    </div>
+  {/if}
+  {@render rawPacketFooter(entry)}
 {/snippet}
 
 {#snippet srcDstCell(_value, entry)}
@@ -237,7 +253,7 @@
     {showHeader}
     {height}
     {mobileBreakpoint}
-    footer={rawPacketFooter}
+    footer={packetFooter}
     class={newestFirst ? 'pkt-order-newest' : undefined}
   />
 </div>
@@ -249,6 +265,10 @@
 <style>
   /* Cell-level styles. Chonky owns layout (.log-grid-cell / .log-card etc);
      we only theme the values & badges that used to live in the routes. */
+
+  .pkt-reception { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 0.75rem; color: var(--color-text-dim); margin-bottom: 4px; }
+  .pkt-b-reception { background: var(--color-surface-raised); color: var(--color-text); }
+  .pkt-b-fx25 { color: var(--color-success); }
 
   .pkt-time {
     font-variant-numeric: tabular-nums;
@@ -369,7 +389,9 @@
     flex-direction: row;
     align-items: center;
     gap: 4px;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
+    max-width: 100%;
+    min-width: 0;
   }
 
   .pkt-b-origin {

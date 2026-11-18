@@ -299,10 +299,12 @@ fn run_demod(
                 0,
                 &RECOMMENDED_3DEMOD,
             );
+            let mut active_dsp = (1200,1200,2200);
             let mut first_frame_logged = false;
             while !stop_dsp.load(Ordering::Relaxed) {
                 match rx.recv_timeout(Duration::from_millis(250)) {
                     Ok(chunk) => {
+                        config_state::sync_rx_demod(&mut demod, &mut active_dsp, TARGET_SAMPLE_RATE);
                         for frame in feed_chunk(&mut demod, &chunk) {
                             if !first_frame_logged {
                                 info!("poc-b: first_frame_decoded");
@@ -314,18 +316,8 @@ fn run_demod(
                             // 0-indexed `frame.chan`. Without this tag
                             // the Go dispatcher can't attribute frames
                             // to a per-channel rx_frames counter.
-                            let pb = ReceivedFrame {
-                                channel: config_state::channel_id(),
-                                subchan: frame.subchan as u32,
-                                slice: frame.slice as u32,
-                                data: frame.data,
-                                quality: 0,
-                                audio_level_mark: 0.0,
-                                audio_level_space: 0.0,
-                                speed_error: 0.0,
-                                retry: String::new(),
-                                timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
-                            };
+                            let mut pb = crate::modem::build_received(&frame);
+                            pb.channel = config_state::channel_id();
                             config_state::increment_rx_frames();
                             // Drop on full — IPC thread will catch up when the
                             // Go child connects. Count drops so a deaf modem
@@ -420,6 +412,7 @@ fn run_demod(
                     audio_level_space: 0.0,
                     audio_level_peak: 0.0,
                     dcd_state: false,
+                    dcd_state_valid: false, // Android does not yet report authoritative DCD.
                     shutdown_complete: false,
                     timestamp_ns: Utc::now().timestamp_nanos_opt().unwrap_or(0) as u64,
                 };
@@ -453,6 +446,9 @@ fn run_demod(
                             // Capture DSP params so TransmitFrame can call
                             // build_samples with the same baud / tone pair.
                             config_state::set_channel_dsp(cc.baud, cc.mark_freq, cc.space_freq);
+                            config_state::set_fx25_config(cc.fx25_encode, cc.fx25_parity,
+                                cc.modem_type == "afsk" && !cc.il2p_encode &&
+                                crate::fx25::supports_afsk(cc.baud, cc.mark_freq, cc.space_freq));
                             // If this channel already uses Digirig tone PTT,
                             // re-pre-warm the sink at the (possibly new) mark
                             // frequency. Covers the ConfigurePtt-before-
@@ -524,16 +520,15 @@ fn run_demod(
                             } else {
                                 config_state::txtail_ms()
                             };
-                            match crate::tx::build_samples(
-                                &tf.data,
-                                txdelay,
-                                txtail,
-                                TARGET_SAMPLE_RATE,
-                                config_state::baud(),
-                                config_state::mark_freq(),
-                                config_state::space_freq(),
-                            ) {
-                                Ok(samples) => {
+                            match config_state::build_tx_transmission(&tf.data, txdelay, txtail, TARGET_SAMPLE_RATE) {
+                                Ok(built) => {
+                                    let mut encoding = built.encoding;
+                                    encoding.frame_id = tf.frame_id;
+                                    encoding.channel = tf.channel;
+                                    if !encoding.fallback_reason.is_empty() {
+                                        warn!("channel {} frame {}: FX.25 frame too large; encoded ordinary AX.25", tf.channel, tf.frame_id);
+                                    }
+                                    let samples = built.samples;
                                     // Digirig Lite tone PTT: prepend a 500 ms
                                     // silent left-channel lead-in so the
                                     // right-channel keying tone (gated on at
@@ -564,6 +559,9 @@ fn run_demod(
                                     if let Err(e) = tx_worker.transmit(job) {
                                         warn!("transmit(channel={}): {}", tf.channel, e);
                                     } else {
+                                        let _ = handle.send(&IpcMessage {
+                                            payload: Some(ipc_message::Payload::TransmitEncoding(encoding)),
+                                        });
                                         config_state::increment_tx_frames();
                                     }
                                 }

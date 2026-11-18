@@ -3,7 +3,8 @@
   import { Button, Input, Select, Toggle } from '@chrissnell/chonky-ui';
   import Modal from '../../components/Modal.svelte';
   import FormField from '../../components/FormField.svelte';
-  import { blankForm, rowToForm, formToPayload, validateForm } from '../../lib/channelForm.js';
+  import ConfirmDialog from '../../components/ConfirmDialog.svelte';
+  import { blankForm, rowToForm, formToPayload, validateForm, experimentalFx25TxNeedsConfirmation, FX25_300_WARNING } from '../../lib/channelForm.js';
   import { Platform } from '../../lib/platform.js';
 
   let { open = $bindable(), editing, audioDevices, txTimings, onSave, onCancel } = $props();
@@ -12,6 +13,9 @@
   // triggered by the `open` + `editing` prop pair from the parent.
   let form = $state(blankForm());
   let errors = $state({});
+  let confirmExperimentalFx25 = $state(false);
+  let originalFx25Config = $state(null);
+  let experimental300 = $derived(isModemType && form.modem_type === 'afsk' && Number(form.bit_rate) === 300);
 
   let isModemType = $derived(form.channel_type === 'modem');
   let isTxEnabled = $derived(isModemType && form.output_device_id !== '0');
@@ -23,6 +27,13 @@
     { value: '0', label: 'None (RX only)' },
     ...outputDevices.map(d => ({ value: String(d.id), label: d.name })),
   ]);
+
+  const fx25ParityOptions = [
+    {value:'auto',label:'Automatic (recommended)'},
+    {value:'16',label:'16 parity bytes'},
+    {value:'32',label:'32 parity bytes'},
+    {value:'64',label:'64 parity bytes'},
+  ];
 
   const modemOptions = [
     { value: 'afsk', label: 'AFSK' },
@@ -50,6 +61,8 @@
       // closed→open transition: initialise form exactly once
       untrack(() => {
         const row = editing;
+        originalFx25Config = row ? { ...row } : null;
+        confirmExperimentalFx25 = false;
         if (row) {
           form = rowToForm(row, (txTimings || {})[row.id]);
           errors = {};
@@ -80,6 +93,15 @@
   }
 
   function handleSave() {
+    if (!validate()) return;
+    if (experimentalFx25TxNeedsConfirmation(form, originalFx25Config)) {
+      confirmExperimentalFx25 = true;
+      return;
+    }
+    persistChannel();
+  }
+
+  function persistChannel() {
     if (!validate()) return;
     const payload = formToPayload(form);
     // Pass the full context the parent's persistSave path needs:
@@ -215,6 +237,18 @@
       </div>
     </div>
 
+    <FormField label="Forward error correction" id="ch-fx25" error={errors.fx25_encode}>
+      <Toggle id="ch-fx25" bind:checked={form.fx25_encode} label={experimental300 ? 'Experimental FX.25 transmit (300 baud)' : 'FX.25 transmit'} />
+      {#if form.fx25_encode}
+        <Select id="ch-fx25-parity" aria-label="FX.25 transmit parity" bind:value={form.fx25_mode} options={fx25ParityOptions} />
+        <p>Automatic is recommended for everyday use. Choose a fixed parity mode for specific use cases or controlled testing.</p>
+      {/if}
+      <p>FX.25 reception is automatic on 1200-baud AFSK (1200/2200 Hz) and experimental 300-baud AFSK (1600/1800 Hz). Frames too large for the selected mode use ordinary AX.25; the packet log identifies the fallback.</p>
+      {#if experimental300}
+        <p class="experimental-fx25-warning">{FX25_300_WARNING}</p>
+      {/if}
+    </FormField>
+
     <!-- ── Timing ─────────────────────────────────────────────────── -->
     {#if isTxEnabled}
       <div class="tx-timing-section">
@@ -256,7 +290,14 @@
 </Modal>
 </div>
 
+<ConfirmDialog bind:open={confirmExperimentalFx25}
+  title="Enable experimental 300-baud FX.25 transmission?"
+  message={FX25_300_WARNING + ' Save this channel with experimental FX.25 TX enabled?'}
+  confirmLabel="Enable experimental TX and save" confirmVariant="primary"
+  onConfirm={persistChannel} />
+
 <style>
+  .experimental-fx25-warning { border-left: 3px solid var(--color-warning); padding-left: 10px; }
   /* Wider modal for channel editor */
   .wide-modal :global(.modal) {
     width: min(860px, 94vw);
