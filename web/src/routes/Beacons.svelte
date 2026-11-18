@@ -92,7 +92,7 @@
   // openEdit's Object.assign still covers the full form snapshot and
   // we don't need a parallel lifecycle for the checkbox.
   let form = $state({
-    type: 'position', object_name: '',
+    type: 'position', object_name: '', label: '',
     channel: '', callsign: '', callsign_override: false,
     destination: 'APGRWO', path: 'WIDE1-1,WIDE2-1',
     symbol_table: '/', symbol: '-', overlay: '',
@@ -288,6 +288,7 @@
   function openCreate() {
     editing = null;
     form.type = 'position';
+    form.label = '';
     form.object_name = '';
     // A radioless (APRS-IS-only) station has no channels at all. Rather
     // than block beacon creation, default to an APRS-IS-only beacon so
@@ -335,6 +336,7 @@
     // on the RadioGroup picks up the new value reliably.
     Object.assign(form, row, {
       type: row.type || 'position',
+      label: row.label || '',
       object_name: row.object_name || '',
       channel: String(row.channel),
       callsign: rowCall,
@@ -445,6 +447,7 @@
     }
     const data = {
       ...form,
+      label: form.label.trim(),
       callsign: callsignToSend,
       channel: channelId,
       use_gps: useGps,
@@ -625,30 +628,41 @@
                 <span class="symbol-swatch-overlay">{b.overlay}</span>
               {/if}
             </span>
+            {#if b.label?.trim()}
+              <span class="beacon-callsign">{b.label.trim()}</span>
+            {:else}
             {#if b.type === 'object' && b.object_name}
               <span class="beacon-callsign">{b.object_name}</span>
-              <span class="beacon-callsign-inherited">via {b.callsign || stationCallsign || '(not set)'}</span>
             {:else if b.callsign}
               <span class="beacon-callsign">{b.callsign}</span>
             {:else if stationCallsign}
               <span class="beacon-callsign">{stationCallsign}</span>
-              <span class="beacon-callsign-inherited">(inherited)</span>
             {:else}
               <a href="#/callsign" class="beacon-callsign beacon-callsign-unset">(Callsign not set)</a>
             {/if}
+            {/if}
           </div>
-          <div class="beacon-badges">
-            <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
-            {#if b.type === 'object'}
-              <Badge variant="info">Object</Badge>
-            {:else if b.type === 'tracker'}
-              <Badge variant="info">Tracker</Badge>
+          <div class="beacon-metadata">
+            {#if b.label?.trim()}
+              <span class="beacon-callsign-inherited">({b.type === 'object' && b.object_name ? b.object_name : (b.callsign || stationCallsign || 'unset')})</span>
+            {:else if b.type === 'object' && b.object_name}
+              <span class="beacon-callsign-inherited">via {b.callsign || stationCallsign || '(not set)'}</span>
+            {:else if !b.callsign && stationCallsign}
+              <span class="beacon-callsign-inherited">(inherited)</span>
             {/if}
-            {#if b.send_path === 'is_only'}
-              <Badge variant="info">APRS-IS only</Badge>
-            {:else if b.send_path === 'both'}
-              <Badge variant="info">APRS-IS</Badge>
-            {/if}
+            <div class="beacon-badges">
+              <Badge variant={b.enabled ? 'success' : 'default'}>{b.enabled ? 'Enabled' : 'Disabled'}</Badge>
+              {#if b.type === 'object'}
+                <Badge variant="info">Object</Badge>
+              {:else if b.type === 'tracker'}
+                <Badge variant="info">Tracker</Badge>
+              {/if}
+              {#if b.send_path === 'is_only'}
+                <Badge variant="info">APRS-IS only</Badge>
+              {:else if b.send_path === 'both'}
+                <Badge variant="info">APRS-IS</Badge>
+              {/if}
+            </div>
           </div>
         </div>
 
@@ -787,6 +801,10 @@
       <div style="margin-bottom: 12px;">
         <Toggle bind:checked={form.enabled} label="Enabled" />
       </div>
+      <FormField label="Display label (optional)" id="bcn-label"
+        hint="An internal name to distinguish beacons. Not transmitted in APRS packets.">
+        <Input id="bcn-label" bind:value={form.label} placeholder="e.g. RF Direct / 10 minutes" maxlength="80" />
+      </FormField>
       <FormField label="Type" id="bcn-type">
         <RadioGroup bind:value={form.type}>
           <div class="pos-source-row">
@@ -1046,11 +1064,12 @@
 
   .beacon-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
     gap: 12px;
   }
 
   .beacon-card {
+    min-width: 0;
     display: flex;
     flex-direction: column;
     padding: 16px;
@@ -1061,14 +1080,13 @@
 
   .beacon-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    flex-direction: column;
     margin-bottom: 12px;
     gap: 8px;
   }
   .beacon-identity {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
     min-width: 0;
   }
@@ -1077,14 +1095,21 @@
     font-size: 15px;
     font-family: var(--font-mono);
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .beacon-metadata {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+    min-width: 0;
   }
   .beacon-badges {
     display: flex;
+    flex-wrap: wrap;
     gap: 4px;
-    flex-shrink: 0;
+    min-width: 0;
   }
 
   .beacon-channel {
@@ -1419,7 +1444,8 @@
   }
 
   .beacon-callsign-inherited {
-    margin-left: 6px;
+    min-width: 0;
+    overflow-wrap: anywhere;
     font-size: 12px;
     font-style: italic;
     color: var(--text-muted, var(--color-text-muted, #888));

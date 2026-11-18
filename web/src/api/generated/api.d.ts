@@ -2467,6 +2467,7 @@ export interface components {
             gain?: number;
             height?: number;
             interval?: number;
+            label?: string;
             latitude?: number;
             longitude?: number;
             messaging?: boolean;
@@ -2513,6 +2514,7 @@ export interface components {
             height?: number;
             id?: number;
             interval?: number;
+            label?: string;
             latitude?: number;
             longitude?: number;
             messaging?: boolean;

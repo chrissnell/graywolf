@@ -122,6 +122,19 @@
       </div>
     </div>
 
+    <h2 id="beacon-display-labels">Display Labels</h2>
+
+    <p>Use the optional <strong>Display label</strong> in the beacon editor to
+      distinguish entries such as &ldquo;Home RF&rdquo; and &ldquo;GPS tracker&rdquo;.
+      The label appears on beacon cards, Dashboard beacon controls and related
+      notifications. On beacon cards, the symbol and full label occupy the top
+      row, with long labels wrapping. The underlying callsign or object name
+      and wrapping status badges appear below. This layout applies to all themes.</p>
+    <p>Labels are local display text only: they do not change the source/SSID,
+      object name, APRS symbol, comment, path or transmitted packet. Leaving the
+      label blank keeps the existing callsign/object-name display. Editing a label
+      preserves the configured symbol, including an overlay when present.</p>
+
     <h2>Common Settings</h2>
 
     <div class="box">
@@ -131,6 +144,11 @@
             <tr><th>Field</th><th>Default</th><th>Description</th></tr>
           </thead>
           <tbody>
+            <tr>
+              <td><code>label</code></td>
+              <td>Empty</td>
+              <td>Optional local display label; never transmitted. See <a href="#beacon-display-labels">Display Labels</a>.</td>
+            </tr>
             <tr>
               <td><code>channel</code></td>
               <td>&mdash;</td>
