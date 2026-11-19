@@ -97,6 +97,9 @@
       {:else}
         <Badge variant="info">APRS</Badge>
       {/if}
+      {#if !isKissOnly && channel.output_device_id && channel.fx25_encode}
+        <Badge variant="info" title="FX.25 transmit configured. Reception is automatic; individual frames may fall back to AX.25. Check the packet log for actual encoding.">FX.25</Badge>
+      {/if}
     </div>
   </div>
 
@@ -240,12 +243,14 @@
 
   .channel-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
     gap: 8px;
   }
   .channel-name {
+    flex: 1 1 100px;
     font-weight: 600;
     font-size: 15px;
     min-width: 0;
@@ -255,8 +260,11 @@
   }
   .channel-badges {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     gap: 4px;
-    flex-shrink: 0;
+    min-width: 0;
+    max-width: 100%;
   }
 
   /* RX/TX device links */
