@@ -52,6 +52,7 @@ mod tests {
             speed_error: 0.1,
             retry: "none".into(),
             timestamp_ns: 1_700_000_000_000_000_000,
+            fx25: Some(Fx25Reception { tag: 4, data_bytes: 32, parity_bytes: 16, corrected_symbols: 0 }),
         });
         let mut buf = Vec::new();
         original.encode(&mut buf).unwrap();
@@ -76,6 +77,7 @@ mod tests {
                 num_decoders: 1,
                 decoder_offset: 0,
                 fx25_encode: false,
+            fx25_parity: 0,
                 il2p_encode: false,
                 input_device_id: 1,
                 input_channel: 0,

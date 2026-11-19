@@ -162,3 +162,32 @@ export function displaySegments(str) {
 export function packetToEntry(pkt) {
   return { ...pkt, level: directionToLevel(pkt.direction) };
 }
+
+/** Native RX decoding or TX encoding, never inferred from current channel settings. */
+export function packetEncoding(pkt) {
+  if (pkt.direction === 'TX') {
+    const t = pkt.tx_encoding;
+    if (!t) return null; // No inference from channel configuration or KISS.
+    const fx = t.encoding === 'fx25';
+    const fallback = t.fallback_reason === 'frame_too_large';
+    return {
+      tx: true, fx25: fx, label: fallback ? 'AX.25 fallback' : fx ? 'FX.25' : 'AX.25',
+      detail: fallback ? 'AX.25 encoded · FX.25 frame too large for requested mode · queued locally'
+        : `${fx ? 'FX.25' : 'HDLC'} encoded · queued to native modem`,
+      tag: `0x${Number(t.tag || 0).toString(16).padStart(2, '0').toUpperCase()}`,
+      mode: fx ? `RS(${t.data_bytes + t.parity_bytes},${t.data_bytes})` : '',
+      parity: t.parity_bytes, fallback,
+    };
+  }
+  if (pkt.direction !== 'RX' || pkt.source !== 'modem') return null;
+  const f = pkt.fx25;
+  if (!f) return { label: 'AX.25', detail: 'HDLC decoded · FCS valid', fx25: false };
+  const count = f.corrected_symbols;
+  return {
+    label: 'FX.25', fx25: true,
+    detail: `FEC decoded · ${count} ${count === 1 ? 'symbol' : 'symbols'} repaired`,
+    tag: `0x${Number(f.tag).toString(16).padStart(2, '0').toUpperCase()}`,
+    mode: `RS(${f.data_bytes + f.parity_bytes},${f.data_bytes})`,
+    parity: f.parity_bytes, corrected: count,
+  };
+}

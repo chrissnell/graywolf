@@ -580,6 +580,28 @@ mod tests {
     }
 
     #[test]
+    fn fx25_ptt_cycle_waits_for_full_parity_airtime() {
+        let samples =
+            crate::tx::build_fx25_samples(&vec![0; 235], 0, 0, 48000, 1200, 1200, 2200).unwrap();
+        let n = samples.len();
+        let expected = Duration::from_nanos(n as u64 * 1_000_000_000 / 48000);
+        let mut ptt = MockPtt::default();
+        let log = ptt.log.clone();
+        let sink = InstantDrainSink::new();
+        let start = Instant::now();
+        assert!(matches!(
+            drive_tx_cycle(&mut ptt, &sink, samples, 48000),
+            TxCycleOutcome::Done
+        ));
+        assert!(
+            start.elapsed() >= expected,
+            "PTT released before parity finished"
+        );
+        assert_eq!(*sink.submit_log.lock().unwrap(), vec![n]);
+        assert_eq!(*log.lock().unwrap(), vec![PttCall::Key, PttCall::Unkey]);
+    }
+
+    #[test]
     fn drive_tx_cycle_adds_no_artificial_delay_between_key_and_unkey() {
         // Empty samples → expected duration = 0 → drain loop exits
         // on the first check. If a future refactor adds a

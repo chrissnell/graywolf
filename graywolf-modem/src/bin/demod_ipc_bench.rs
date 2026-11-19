@@ -161,6 +161,7 @@ fn main() {
             num_decoders: 1,
             decoder_offset: 0,
             fx25_encode: false,
+            fx25_parity: 0,
             il2p_encode: false,
             input_device_id: 0,
             input_channel: 0,

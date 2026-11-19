@@ -16,10 +16,12 @@ Crate name: `graywolf-demod`. Binary: `graywolf-modem`. Source:
 | Library re-exports | `lib.rs` |
 | AFSK demodulator (Bell 202, profiles A/B) | `demod_afsk.rs` |
 | Multi-demod ensemble + dedup | `demod_afsk_multi.rs` |
-| 9600 G3RUH modem | `modem_9600/mod.rs` |
-| QPSK 2400 / 8-PSK 4800 | `modem_psk/mod.rs` |
-| FX.25 RS-coded FEC | `fx25/{mod,rs,tests}.rs` |
-| IL2P framing + RS | `il2p/{mod,header,payload,scramble,rs_il2p,tests}.rs` |
+| 9600 G3RUH receiver (no TX modulator) | `modem_9600/mod.rs` |
+| QPSK 2400 / 8-PSK 4800 receiver (no TX modulator) | `modem_psk/mod.rs` |
+| FX.25 RS-coded FEC (1200 Bell 202 only) | `fx25/{mod,rs,tests}.rs`; RX `demod_afsk.rs` before HDLC unstuffing; TX `tx::build_fx25_transmission` via `modem/mod.rs`; independent tooling `scripts/fx25/`; limits `docs/fx25.md`; verified RX metadata `ReceivedFrame.fx25` → `app/rxfanout.go` → `packetlog.Entry.FX25` → packets API/stream → existing `PacketLogViewer`/`PacketInspector`; public TX config `fx25_encode` + `fx25_mode` |
+| Native TX encoding visibility | Rust production builder creates PCM + `TransmitEncoding`; IPC matches `frame_id` and channel → `pkg/modembridge/session.go` callback → `pkg/app/wiring.go` → `packetlog.SetTXEncoding` in `pkg/packetlog/tx_encoding.go`; enriches existing log row without rebroadcast; poll recent packets for late `tx_encoding` |
+| Carrier status reconciliation | `StatusUpdate.dcd_state_valid` in proto and native status generator → bridge status handler → governor DCD state; regression `TestStatusReconcilesDCDWithoutNewCarrierEdge` |
+| IL2P codec + RS (not live TX/RX) | `il2p/{mod,header,payload,scramble,rs_il2p,tests}.rs` |
 | HDLC RX (NRZI, FCS-16, bit-unstuff, fix-bits retry) | `hdlc.rs` |
 | HDLC TX bit stream | `tx/hdlc_encode.rs` |
 | AFSK modulator (NCO + sine LUT) | `tx/afsk_mod.rs` |

@@ -17,6 +17,8 @@ export function blankForm() {
     modem_type: 'afsk', bit_rate: '1200', mark_freq: '1200', space_freq: '2200',
     tx_delay_ms: '300', tx_tail_ms: '100', slot_ms: '100', persist: '63', full_dup: false,
     enabled: true,
+    fx25_encode: false,
+    fx25_mode: 'auto',
   };
 }
 
@@ -31,6 +33,8 @@ export function rowToForm(row, timing) {
   const channelType = row.input_device_id == null ? 'kiss-tnc' : 'modem';
   return {
     ...row,
+    fx25_encode: row.fx25_encode ?? false,
+    fx25_mode: row.fx25_mode || 'auto',
     mode: row.mode || 'aprs',
     channel_type: channelType,
     input_device_id: row.input_device_id == null ? '0' : String(row.input_device_id),
@@ -59,6 +63,8 @@ export function formToPayload(form) {
     name: form.name,
     mode: form.mode,
     enabled: form.enabled,
+    fx25_encode: form.fx25_encode ?? false,
+    fx25_mode: form.fx25_mode || 'auto',
     modem_type: form.modem_type,
     bit_rate: parseInt(form.bit_rate, 10),
     mark_freq: parseInt(form.mark_freq, 10),
@@ -98,6 +104,11 @@ export function validateForm(form) {
     if (!form.input_device_id || form.input_device_id === '0') {
       e.input_device_id = 'Required';
     }
+  }
+  if (!['auto','16','32','64'].includes(form.fx25_mode || 'auto')) e.fx25_encode = 'Invalid FX.25 parity selection.';
+  if (form.fx25_encode && (!isModemType || form.modem_type !== 'afsk' ||
+      Number(form.bit_rate) !== 1200 || Number(form.mark_freq) !== 1200 || Number(form.space_freq) !== 2200 || form.il2p_encode)) {
+    e.fx25_encode = 'FX.25 requires native 1200-baud AFSK, 1200/2200 Hz tones, and IL2P disabled.';
   }
   const isTxEnabled = isModemType && form.output_device_id !== '0';
   if (isTxEnabled) {

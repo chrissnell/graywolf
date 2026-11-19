@@ -130,8 +130,12 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 	// Hardware KISS-TNC frames arrive already demodulated, so they carry no
 	// meaningful mark/space level — leave it nil for those.
 	var alevel *packetlog.AudioLevel
+	var fx25 *packetlog.FX25Reception
 	if src.Kind == ingress.KindModem {
 		alevel = audioLevelFromFrame(rf)
+		if m := rf.Fx25; m != nil {
+			fx25 = &packetlog.FX25Reception{Tag: m.Tag, DataBytes: m.DataBytes, ParityBytes: m.ParityBytes, CorrectedSymbols: m.CorrectedSymbols}
+		}
 	}
 
 	// Raw KISS clients (e.g. Xastir) do their own decoding and want every
@@ -149,6 +153,7 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 			Source:     logSource,
 			Raw:        rf.Data,
 			AudioLevel: alevel,
+			FX25:       fx25,
 		})
 		return
 	}
@@ -160,6 +165,7 @@ func (a *App) dispatchRxFrame(ctx context.Context, item rxFanoutItem, aprsSubmit
 		Raw:        rf.Data,
 		Display:    f.String(),
 		AudioLevel: alevel,
+		FX25:       fx25,
 	}
 
 	// Per-frame debug log for KISS-TNC ingest — Phase 5 of the KISS

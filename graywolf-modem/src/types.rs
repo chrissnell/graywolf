@@ -118,6 +118,8 @@ pub enum RetryType {
     InvertDouble,
     InvertTriple,
     InvertTwoSep,
+    /// Validated FX.25 Reed-Solomon recovery (RX metadata only).
+    Fx25,
 }
 
 /// Sanity check level for recovered frames (from audio.h: enum sanity_e)

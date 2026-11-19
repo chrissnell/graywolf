@@ -24,6 +24,13 @@
     ...outputDevices.map(d => ({ value: String(d.id), label: d.name })),
   ]);
 
+  const fx25ParityOptions = [
+    {value:'auto',label:'Auto — based on frame length'},
+    {value:'16',label:'16 parity bytes'},
+    {value:'32',label:'32 parity bytes'},
+    {value:'64',label:'64 parity bytes'},
+  ];
+
   const modemOptions = [
     { value: 'afsk', label: 'AFSK' },
     { value: 'psk', label: 'PSK' },
@@ -214,6 +221,15 @@
         </FormField>
       </div>
     </div>
+
+    <FormField label="Forward error correction" id="ch-fx25" error={errors.fx25_encode}>
+      <Toggle id="ch-fx25" bind:checked={form.fx25_encode} label="FX.25 transmit" />
+      {#if form.fx25_encode}
+        <Select id="ch-fx25-parity" aria-label="FX.25 transmit parity" bind:value={form.fx25_mode} options={fx25ParityOptions} />
+        <p>Auto selects parity from the protected frame length, not measured link quality. Recommended for everyday use; choose a fixed parity mode for specific use cases or controlled testing.</p>
+      {/if}
+      <p>1200-baud AFSK with 1200/2200 Hz tones. FX.25 reception is automatic. Frames too large for the selected FX.25 mode use ordinary AX.25; the packet log identifies the fallback.</p>
+    </FormField>
 
     <!-- ── Timing ─────────────────────────────────────────────────── -->
     {#if isTxEnabled}

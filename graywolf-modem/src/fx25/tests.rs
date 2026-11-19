@@ -1,200 +1,160 @@
-//! FX.25 tests including direwolf-compatible test vectors.
-
 use super::*;
 
-#[test]
-fn tag_correlation_exact() {
-    for (i, &(tag, total, _, _)) in FX25_TAGS.iter().enumerate() {
-        if total == 0 { continue; }
-        let result = correlate_tag(tag, 0);
-        assert!(result.is_some(), "tag {} should match exactly", i);
-        let (idx, dist) = result.unwrap();
-        assert_eq!(idx, i);
-        assert_eq!(dist, 0);
-    }
+fn frame() -> Vec<u8> {
+    vec![
+        0x82, 0xa0, 0xa4, 0xa6, 0x40, 0x40, 0x60, 0x96, 0xa6, 0x72, 0x9c, 0x40, 0x40, 0x61, 3,
+        0xf0, 0x00, 0xff, 0x7e, 0x7e, 0xff, 0x00, 0x7e,
+    ]
 }
-
-#[test]
-fn tag_correlation_with_errors() {
-    let (tag, _, _, _) = FX25_TAGS[0];
-    // Flip 3 bits
-    let corrupted = tag ^ 0x0000_0000_0000_0007;
-    let result = correlate_tag(corrupted, 5);
-    assert!(result.is_some());
-    let (idx, dist) = result.unwrap();
-    assert_eq!(idx, 0);
-    assert_eq!(dist, 3);
-}
-
-#[test]
-fn tag_correlation_rejects_too_many_errors() {
-    let (tag, _, _, _) = FX25_TAGS[0];
-    // Flip 10 bits
-    let corrupted = tag ^ 0x00000000000003FF;
-    let result = correlate_tag(corrupted, 5);
-    assert!(result.is_none());
-}
-
-#[test]
-fn encode_decode_roundtrip_all_tags() {
-    // Test encode/decode roundtrip for all valid tags
-    for (i, &(_tag, total, data_cap, _check)) in FX25_TAGS.iter().enumerate() {
-        if total == 0 { continue; }
-        // Create a test frame that fits
-        let frame_len = data_cap.min(20);
-        let test_frame: Vec<u8> = (0..frame_len as u8).collect();
-
-        let encoded = encode(&test_frame, Some(i));
-        assert!(encoded.is_some(), "encode failed for tag {}", i);
-        let encoded = encoded.unwrap();
-
-        // Encoded = 8 bytes tag + total bytes block
-        assert_eq!(encoded.len(), 8 + total, "wrong encoded len for tag {}", i);
-
-        // Decode
-        let block = &encoded[8..]; // strip tag
-        let decoded = decode(block, i);
-        assert!(decoded.is_some(), "decode failed for tag {}", i);
-        let decoded = decoded.unwrap();
-
-        // Extract original frame
-        let extracted = extract_ax25(&decoded);
-        assert_eq!(extracted, &test_frame[..], "roundtrip failed for tag {}", i);
-    }
-}
-
-/// Direwolf test vector: a known AX.25 frame encoded with FX.25 tag 0x01
-/// (RS(255,239) with 16 check symbols). This verifies bit-exact compatibility.
-#[test]
-fn direwolf_fx25_test_vector_tag01() {
-    // Small test frame: typical APRS position report
-    let ax25_data: Vec<u8> = vec![
-        0x82, 0xA0, 0xB4, 0x60, 0x60, 0x60, 0x60, // dest: APRS
-        0x9C, 0x6E, 0x98, 0x8A, 0x9A, 0x40, 0x61, // src: N3LLO
-        0x03, 0xF0,                                 // ctrl, pid
-        0x21, 0x34, 0x30, 0x31, 0x31, 0x2E, 0x37, // !4011.7
-        0x35, 0x4E, 0x2F, 0x30, 0x37, 0x34, 0x30, // 5N/0740
-        0x34, 0x2E, 0x37, 0x36, 0x57, 0x2D,       // 4.76W-
-    ];
-
-    // Compute FCS for the test frame
-    let fcs = crate::hdlc::fcs_calc(&ax25_data);
-    let mut frame_with_fcs = ax25_data.clone();
-    frame_with_fcs.push((fcs & 0xFF) as u8);
-    frame_with_fcs.push((fcs >> 8) as u8);
-
-    // Encode with tag 0 (RS(255,239))
-    let encoded = encode(&frame_with_fcs, Some(0)).unwrap();
-    assert_eq!(encoded.len(), 8 + 255);
-
-    // Verify tag bytes
-    let tag_bytes = &encoded[..8];
-    assert_eq!(
-        u64::from_be_bytes(tag_bytes.try_into().unwrap()),
-        FX25_TAGS[0].0
-    );
-
-    // Decode without errors
-    let decoded = decode(&encoded[8..], 0).unwrap();
-    let extracted = extract_ax25(&decoded);
-    assert_eq!(extracted, &frame_with_fcs[..]);
-
-    // Decode with errors in data portion
-    let mut corrupted = encoded[8..].to_vec();
-    corrupted[5] ^= 0xFF;
-    corrupted[50] ^= 0xAA;
-    corrupted[100] ^= 0x55;
-    let decoded2 = decode(&corrupted, 0).unwrap();
-    let extracted2 = extract_ax25(&decoded2);
-    assert_eq!(extracted2, &frame_with_fcs[..], "error correction failed");
-}
-
-/// Test with tag 0x05 (RS(255,63) — 192 check symbols, very strong FEC).
-#[test]
-fn fx25_strong_fec_tag05() {
-    let data: Vec<u8> = (0..60).collect();
-    let fcs = crate::hdlc::fcs_calc(&data);
-    let mut frame = data.clone();
-    frame.push((fcs & 0xFF) as u8);
-    frame.push((fcs >> 8) as u8);
-
-    let encoded = encode(&frame, Some(4)).unwrap(); // tag index 4 = RS(255,63)
-    assert_eq!(encoded.len(), 8 + 255);
-
-    // Corrupt many bytes (RS(255,63) can correct up to 96 errors)
-    let mut corrupted = encoded[8..].to_vec();
-    for i in 0..50 {
-        corrupted[i * 3] ^= 0xFF;
-    }
-
-    let decoded = decode(&corrupted, 4).unwrap();
-    let extracted = extract_ax25(&decoded);
-    assert_eq!(extracted, &frame[..]);
-}
-
-/// Test shortened RS code (tag 0x06: RS based on 255 but block=32).
-#[test]
-fn fx25_shortened_tag06() {
-    let data: Vec<u8> = vec![0x42; 20];
-    let fcs = crate::hdlc::fcs_calc(&data);
-    let mut frame = data;
-    frame.push((fcs & 0xFF) as u8);
-    frame.push((fcs >> 8) as u8);
-
-    let encoded = encode(&frame, Some(5)).unwrap(); // tag 5 = index for 32-byte block
-    assert_eq!(encoded.len(), 8 + 32);
-
-    // Decode clean
-    let decoded = decode(&encoded[8..], 5).unwrap();
-    let extracted = extract_ax25(&decoded);
-    assert_eq!(extracted, &frame[..]);
-
-    // Decode with 1 error (RS(32,26,6) corrects up to 3)
-    let mut corrupted = encoded[8..].to_vec();
-    corrupted[10] ^= 0xFF;
-    let decoded2 = decode(&corrupted, 5).unwrap();
-    let extracted2 = extract_ax25(&decoded2);
-    assert_eq!(extracted2, &frame[..]);
-}
-
-/// Verify the receiver state machine can process bit-by-bit.
-#[test]
-fn fx25_receiver_basic() {
-    let data: Vec<u8> = vec![0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x11, 0x22, 0x33,
-                              0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA];
-    let fcs = crate::hdlc::fcs_calc(&data);
-    let mut frame = data;
-    frame.push((fcs & 0xFF) as u8);
-    frame.push((fcs >> 8) as u8);
-
-    let encoded = encode(&frame, Some(5)).unwrap(); // 32-byte block
-
+fn receive(wire: &[u8]) -> Vec<RecoveredFrame> {
     let mut rx = Fx25Receiver::new();
-
-    // Feed tag bits MSB first (big-endian)
-    let tag_val = FX25_TAGS[5].0;
-    for bit_pos in (0..64).rev() {
-        rx.process_bit((tag_val >> bit_pos) & 1 != 0);
-    }
-
-    // Feed block bits LSB first per byte
-    for &byte in &encoded[8..] {
-        for bit_pos in 0..8 {
-            rx.process_bit((byte >> bit_pos) & 1 != 0);
+    wire.iter()
+        .flat_map(|b| (0..8).map(move |s| b & (1 << s) != 0))
+        .filter_map(|b| rx.process_bit(b))
+        .collect()
+}
+#[test]
+fn standard_tags_and_reserved_rejection() {
+    for (i, &(tag, total, _, _)) in FX25_TAGS.iter().enumerate() {
+        assert_eq!(
+            correlate_tag(tag, 0).map(|r| r.0),
+            if total == 0 { None } else { Some(i) }
+        );
+        if total > 0 {
+            assert_eq!(correlate_tag(tag ^ 0xff, 8), Some((i, 8)));
         }
     }
-
-    let frames = rx.take_frames();
-    assert_eq!(frames.len(), 1, "should decode exactly one frame");
-    assert_eq!(&frames[0], &frame);
+    assert!(decode(&[], 16).is_none());
+    assert!(encode(&frame(), Some(0)).is_none());
+    assert!(encode(&frame(), Some(99)).is_none());
+}
+#[test]
+fn all_formats_correct_at_symbol_limit_and_preserve_endings() {
+    for idx in 1..=11 {
+        let original = encode(&frame(), Some(idx)).unwrap();
+        assert_eq!(receive(&original)[0].frame.data, frame());
+        let mut damaged = original.clone();
+        for n in 0..FX25_TAGS[idx].3 / 2 {
+            damaged[8 + n] ^= (n + 1) as u8;
+        }
+        assert_eq!(receive(&damaged)[0].frame.data, frame(), "tag {idx}");
+        for n in 0..FX25_TAGS[idx].3 / 2 + 8 {
+            damaged[8 + n] ^= 0xa5;
+        }
+        assert!(receive(&damaged).is_empty(), "tag {idx}");
+    }
+}
+#[test]
+fn bad_fcs_even_with_valid_rs_is_rejected() {
+    let wire = encode(&frame(), Some(1)).unwrap();
+    let mut data = decode(&wire[8..], 1).unwrap();
+    data[5] ^= 1; // re-encode bad HDLC contents under valid RS
+    let mut bad = wire[..8].to_vec();
+    bad.extend_from_slice(&data);
+    bad.extend_from_slice(&codec(16).encode(&data));
+    assert!(receive(&bad).is_empty());
+}
+#[test]
+fn reset_partial_noise_and_back_to_back() {
+    let wire = encode(&frame(), Some(1)).unwrap();
+    let mut rx = Fx25Receiver::new();
+    for b in wire[..30]
+        .iter()
+        .flat_map(|b| (0..8).map(move |s| b & (1 << s) != 0))
+    {
+        rx.process_bit(b);
+    }
+    rx.reset();
+    let mut stream = vec![0x55; 500];
+    stream.extend_from_slice(&wire[..30]);
+    stream.extend_from_slice(&wire);
+    stream.extend_from_slice(&wire);
+    assert_eq!(receive(&stream).len(), 2);
+    for _ in 0..100_000 {
+        rx.process_bit(false);
+    }
+    assert!(rx.block.len() <= 255);
+}
+#[test]
+fn lengths_include_stuffing_and_never_fallback() {
+    assert!(encode(&vec![0; 235], None).is_some());
+    assert!(encode(&vec![0; 236], None).is_none());
+    assert!(encode(&vec![255; 235], None).is_none());
+    for idx in 1..=11 {
+        let mut maximum = 0;
+        for len in 15..=235 {
+            if let Some(wire) = encode(&vec![0; len], Some(idx)) {
+                maximum = len;
+                assert_eq!(receive(&wire)[0].frame.data, vec![0; len]);
+            }
+        }
+        assert!(maximum > 15);
+        assert!(encode(&vec![0; maximum + 1], Some(idx)).is_none());
+    }
 }
 
 #[test]
-fn find_smallest_tag_fits() {
-    // 20 bytes should fit in tag 5 (data_cap=26)
-    let idx = super::find_smallest_tag(20);
-    assert!(idx.is_some());
-    let i = idx.unwrap();
-    assert!(FX25_TAGS[i].2 >= 20);
-    assert_eq!(FX25_TAGS[i].1, 32); // smallest block that fits
+fn independent_direwolf_wire_vectors() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("../../testdata/fx25/direwolf.json")).unwrap();
+    for v in fixture["wire_vectors"].as_array().unwrap() {
+        fn bytes(s: &str) -> Vec<u8> {
+            (0..s.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+                .collect()
+        }
+        let frame = bytes(v["frame"].as_str().unwrap());
+        let wire = bytes(v["wire"].as_str().unwrap());
+        assert_eq!(
+            encode(&frame, Some(v["tag"].as_u64().unwrap() as usize)).unwrap(),
+            wire
+        );
+        assert_eq!(receive(&wire)[0].frame.data, frame);
+    }
+}
+
+#[test]
+fn deterministic_noise_and_reserved_streams_do_not_deliver() {
+    let mut rx = Fx25Receiver::new();
+    let mut rng = 0x12345678u32;
+    for _ in 0..1_000_000 {
+        rng ^= rng << 13;
+        rng ^= rng >> 17;
+        rng ^= rng << 5;
+        assert!(rx.process_bit(rng & 1 != 0).is_none());
+    }
+    for idx in [0, 12, 13, 14, 15] {
+        let mut wire = FX25_TAGS[idx].0.to_le_bytes().to_vec();
+        wire.extend_from_slice(&[0; 255]);
+        assert!(receive(&wire).is_empty());
+    }
+}
+
+#[test]
+fn metadata_counts_data_and_parity_corrections() {
+    for tag in 1..=11 {
+        let mut wire = encode(&frame(), Some(tag)).unwrap();
+        let clean = receive(&wire).remove(0);
+        assert_eq!(clean.frame.fx25.as_ref().unwrap().corrected_symbols, 0);
+        wire[8 + 10] ^= 0x55;
+        let end = wire.len() - 1;
+        wire[end] ^= 0xaa;
+        let repaired = receive(&wire).remove(0);
+        assert_eq!(repaired.frame.fx25.as_ref().unwrap().corrected_symbols, 2);
+    }
+}
+#[test]
+fn fixed_parity_selects_standard_modes_and_rejects_overflow() {
+    for parity in [16, 32, 64] {
+        let wire = encode_with_parity(&frame(), parity).unwrap();
+        assert_eq!(
+            receive(&wire)[0].frame.fx25.as_ref().unwrap().parity_bytes,
+            parity
+        );
+    }
+    assert!(encode_with_parity(&frame(), 8).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 64).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 32).is_none());
+    assert!(encode_with_parity(&vec![0; 220], 16).is_some());
 }

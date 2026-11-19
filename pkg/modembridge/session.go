@@ -112,8 +112,13 @@ func (b *Bridge) dispatchIPC(msg *pb.IpcMessage) {
 		default:
 			b.logger.Warn("frame channel full, dropping frame")
 		}
+	case *pb.IpcMessage_TransmitEncoding:
+		if b.cfg.OnTransmitEncoding != nil {
+			b.cfg.OnTransmitEncoding(p.TransmitEncoding)
+		}
 	case *pb.IpcMessage_StatusUpdate:
 		b.updateStatusCache(p.StatusUpdate)
+		b.reconcileDcd(p.StatusUpdate)
 		if b.cfg.Metrics != nil {
 			b.cfg.Metrics.UpdateFromStatus(p.StatusUpdate)
 		}
@@ -159,6 +164,9 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 	channels := make([]configstore.Channel, 0, len(allChannels))
 	for _, ch := range allChannels {
 		if ch.Enabled {
+			if err := ch.ValidateFX25(); err != nil {
+				return false, fmt.Errorf("channel %d: %w", ch.ID, err)
+			}
 			channels = append(channels, ch)
 		}
 	}
@@ -236,6 +244,7 @@ func (b *Bridge) pushConfiguration(ctx context.Context, send func(*pb.IpcMessage
 			NumDecoders:    ch.NumDecoders,
 			DecoderOffset:  ch.DecoderOffset,
 			Fx25Encode:     ch.FX25Encode,
+			Fx25Parity:     ch.FX25ParityBytes(),
 			Il2PEncode:     ch.IL2PEncode,
 		}}}
 		if err := send(cmsg); err != nil {

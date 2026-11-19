@@ -193,6 +193,15 @@ impl RawBitBuffer {
 
 // --- Decoded Frame ---
 
+/// Present only after standard FX.25 RS and embedded HDLC/FCS validation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Fx25Metadata {
+    pub tag: u32,
+    pub data_bytes: u32,
+    pub parity_bytes: u32,
+    pub corrected_symbols: u32,
+}
+
 /// A successfully decoded AX.25 frame with metadata.
 #[derive(Clone, Debug)]
 pub struct DecodedFrame {
@@ -210,6 +219,8 @@ pub struct DecodedFrame {
 
     /// How the frame was decoded (direct or which retry strategy).
     pub retry: RetryType,
+
+    pub fx25: Option<Fx25Metadata>,
 
     /// Demodulator quality metric (0-100).
     pub quality: i32,
@@ -494,6 +505,7 @@ impl HdlcDecoder {
                     audio_level_space: self.rrbb.audio_level_space,
                     speed_error: self.rrbb.speed_error,
                     sample_offset: 0,
+                    fx25: None,
                 });
             }
         }
@@ -597,6 +609,7 @@ impl HdlcDecoder {
                             audio_level_space: rrbb.audio_level_space,
                             speed_error: rrbb.speed_error,
                             sample_offset: 0,
+                    fx25: None,
                         });
                     }
                 }
@@ -640,6 +653,7 @@ impl HdlcDecoder {
                     audio_level_space: rrbb.audio_level_space,
                     speed_error: rrbb.speed_error,
                     sample_offset: 0,
+                    fx25: None,
                 });
             }
         }

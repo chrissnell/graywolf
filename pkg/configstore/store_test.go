@@ -432,15 +432,15 @@ func TestFX25IL2PConfig(t *testing.T) {
 	if err := s.SetChannelFX25(ctx, ch.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetChannelIL2P(ctx, ch.ID, true); err != nil {
-		t.Fatal(err)
+	if err := s.SetChannelIL2P(ctx, ch.ID, true); err == nil {
+		t.Fatal("must reject simultaneous FX.25 and IL2P")
 	}
 	got, err := s.GetChannel(ctx, ch.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !got.FX25Encode || !got.IL2PEncode {
-		t.Fatalf("expected both true, got fx25=%v il2p=%v", got.FX25Encode, got.IL2PEncode)
+	if !got.FX25Encode || got.IL2PEncode {
+		t.Fatalf("expected only FX.25 enabled, got fx25=%v il2p=%v", got.FX25Encode, got.IL2PEncode)
 	}
 }
 

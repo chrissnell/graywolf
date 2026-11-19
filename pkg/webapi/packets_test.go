@@ -166,3 +166,46 @@ func TestListPackets_ExposesCoordinates(t *testing.T) {
 		}
 	}
 }
+
+func TestPacketsFX25MetadataIncludesZeroCorrections(t *testing.T) {
+	srv, _ := newTestServer(t)
+	log := packetlog.New(packetlog.Config{Capacity: 10})
+	log.Record(packetlog.Entry{Direction: packetlog.DirRX, Source: "modem", FX25: &packetlog.FX25Reception{Tag: 4, DataBytes: 32, ParityBytes: 16, CorrectedSymbols: 0}})
+	mux := http.NewServeMux()
+	RegisterPackets(srv, mux, log, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/packets", nil))
+	if rec.Code != 200 {
+		t.Fatal(rec.Body.String())
+	}
+	var packets []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &packets); err != nil {
+		t.Fatal(err)
+	}
+	fx := packets[0]["fx25"].(map[string]any)
+	count, exists := fx["corrected_symbols"]
+	if !exists || count != float64(0) {
+		t.Fatalf("missing clean-FEC zero: %v", fx)
+	}
+	if fx["tag"] != float64(4) || fx["parity_bytes"] != float64(16) {
+		t.Fatal(fx)
+	}
+}
+
+func TestListPacketsTXEncodingReflectsNativeReport(t *testing.T) {
+	srv, _ := newTestServer(t)
+	log := packetlog.New(packetlog.Config{Capacity: 10})
+	log.Record(packetlog.Entry{FrameID: 3, Channel: 1, Direction: packetlog.DirTX, Source: "beacon"})
+	log.SetTXEncoding(3, 1, packetlog.TXEncoding{Encoding: "ax25", FX25Requested: true, FallbackReason: "frame_too_large"})
+	mux := http.NewServeMux()
+	RegisterPackets(srv, mux, log, nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/packets", nil))
+	var got []packetDTO
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].FrameID != 3 || got[0].TXEncoding == nil || got[0].TXEncoding.FallbackReason != "frame_too_large" {
+		t.Fatalf("%s", rec.Body.String())
+	}
+}

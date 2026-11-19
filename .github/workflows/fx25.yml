@@ -1,0 +1,47 @@
+name: FX.25 native platform acceptance
+
+on:
+  push:
+    paths:
+      - 'graywolf-modem/**'
+      - 'proto/**'
+      - 'Cargo.*'
+      - '.github/workflows/fx25.yml'
+  pull_request:
+    paths:
+      - 'graywolf-modem/**'
+      - 'proto/**'
+      - 'Cargo.*'
+      - '.github/workflows/fx25.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: arduino/setup-protoc@v3
+        with:
+          version: '28.x'
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace
+      # Only pure offline tests: no audio device, local socket or radio access.
+      - run: cargo test --release --lib fx25
+      - run: cargo test --release --lib il2p
+      - if: runner.os == 'Linux'
+        run: cargo test --release --lib --features android-test-stub fx25
+      - if: runner.os == 'Linux'
+        run: |
+          rustup target add aarch64-linux-android
+          cargo check --lib --target aarch64-linux-android

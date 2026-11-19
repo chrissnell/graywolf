@@ -27,6 +27,7 @@ message IpcMessage {
     DeviceLevelUpdate device_level_update = 7;
     InputLevelScanResult input_level_scan_result = 8;
     TestSignalResult test_signal_result = 9;
+    TransmitEncoding transmit_encoding = 23;
 
     // Go application → Rust modem
     TransmitFrame transmit_frame = 10;
@@ -48,6 +49,19 @@ message IpcMessage {
 // Rust → Go
 // ---------------------------------------------------------------------------
 
+// Actual encoding selected for a frame accepted by the native TX worker.
+// This acknowledges local encoding/queueing, not physical TX or RF reception.
+message TransmitEncoding {
+  uint64 frame_id = 1;
+  uint32 channel = 2;
+  string encoding = 3;         // "ax25" or "fx25"
+  uint32 tag = 4;
+  uint32 data_bytes = 5;
+  uint32 parity_bytes = 6;
+  bool fx25_requested = 7;
+  string fallback_reason = 8;  // "frame_too_large" when AX.25 replaces FX.25
+}
+
 // A successfully decoded AX.25 frame with demodulator metadata.
 message ReceivedFrame {
   uint32 channel = 1;          // logical radio channel
@@ -58,8 +72,17 @@ message ReceivedFrame {
   float audio_level_mark = 6;   // mark level at time of capture
   float audio_level_space = 7;  // space level at time of capture
   float speed_error = 8;        // baud-rate error, percent
-  string retry = 9;             // "none" | "single" | "double"
+  string retry = 9;             // "none" | "single" | "double" | "fx25" (validated FEC recovery)
   uint64 timestamp_ns = 10;     // monotonic capture time
+  Fx25Reception fx25 = 11;      // present only after RS + HDLC/FCS validation
+}
+
+// Standard FX.25 reception. Symbol corrections exclude correlation-tag bits.
+message Fx25Reception {
+  uint32 tag = 1;
+  uint32 data_bytes = 2;
+  uint32 parity_bytes = 3;
+  uint32 corrected_symbols = 4;
 }
 
 // Data Carrier Detect state transition.
@@ -84,6 +107,9 @@ message StatusUpdate {
   bool dcd_state = 9;
   bool shutdown_complete = 10;   // final status before process exit
   uint64 timestamp_ns = 11;
+  // False for unavailable/placeholder DCD (including older modems).
+  // True only when dcd_state comes from an active native demodulator.
+  bool dcd_state_valid = 12;
 }
 
 // Sent once after the modem has bound its IPC socket, accepted a connection,
@@ -174,6 +200,7 @@ message ConfigureChannel {
   // When a preset is active, output frames are deduped across the ensemble
   // using a 3-symbol time window (matching Direwolf's dedup semantics).
   string demod_ensemble = 19;
+  uint32 fx25_parity = 20;       // 0=automatic, or fixed 16/32/64 parity bytes (TX only)
 }
 
 // Configure an audio source (soundcard, SDR UDP, stdin, FLAC file).
