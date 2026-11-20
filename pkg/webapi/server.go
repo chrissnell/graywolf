@@ -46,6 +46,7 @@ import (
 	"github.com/chrissnell/graywolf/pkg/modembridge"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/remoteactions"
+	"github.com/chrissnell/graywolf/pkg/telemetry"
 	"github.com/chrissnell/graywolf/pkg/updatescheck"
 	"github.com/chrissnell/graywolf/pkg/webapi/dto"
 )
@@ -53,6 +54,7 @@ import (
 // Server routes /api/* requests. It does not own the underlying
 // listener; cmd/graywolf composes it into its main mux.
 type Server struct {
+	telemetry          *telemetry.Reporter
 	store              *configstore.Store
 	bridge             *modembridge.Bridge
 	kissManager        *kiss.Manager
@@ -304,6 +306,7 @@ func (s *Server) RegisterRoutes(mux *http.ServeMux) {
 	s.registerStationConfig(mux)
 	s.registerGps(mux)
 	s.registerPositionLog(mux)
+	s.registerTelemetry(mux)
 	s.registerSmartBeacon(mux)
 	s.registerMessages(mux)
 	s.registerMessagesConfig(mux)

@@ -30,7 +30,7 @@ type Entry struct {
 	Channel uint32 `json:"channel"`
 	// Direction labels the flow: "RX" (heard on air), "TX" (transmitted by us), or "IS" (APRS-IS upload/download).
 	Direction Direction `json:"direction"`
-	// Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".
+	// Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "telemetry", "modem", or "igate-is".
 	Source string `json:"source"`
 	// Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing.
 	Raw []byte `json:"raw,omitempty"`

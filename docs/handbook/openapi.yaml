@@ -941,6 +941,30 @@ definitions:
         description: '"sent"'
         type: string
     type: object
+  dto.BlockedCallsignRequest:
+    properties:
+      callsign:
+        type: string
+      enabled:
+        type: boolean
+      note:
+        type: string
+    type: object
+  dto.BlockedCallsignResponse:
+    properties:
+      callsign:
+        type: string
+      created_at:
+        type: string
+      enabled:
+        type: boolean
+      id:
+        type: integer
+      note:
+        type: string
+      updated_at:
+        type: string
+    type: object
   dto.BlocklistEntryRequest:
     properties:
       enabled:
@@ -1063,6 +1087,11 @@ definitions:
       tx:
         $ref: '#/definitions/dto.TxCapability'
     type: object
+  dto.ChannelEnabledRequest:
+    properties:
+      enabled:
+        type: boolean
+    type: object
   dto.ChannelKissTncEntry:
     properties:
       allow_tx_from_governor:
@@ -1109,6 +1138,16 @@ definitions:
         type: integer
       decoder_offset:
         type: integer
+      enabled:
+        description: |-
+          Enabled gates whether graywolf brings the channel up. A pointer so
+          an omitted field means "leave at the default" (true) rather than
+          "disable": older clients and partial callers that never send the
+          key keep their channels running. ToModel substitutes true when nil.
+          A channel PUT is a full-resource replace, so an editor that echoes
+          the row's current enabled value preserves a disabled state across
+          unrelated field edits.
+        type: boolean
       fix_bits:
         type: string
       fx25_encode:
@@ -1148,6 +1187,16 @@ definitions:
         type: integer
       decoder_offset:
         type: integer
+      enabled:
+        description: |-
+          Enabled gates whether graywolf brings the channel up. A pointer so
+          an omitted field means "leave at the default" (true) rather than
+          "disable": older clients and partial callers that never send the
+          key keep their channels running. ToModel substitutes true when nil.
+          A channel PUT is a full-resource replace, so an editor that echoes
+          the row's current enabled value preserves a disabled state across
+          unrelated field edits.
+        type: boolean
       fix_bits:
         type: string
       fx25_encode:
@@ -1182,6 +1231,46 @@ definitions:
         $ref: '#/definitions/dto.ChannelPtt'
       space_freq:
         type: integer
+    type: object
+  dto.CheckDeviceRequest:
+    properties:
+      device_path:
+        type: string
+    type: object
+  dto.CheckDeviceResponse:
+    properties:
+      char_device:
+        type: boolean
+      exists:
+        type: boolean
+      message:
+        type: string
+    type: object
+  dto.ConversationPrefsRequest:
+    properties:
+      send_path:
+        description: |-
+          SendPath overrides transport for this conversation. Empty ('')
+          means "inherit the global fallback policy"; otherwise one of
+          rf_only | is_only | both.
+        type: string
+      wait_for_ack:
+        description: |-
+          WaitForAck, when false, sends DMs to this contact once and skips
+          the retry ladder (no re-sends) — for handhelds that never ACK.
+          Defaults true.
+        type: boolean
+    type: object
+  dto.ConversationPrefsResponse:
+    properties:
+      send_path:
+        type: string
+      thread_key:
+        type: string
+      thread_kind:
+        type: string
+      wait_for_ack:
+        type: boolean
     type: object
   dto.ConversationSummary:
     properties:
@@ -1317,6 +1406,15 @@ definitions:
     properties:
       baud_rate:
         type: integer
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:
@@ -1332,6 +1430,15 @@ definitions:
         type: integer
       enabled:
         type: boolean
+      fixed_alt:
+        description: metres above MSL; 0 = unspecified
+        type: number
+      fixed_lat:
+        description: decimal degrees, north positive (source=fixed)
+        type: number
+      fixed_lon:
+        description: decimal degrees, east positive (source=fixed)
+        type: number
       gpsd_host:
         type: string
       gpsd_port:
@@ -1450,6 +1557,14 @@ definitions:
     type: object
   dto.KissRequest:
     properties:
+      allow_connected_mode:
+        description: |-
+          AllowConnectedMode opts a KISS interface in to passing non-UI
+          (connected-mode) AX.25 frames through to the radio instead of
+          dropping them, so connected-mode packet apps (Pat/Winlink via the
+          kernel AX.25 stack + kissattach) can use graywolf as a raw KISS
+          modem. Default false; the far end owns the LAPB session state.
+        type: boolean
       allow_tx_from_governor:
         description: |-
           AllowTxFromGovernor opts this TNC-mode interface in to receive
@@ -1523,6 +1638,8 @@ definitions:
     type: object
   dto.KissResponse:
     properties:
+      allow_connected_mode:
+        type: boolean
       allow_tx_from_governor:
         type: boolean
       backoff_seconds:
@@ -2189,6 +2306,36 @@ definitions:
           type: string
         type: array
     type: object
+  dto.StorageUsageLocation:
+    properties:
+      bytes:
+        description: |-
+          Bytes is the total size in bytes. 0 when the path does not exist
+          yet (e.g. no offline maps downloaded, history logging disabled).
+        type: integer
+      key:
+        description: |-
+          Key is a stable identifier for the location: "maps", "history",
+          or "config". Clients key colors/labels off this, not off Label.
+        type: string
+      label:
+        description: Label is the human-readable name shown in the UI.
+        type: string
+      path:
+        description: |-
+          Path is the absolute path on the server host. Informational —
+          shown to operators so they know where to look / back up.
+        type: string
+    type: object
+  dto.StorageUsageResponse:
+    properties:
+      locations:
+        items:
+          $ref: '#/definitions/dto.StorageUsageLocation'
+        type: array
+      total_bytes:
+        type: integer
+    type: object
   dto.TacticalCallsignRequest:
     properties:
       alias:
@@ -2429,6 +2576,12 @@ definitions:
       description:
         description: human-friendly name (e.g. USB product string)
         type: string
+      enhancements_enabled:
+        description: |-
+          EnhancementsEnabled is Windows-only: the endpoint has audio
+          "enhancements" (system effects / APOs) active, which corrupt
+          AFSK/packet audio. Always false on Linux/macOS.
+        type: boolean
       host_api:
         type: string
       is_default:
@@ -2566,6 +2719,27 @@ definitions:
           Used is true when another driver has claimed this line (e.g. SPI, I2C,
           UART, or a previously-running graywolf process).
         type: boolean
+    type: object
+  telemetry.Report:
+    properties:
+      clipped:
+        type: boolean
+      counts:
+        items:
+          type: integer
+        type: array
+      encoded:
+        items:
+          type: integer
+        type: array
+      identity:
+        type: string
+      payload:
+        type: string
+      route:
+        type: string
+      submitted_at:
+        type: string
     type: object
   webapi.AvailableUsbSerialDevice:
     properties:
@@ -2721,6 +2895,13 @@ definitions:
       is_object:
         description: IsObject is true for APRS objects and items; false for regular stations.
         type: boolean
+      last_direct_heard:
+        description: |-
+          LastDirectHeard is the UTC RFC3339 timestamp of the most recent reception heard
+          directly on RF (RX, zero digi hops). Zero value (serialized as the JSON zero
+          time) means the station has never been heard directly. The Live Map "Direct
+          RX" filter requires this to fall within the selected time range.
+        type: string
       last_heard:
         description: LastHeard is the UTC RFC3339 timestamp of the most recent packet from this station.
         type: string
@@ -2751,7 +2932,7 @@ definitions:
         description: SymbolTable is the APRS symbol table character ("/" primary, "\\" alternate, or an overlay char).
         type: string
       via:
-        description: Via is the callsign of the last digipeater in the most recent packet's H-bit path; empty for direct packets.
+        description: 'Via is how the most recent packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).'
         type: string
       weather:
         allOf:
@@ -2809,7 +2990,7 @@ definitions:
         description: Timestamp is the UTC RFC3339 time the position was received.
         type: string
       via:
-        description: Via is the callsign of the last digipeater (H-bit) that forwarded this position packet; empty for direct.
+        description: 'Via is how this position packet reached us: "rf" (heard on radio) or "is" (received from APRS-IS).'
         type: string
     type: object
   webapi.StatusChannel:
@@ -2919,8 +3100,79 @@ definitions:
           $ref: '#/definitions/webapi.SystemLogEntry'
         type: array
     type: object
+  webapi.TelemetryConfigDTO:
+    properties:
+      allow_above_255:
+        type: boolean
+      callsign:
+        type: string
+      channel:
+        type: integer
+      delivery:
+        type: string
+      enabled:
+        type: boolean
+      metadata_is_seconds:
+        type: integer
+      metadata_rf_seconds:
+        type: integer
+      rf_path:
+        type: string
+    type: object
+  webapi.TelemetryStatusDTO:
+    properties:
+      clipped:
+        type: boolean
+      counts:
+        items:
+          type: integer
+        type: array
+      digi_counter_source:
+        type: string
+      effective_callsign:
+        type: string
+      encoded:
+        items:
+          type: integer
+        type: array
+      input_ready:
+        type: boolean
+      last_error:
+        type: string
+      last_payload:
+        type: string
+      last_submission:
+        type: string
+      next_report:
+        type: string
+      preview:
+        type: string
+      ready:
+        type: boolean
+      recent:
+        items:
+          $ref: '#/definitions/telemetry.Report'
+        type: array
+      route:
+        type: string
+      scope:
+        type: string
+      state:
+        type: string
+      warmup_seconds:
+        type: integer
+    type: object
   webapi.VersionResponse:
     properties:
+      commit:
+        description: |-
+          Commit is the build-time git commit of the running server. The web
+          UI captures (version, commit) at load and re-checks this endpoint to
+          notice when the server binary changed underneath it (e.g. the
+          operator upgraded graywolf) so it can prompt a reload. Including the
+          commit — not just the release version — means a same-version rebuild
+          from source is still detected.
+        type: string
       platform:
         description: |-
           Platform is runtime.GOOS of the server process — "windows", "linux",
@@ -3020,7 +3272,7 @@ definitions:
           type: integer
         type: array
       source:
-        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".'
+        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "telemetry", "modem", or "igate-is".'
         type: string
       timestamp:
         description: Timestamp is the UTC RFC3339 time the packet was recorded.
@@ -3090,6 +3342,8 @@ tags:
     description: Radio channel configuration.
   - name: beacons
     description: Beacon configuration and send-now.
+  - name: telemetry
+    description: Station-wide ten-minute T# activity reporting and definitions.
   - name: fixed-points
     description: Operator-placed map landmarks, shared across devices.
   - name: audio-devices
@@ -3132,6 +3386,8 @@ tags:
     description: Operator display preferences stored server-side (units, etc.).
   - name: maps
     description: 'Offline PMTiles map downloads: per-state download lifecycle and status.'
+  - name: storage
+    description: 'On-disk storage usage: where offline maps, position history, and config data live and how much space they use.'
   - name: actions
     description: 'On-air remote command/webhook execution: action definitions, OTP credentials, listener addressees, audit log, and operator test-fire.'
   - name: remote-actions
@@ -4559,6 +4815,47 @@ paths:
       security:
         - CookieAuth: []
       summary: Update channel
+      tags:
+        - channels
+  /channels/{id}/enabled:
+    put:
+      consumes:
+        - application/json
+      operationId: setChannelEnabled
+      parameters:
+        - description: Channel id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Enabled flag
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ChannelEnabledRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ChannelResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Enable or disable a channel
       tags:
         - channels
   /channels/{id}/ptt:
@@ -6186,6 +6483,135 @@ paths:
       summary: Mark message unread
       tags:
         - messages
+  /messages/blocklist:
+    get:
+      operationId: listBlockedCallsigns
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/dto.BlockedCallsignResponse'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: List blocked call signs
+      tags:
+        - messages
+    post:
+      consumes:
+        - application/json
+      operationId: createBlockedCallsign
+      parameters:
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Block a call sign
+      tags:
+        - messages
+  /messages/blocklist/{id}:
+    delete:
+      operationId: deleteBlockedCallsign
+      parameters:
+        - description: Blocklist entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Unblock a call sign
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: updateBlockedCallsign
+      parameters:
+        - description: Blocklist entry id
+          in: path
+          name: id
+          required: true
+          type: integer
+        - description: Blocklist entry
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.BlockedCallsignResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update a blocked call sign
+      tags:
+        - messages
   /messages/config:
     get:
       operationId: getMessagesConfig
@@ -6268,6 +6694,81 @@ paths:
       security:
         - CookieAuth: []
       summary: List conversations
+      tags:
+        - messages
+  /messages/conversations/{kind}/{key}/prefs:
+    get:
+      operationId: getConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get conversation preferences
+      tags:
+        - messages
+    put:
+      consumes:
+        - application/json
+      operationId: putConversationPrefs
+      parameters:
+        - description: thread kind (dm|tactical)
+          in: path
+          name: kind
+          required: true
+          type: string
+        - description: peer callsign or tactical label
+          in: path
+          name: key
+          required: true
+          type: string
+        - description: Preferences
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.ConversationPrefsResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Update conversation preferences
       tags:
         - messages
   /messages/events:
@@ -7131,6 +7632,34 @@ paths:
       summary: Get PTT capabilities
       tags:
         - ptt
+  /ptt/check-device:
+    post:
+      consumes:
+        - application/json
+      operationId: checkPttDevice
+      parameters:
+        - description: Device path to inspect
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/dto.CheckDeviceRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.CheckDeviceResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Check a PTT device path
+      tags:
+        - ptt
   /ptt/gpio-chips/{chip}/lines:
     get:
       operationId: listGpioLines
@@ -7647,6 +8176,26 @@ paths:
       summary: System status dashboard
       tags:
         - status
+  /storage/usage:
+    get:
+      description: |-
+        Returns the byte size of each location Graywolf writes to
+        (offline map tiles, position history, config/app data) plus
+        the total. Advisory only; never mutates state and always
+        returns 200 (missing paths report 0).
+      operationId: getStorageUsage
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/dto.StorageUsageResponse'
+      security:
+        - CookieAuth: []
+      summary: Report on-disk storage usage
+      tags:
+        - storage
   /system-logs:
     get:
       operationId: listSystemLogs
@@ -7715,6 +8264,98 @@ paths:
       summary: Accept a tactical invite (subscribe)
       tags:
         - messages
+  /telemetry/config:
+    get:
+      operationId: getTelemetryConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get station activity telemetry configuration
+      tags:
+        - telemetry
+    put:
+      consumes:
+        - application/json
+      operationId: updateTelemetryConfig
+      parameters:
+        - description: Station-wide reporter configuration
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Save station activity telemetry configuration
+      tags:
+        - telemetry
+  /telemetry/report:
+    post:
+      operationId: sendTelemetryReport
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/webapi.TelemetryStatusDTO'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Submit current ten-minute telemetry report
+      tags:
+        - telemetry
+  /telemetry/status:
+    get:
+      operationId: getTelemetryStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryStatusDTO'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get station activity telemetry status
+      tags:
+        - telemetry
   /tx-timing:
     get:
       operationId: listTxTiming

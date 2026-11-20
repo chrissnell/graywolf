@@ -2720,6 +2720,27 @@ definitions:
           UART, or a previously-running graywolf process).
         type: boolean
     type: object
+  telemetry.Report:
+    properties:
+      clipped:
+        type: boolean
+      counts:
+        items:
+          type: integer
+        type: array
+      encoded:
+        items:
+          type: integer
+        type: array
+      identity:
+        type: string
+      payload:
+        type: string
+      route:
+        type: string
+      submitted_at:
+        type: string
+    type: object
   webapi.AvailableUsbSerialDevice:
     properties:
       has_permission:
@@ -3079,6 +3100,68 @@ definitions:
           $ref: '#/definitions/webapi.SystemLogEntry'
         type: array
     type: object
+  webapi.TelemetryConfigDTO:
+    properties:
+      allow_above_255:
+        type: boolean
+      callsign:
+        type: string
+      channel:
+        type: integer
+      delivery:
+        type: string
+      enabled:
+        type: boolean
+      metadata_is_seconds:
+        type: integer
+      metadata_rf_seconds:
+        type: integer
+      rf_path:
+        type: string
+    type: object
+  webapi.TelemetryStatusDTO:
+    properties:
+      clipped:
+        type: boolean
+      counts:
+        items:
+          type: integer
+        type: array
+      digi_counter_source:
+        type: string
+      effective_callsign:
+        type: string
+      encoded:
+        items:
+          type: integer
+        type: array
+      input_ready:
+        type: boolean
+      last_error:
+        type: string
+      last_payload:
+        type: string
+      last_submission:
+        type: string
+      next_report:
+        type: string
+      preview:
+        type: string
+      ready:
+        type: boolean
+      recent:
+        items:
+          $ref: '#/definitions/telemetry.Report'
+        type: array
+      route:
+        type: string
+      scope:
+        type: string
+      state:
+        type: string
+      warmup_seconds:
+        type: integer
+    type: object
   webapi.VersionResponse:
     properties:
       commit:
@@ -3189,7 +3272,7 @@ definitions:
           type: integer
         type: array
       source:
-        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".'
+        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "telemetry", "modem", or "igate-is".'
         type: string
       timestamp:
         description: Timestamp is the UTC RFC3339 time the packet was recorded.
@@ -3259,6 +3342,8 @@ tags:
     description: Radio channel configuration.
   - name: beacons
     description: Beacon configuration and send-now.
+  - name: telemetry
+    description: Station-wide ten-minute T# activity reporting and definitions.
   - name: fixed-points
     description: Operator-placed map landmarks, shared across devices.
   - name: audio-devices
@@ -8179,6 +8264,98 @@ paths:
       summary: Accept a tactical invite (subscribe)
       tags:
         - messages
+  /telemetry/config:
+    get:
+      operationId: getTelemetryConfig
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get station activity telemetry configuration
+      tags:
+        - telemetry
+    put:
+      consumes:
+        - application/json
+      operationId: updateTelemetryConfig
+      parameters:
+        - description: Station-wide reporter configuration
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryConfigDTO'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Save station activity telemetry configuration
+      tags:
+        - telemetry
+  /telemetry/report:
+    post:
+      operationId: sendTelemetryReport
+      produces:
+        - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            $ref: '#/definitions/webapi.TelemetryStatusDTO'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Submit current ten-minute telemetry report
+      tags:
+        - telemetry
+  /telemetry/status:
+    get:
+      operationId: getTelemetryStatus
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/webapi.TelemetryStatusDTO'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/webtypes.ErrorResponse'
+      security:
+        - CookieAuth: []
+      summary: Get station activity telemetry status
+      tags:
+        - telemetry
   /tx-timing:
     get:
       operationId: listTxTiming

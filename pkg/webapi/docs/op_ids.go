@@ -448,3 +448,11 @@ const (
 	OpUpdateFixedPoint = "updateFixedPoint"
 	OpDeleteFixedPoint = "deleteFixedPoint"
 )
+
+// Station-wide telemetry — /api/telemetry.
+const (
+	OpGetTelemetryConfig    = "getTelemetryConfig"
+	OpUpdateTelemetryConfig = "updateTelemetryConfig"
+	OpGetTelemetryStatus    = "getTelemetryStatus"
+	OpSendTelemetryReport   = "sendTelemetryReport"
+)

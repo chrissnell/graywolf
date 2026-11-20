@@ -49,6 +49,7 @@
     { path: '/position-log', label: 'Position Log' },
     { path: '/ptt', label: 'PTT' },
     { path: '/simulation', label: 'Simulation' },
+    { path: '/telemetry', label: 'Telemetry' },
     { path: '/callsign', label: 'Station Callsign' },
     { path: '/preferences/storage', label: 'Storage' },
   ];

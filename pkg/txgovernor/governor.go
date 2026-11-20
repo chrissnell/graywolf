@@ -288,7 +288,7 @@ func New(cfg Config) *Governor {
 // deadline (e.g. the iGate's IS->RF timeout) propagates into the
 // governor's accept path and so that a cancelled session cannot be
 // charged a newly enqueued frame.
-func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame, src SubmitSource) error {
+func (g *Governor) submit(ctx context.Context, channel uint32, frame *ax25.Frame, src SubmitSource, validUntil time.Time, canceled <-chan struct{}) error {
 	if frame == nil {
 		return ErrNilFrame
 	}
@@ -333,6 +333,8 @@ func (g *Governor) Submit(ctx context.Context, channel uint32, frame *ax25.Frame
 		priority: src.Priority,
 		seq:      g.seq,
 		enqueued: now,
+		validUntil: validUntil,
+		canceled: canceled,
 	})
 	g.stats.Enqueued++
 	g.mu.Unlock()
@@ -406,6 +408,12 @@ func (g *Governor) processOne(ctx context.Context) {
 		return
 	}
 	top := g.q[0]
+	if top.expired(time.Now()) {
+		heap.Pop(&g.q)
+		g.mu.Unlock()
+		g.logger.Debug("tx report expired or canceled", "channel", top.channel, "source", top.source.Kind)
+		return
+	}
 	if g.isRateLimitedLocked(top.channel, time.Now()) {
 		// Only count the first observation of this held item so
 		// repeated ticks do not inflate the counter.
@@ -454,6 +462,11 @@ func (g *Governor) processOne(ctx context.Context) {
 	g.mu.Lock()
 	if len(g.q) == 0 || g.q[0] != top {
 		// Something changed while we were deciding; retry next tick.
+		g.mu.Unlock()
+		return
+	}
+	if top.expired(time.Now()) {
+		heap.Pop(&g.q)
 		g.mu.Unlock()
 		return
 	}

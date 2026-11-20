@@ -159,6 +159,8 @@ func (s *Store) Migrate() error {
 		&GPSConfig{},
 		&SmartBeaconConfig{},
 		&PositionLogConfig{},
+		&TelemetryConfig{},
+		&TelemetryState{},
 		&Message{},
 		&MessageCounter{},
 		&MessagePreferences{},
