@@ -164,3 +164,10 @@ export function displaySegments(str) {
 export function packetToEntry(pkt) {
   return { ...pkt, level: directionToLevel(pkt.direction) };
 }
+
+// Locally generated IS telemetry has no RF delivery channel. Prefer its actual
+// transport even for older entries that retained the configured RF channel.
+export function packetChannelLabel(pkt) {
+  if (pkt.source === 'telemetry' && pkt.direction === 'IS') return 'APRS-IS';
+  return pkt.channel_name || (pkt.channel ?? '—');
+}

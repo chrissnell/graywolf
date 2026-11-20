@@ -103,7 +103,7 @@ func (a *App) wireTelemetry() {
 				return fmt.Errorf("APRS-IS is disabled")
 			}
 			line := aprs.FormatTNC2(identity, "APGRWO", []string{"TCPIP*"}, []byte(info))
-			return sendTelemetryIS(ig, a.plog, cfg.Channel, frame, line)
+			return sendTelemetryIS(ig, a.plog, frame, line)
 		},
 	})
 }
@@ -111,7 +111,7 @@ func (a *App) wireTelemetry() {
 // sendTelemetryIS logs only accepted APRS-IS submissions, using the same
 // route annotation as beacon uploads. Source remains telemetry so consumers
 // can identify the producer without guessing from the packet payload.
-func sendTelemetryIS(sink beacon.ISSink, plog *packetlog.Log, channel uint32, frame *ax25.Frame, line string) error {
+func sendTelemetryIS(sink beacon.ISSink, plog *packetlog.Log, frame *ax25.Frame, line string) error {
 	raw, err := frame.Encode()
 	if err != nil {
 		return err
@@ -119,7 +119,7 @@ func sendTelemetryIS(sink beacon.ISSink, plog *packetlog.Log, channel uint32, fr
 	if err = sink.SendLine(line); err != nil {
 		return err
 	}
-	plog.Record(packetlog.Entry{Direction: packetlog.DirIS, Source: "telemetry", Channel: channel, Raw: raw, Display: line, Type: "telemetry", Notes: "aprs-is"})
+	plog.Record(packetlog.Entry{Direction: packetlog.DirIS, Source: "telemetry", Channel: 0, Raw: raw, Display: line, Type: "telemetry", Notes: "aprs-is"})
 	return nil
 }
 

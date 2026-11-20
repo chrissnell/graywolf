@@ -108,7 +108,7 @@ func TestTelemetryISSubmissionPacketLog(t *testing.T) {
 				if fail {
 					sink.err = errors.New("not connected")
 				}
-				err = sendTelemetryIS(sink, plog, 4, frame, line)
+				err = sendTelemetryIS(sink, plog, frame, line)
 				if fail {
 					if !errors.Is(err, sink.err) || plog.Len() != 0 {
 						t.Fatalf("failed send: %v; log size %d", err, plog.Len())
@@ -123,7 +123,7 @@ func TestTelemetryISSubmissionPacketLog(t *testing.T) {
 					t.Fatalf("send/log mismatch: %v %+v", sink.lines, entries)
 				}
 				e := entries[0]
-				if e.Direction != packetlog.DirIS || e.Source != "telemetry" || e.Notes != "aprs-is" || e.Channel != 4 || e.Display != line || e.Type != "telemetry" {
+				if e.Direction != packetlog.DirIS || e.Source != "telemetry" || e.Notes != "aprs-is" || e.Channel != 0 || e.Display != line || e.Type != "telemetry" {
 					t.Fatalf("missing explicit telemetry upload context: %+v", e)
 				}
 				decoded, err := ax25.Decode(e.Raw)
