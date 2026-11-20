@@ -149,6 +149,12 @@
       and allows at most one manual report per 30 seconds. Merely viewing or saving
       the page does not send a packet immediately.</p>
 
+    <p>The packet log identifies locally generated reports and definitions as
+      telemetry transmissions. APRS-IS uploads use the same <code>aprs-is</code>
+      route annotation as beacon uploads; they are not RF receptions. A logged
+      upload means the local APRS-IS sender accepted it, not confirmed delivery
+      to another station. Failed uploads do not create successful-send entries.</p>
+
     <h2>Counts Above 255</h2>
     <p>By default, transmitted counts saturate at 255 and the page warns when a value
       is clipped. Local UI/API counts remain exact. Advanced <strong>Allow counts

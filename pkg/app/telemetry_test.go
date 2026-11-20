@@ -2,13 +2,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net"
 	"testing"
 	"time"
 
+	"github.com/chrissnell/graywolf/pkg/aprs"
+	"github.com/chrissnell/graywolf/pkg/ax25"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/metrics"
+	"github.com/chrissnell/graywolf/pkg/packetlog"
 	"github.com/chrissnell/graywolf/pkg/telemetry"
 	"github.com/chrissnell/graywolf/pkg/txgovernor"
 )
@@ -80,5 +84,53 @@ func TestTelemetryWaitsForConnectedKissAndSupportsReceiveOnlyInput(t *testing.T)
 	a.telemetry.Invalidate()
 	if a.telemetry.Snapshot().Ready {
 		t.Fatal("reset did not invalidate baseline")
+	}
+}
+
+func TestTelemetryISSubmissionPacketLog(t *testing.T) {
+	for _, info := range []string{
+		"T#001,001,002,003,004,005,00000000",
+		":TEST1-10 :PARM.Rx,Digi,Tx,RF2IS,IS2RF",
+		":TEST1-10 :UNIT.Packets,Packets,Packets,Packets,Packets",
+		":TEST1-10 :EQNS.0,1,0,0,1,0,0,1,0,0,1,0,0,1,0",
+	} {
+		t.Run(info, func(t *testing.T) {
+			src, _ := ax25.ParseAddress("TEST1-10")
+			dst, _ := ax25.ParseAddress("APGRWO")
+			frame, err := ax25.NewUIFrame(src, dst, nil, []byte(info))
+			if err != nil {
+				t.Fatal(err)
+			}
+			line := aprs.FormatTNC2("TEST1-10", "APGRWO", []string{"TCPIP*"}, []byte(info))
+			for _, fail := range []bool{false, true} {
+				plog := packetlog.New(packetlog.Config{})
+				sink := &fakeISLineSink{}
+				if fail {
+					sink.err = errors.New("not connected")
+				}
+				err = sendTelemetryIS(sink, plog, 4, frame, line)
+				if fail {
+					if !errors.Is(err, sink.err) || plog.Len() != 0 {
+						t.Fatalf("failed send: %v; log size %d", err, plog.Len())
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				entries := plog.Query(packetlog.Filter{Channel: -1})
+				if len(entries) != 1 || len(sink.lines) != 1 || sink.lines[0] != line {
+					t.Fatalf("send/log mismatch: %v %+v", sink.lines, entries)
+				}
+				e := entries[0]
+				if e.Direction != packetlog.DirIS || e.Source != "telemetry" || e.Notes != "aprs-is" || e.Channel != 4 || e.Display != line || e.Type != "telemetry" {
+					t.Fatalf("missing explicit telemetry upload context: %+v", e)
+				}
+				decoded, err := ax25.Decode(e.Raw)
+				if err != nil || string(decoded.Info) != info {
+					t.Fatalf("raw payload mismatch: %v %v", decoded, err)
+				}
+			}
+		})
 	}
 }

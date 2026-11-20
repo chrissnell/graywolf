@@ -28,6 +28,8 @@ export function originTag(pkt) {
   const notes = pkt.notes || '';
   switch (src) {
     case 'digipeater': return { label: 'Digipeater', cls: 'digi' };
+    case 'telemetry':
+      return { label: pkt.direction === 'IS' ? 'Telemetry TX IS' : pkt.direction === 'TX' ? 'Telemetry TX RF' : 'Telemetry', cls: 'bcn' };
     case 'beacon':     return { label: 'Beacon',     cls: 'bcn' };
     case 'igate':
       if (notes === 'is2rf') return { label: 'iGate IS\u2192RF', cls: 'igate-is2rf' };

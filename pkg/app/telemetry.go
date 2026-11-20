@@ -9,6 +9,7 @@ import (
 
 	"github.com/chrissnell/graywolf/pkg/aprs"
 	"github.com/chrissnell/graywolf/pkg/ax25"
+	"github.com/chrissnell/graywolf/pkg/beacon"
 	"github.com/chrissnell/graywolf/pkg/configstore"
 	"github.com/chrissnell/graywolf/pkg/kiss"
 	"github.com/chrissnell/graywolf/pkg/packetlog"
@@ -102,17 +103,24 @@ func (a *App) wireTelemetry() {
 				return fmt.Errorf("APRS-IS is disabled")
 			}
 			line := aprs.FormatTNC2(identity, "APGRWO", []string{"TCPIP*"}, []byte(info))
-			if err = ig.SendLine(line); err != nil {
-				return err
-			}
-			raw, err := frame.Encode()
-			if err != nil {
-				return err
-			}
-			a.plog.Record(packetlog.Entry{Direction: packetlog.DirIS, Source: "telemetry", Channel: cfg.Channel, Raw: raw, Display: line, Type: "telemetry", Notes: "T# " + kind + " submitted to APRS-IS"})
-			return nil
+			return sendTelemetryIS(ig, a.plog, cfg.Channel, frame, line)
 		},
 	})
+}
+
+// sendTelemetryIS logs only accepted APRS-IS submissions, using the same
+// route annotation as beacon uploads. Source remains telemetry so consumers
+// can identify the producer without guessing from the packet payload.
+func sendTelemetryIS(sink beacon.ISSink, plog *packetlog.Log, channel uint32, frame *ax25.Frame, line string) error {
+	raw, err := frame.Encode()
+	if err != nil {
+		return err
+	}
+	if err = sink.SendLine(line); err != nil {
+		return err
+	}
+	plog.Record(packetlog.Entry{Direction: packetlog.DirIS, Source: "telemetry", Channel: channel, Raw: raw, Display: line, Type: "telemetry", Notes: "aprs-is"})
+	return nil
 }
 
 func (a *App) observeTelemetry(ctx context.Context, cfg telemetry.Config) (telemetry.Observation, error) {
