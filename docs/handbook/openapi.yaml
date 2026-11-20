@@ -3272,7 +3272,7 @@ definitions:
           type: integer
         type: array
       source:
-        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is".'
+        description: 'Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "telemetry", "modem", or "igate-is".'
         type: string
       timestamp:
         description: Timestamp is the UTC RFC3339 time the packet was recorded.

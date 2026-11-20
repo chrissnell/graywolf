@@ -4041,7 +4041,7 @@ export interface components {
             notes?: string;
             /** @description Raw is the on-air AX.25 frame bytes with FCS stripped; omitted for entries without raw framing. */
             raw?: number[];
-            /** @description Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "modem", or "igate-is". */
+            /** @description Source identifies the subsystem that produced this entry: "kiss", "agw", "digi", "igate-tx", "beacon", "telemetry", "modem", or "igate-is". */
             source?: string;
             /** @description Timestamp is the UTC RFC3339 time the packet was recorded. */
             timestamp?: string;

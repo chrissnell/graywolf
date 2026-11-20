@@ -12777,7 +12777,7 @@
                     }
                 },
                 "source": {
-                    "description": "Source identifies the subsystem that produced this entry: \"kiss\", \"agw\", \"digi\", \"igate-tx\", \"beacon\", \"modem\", or \"igate-is\".",
+                    "description": "Source identifies the subsystem that produced this entry: \"kiss\", \"agw\", \"digi\", \"igate-tx\", \"beacon\", \"telemetry\", \"modem\", or \"igate-is\".",
                     "type": "string"
                 },
                 "timestamp": {
